@@ -1,0 +1,25 @@
+// tsconfig.scripts.json
+
+{
+    "compilerOptions": {
+      // These three are the most important settings for a Node.js script
+      "module": "CommonJS",
+      "moduleResolution": "node",
+      "lib": ["es2022"], // <-- CRITICAL: Tells TS *not* to load browser/DOM types
+  
+      // Standard settings copied from your main tsconfig
+      "target": "ES2022",
+      "esModuleInterop": true,
+      "strict": true,
+      "skipLibCheck": true,
+      "outDir": "./dist",
+      "rootDir": "./"
+    },
+    // We only want to include our scripts folder
+    "include": [
+      "./scripts/**/*.ts"
+    ],
+    "exclude": [
+      "node_modules"
+    ]
+  }

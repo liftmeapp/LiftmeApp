@@ -1,0 +1,16 @@
+ (ID: 6857d4c4abe91af4d60726cd)
+[API] 2. Initial Query Result: Found 1 approved & open garages that list this service.
+   --- Details of Found Garages (Pre-Distance Filter) ---
+   - Garage: "Naseef Cool Garage" (ID: 6887b44bfb7edc8637573263)
+     - Services Offered: ["Battery Booting assistance" (ID: 6857d4c4abe91af4d60726cd), "Car starting up assistance" (ID: 6857d4c5abe91af4d60726cf), "Car Break Assistance" (ID: 6857d4c6abe91af4d60726d0), "Car Cleaning Service" (ID: 6857d4c7abe91af4d60726d1), "Air conditioner cleaning service" (ID: 6857d4c8abe91af4d60726d3), "Bike Jumpstarting" (ID: 6857d4c9abe91af4d60726d5), "Bike Tire Fixing Assistance" (ID: 6857d4caabe91af4d60726d6), "Bike Oil Changing Assistance" (ID: 6857d4cbabe91af4d60726d7), "Bike Alignment Assistance" (ID: 6857d4cbabe91af4d60726d8), "Bike Brake Assistance" (ID: 6857d4cdabe91af4d60726d9)]
+     - Does it have the requested service? ✅ Yes
+   --------------------------------------------------------
+[API] 3. Filtering the 1 garages by distance (max 30km)...
+[API] -> Calculating distance for "Naseef Cool Garage"...
+   ✅ SUCCESS: "Naseef Cool Garage" is within range (1km). Adding to eligible list.
+[API] 4. Final Result: Found 1 eligible providers within 30km.
+[API] 5. Creating booking record in DB...
+✅ [API] Booking created successfully with ID: 68cc326391da0dd921a74220
+   - Eligible Garage IDs: [ '6887b44bfb7edc8637573263' ]
+
+   

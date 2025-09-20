@@ -1,0 +1,45 @@
+Now it says setup error couldnot retrive necessary information from google to proceed. Try again.
+
+JavaScript logs will be removed from Metro in React Native 0.77! Please use React Native DevTools as your default tool. Tip: Type j in the terminal to open (requires Google Chrome or Microsoft Edge).
+ (NOBRIDGE) WARN  Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview [Component Stack]
+ (NOBRIDGE) LOG  InitialLayout: State Update -  AuthLoaded: false, UserLoaded: false, Pathname: /,  IsSignedIn: undefined, User: false, AppInitialized: false
+ (NOBRIDGE) LOG  InitialLayout: Waiting for Clerk SDKs or Router to be ready.
+ (NOBRIDGE) LOG  InitialLayout: State Update -  AuthLoaded: true, UserLoaded: true, Pathname: /,  IsSignedIn: false, User: false, AppInitialized: false
+ (NOBRIDGE) LOG  InitialLayout: App initialized, Splashscreen hidden.
+ (NOBRIDGE) LOG  InitialLayout: App not yet fully initialized. Deferring navigation.
+ (NOBRIDGE) LOG  InitialLayout: State Update -  AuthLoaded: true, UserLoaded: true, Pathname: /,  IsSignedIn: false, User: false, AppInitialized: true
+ (NOBRIDGE) LOG  InitialLayout: User not signed in.
+ (NOBRIDGE) LOG  InitialLayout (Not Signed In): Path "/" is not a public auth path. Redirecting to /welcome.
+ (NOBRIDGE) LOG  InitialLayout: State Update -  AuthLoaded: true, UserLoaded: true, Pathname: /welcome,  IsSignedIn: false, User: false, AppInitialized: true
+ (NOBRIDGE) LOG  InitialLayout: User not signed in.
+ (NOBRIDGE) LOG  InitialLayout (Not Signed In): Already on a public auth path or OAuth callback.
+ (NOBRIDGE) ERROR  Warning: Main: Support for defaultProps will be removed from function components in a future major release. Use JavaScript default parameters instead.
+    in Main (created by PhoneInput)
+    in RCTView (created by View)
+    in View (created by CssInterop.View)
+    in CssInterop.View (created by Animated(View))
+    in Animated(View) (created by TouchableOpacity)
+    in TouchableOpacity (created by TouchableOpacity)
+    in TouchableOpacity (created by CssInterop.TouchableOpacity)
+    in CssInterop.TouchableOpacity (created by PhoneInput)
+    in RCTView (created by View)
+    in View (created by CssInterop.View)
+    in CssInterop.View (created by PhoneInput)
+    in CountryModalProvider (created by PhoneInput)
+    in PhoneInput (created by SignUpScreen)
+    in RCTView (created by View)
+    in View (created by CssInterop.View)
+    in CssInterop.View (created by ScrollView)
+    in RCTScrollView
+    in VScrollViewNativeComponent (created by ScrollView)
+    in ScrollView (created by ScrollView)
+    in Wrapper (created by CssInterop.ScrollView)
+    in CssInterop.ScrollView (created by SignUpScreen)
+    in SignUpScreen
+InitialLayout: State Update -  AuthLoaded: true, UserLoaded: true, Pathname: /signup,  IsSignedIn: false, User: false, AppInitialized: true
+ (NOBRIDGE) LOG  InitialLayout: User not signed in.
+ (NOBRIDGE) LOG  InitialLayout (Not Signed In): Already on a public auth path or OAuth callback.
+ (NOBRIDGE) LOG  [SignUpScreen] Using redirectUrl for Google OAuth: exp://hva9qqw-abdulodnt-8081.exp.direct/--/oauth-native-callback
+
+
+the console

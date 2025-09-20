@@ -1,0 +1,325 @@
+// /api/prisma/schema.prisma
+
+// ===================================================================
+//  PRISMA CONFIGURATION
+// ===================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../app/generated/prisma"
+  previewFeatures = ["mongoDb"]
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL") // Use env variable for security
+}
+
+// ===================================================================
+//  ENUMS - For controlled, consistent data values
+// ===================================================================
+
+enum Role {
+  CUSTOMER
+  GARAGE_OWNER
+  TOW_TRUCK_OWNER
+  ADMIN
+}
+
+enum VehicleType {
+  SEDAN
+  HATCHBACK
+  SUV
+  BIKE
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ServiceType {
+  GARAGE
+  TOW_TRUCK
+  ROADSIDE_ASSISTANCE
+  MECHANICAL
+  LUXURY
+  BIKE
+  TRUCK
+}
+
+enum BookingStatus {
+  SEARCHING
+  PENDING
+  AWAITING_PAYMENT
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+// ===================================================================
+//  CORE USER & VEHICLE MODELS
+// ===================================================================
+
+model User {
+  id             String  @id @default(auto()) @map("_id") @db.ObjectId
+  clerkId        String  @unique
+  email          String  @unique
+  firstName      String
+  lastName       String?
+  phone          String
+  role           Role[]  @default([CUSTOMER])
+  isPremium      Boolean @default(false)
+  isBanned       Boolean @default(false)
+  unsafeMetadata Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vehicles         Vehicle[]
+  garage           Garage?
+  towTruck         TowTruck?
+  bookings         Booking[]
+  stripeCustomerId String?   @unique
+
+  @@map("users")
+}
+
+model Vehicle {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  brand       String
+  name        String
+  model       String
+  year        Int
+  plateNumber String      @unique
+  color       String?
+  type        VehicleType
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  userId   String    @db.ObjectId
+  user     User      @relation(fields: [userId], references: [id])
+  bookings Booking[]
+
+  @@map("vehicles")
+}
+
+// ===================================================================
+//  BUSINESS & SERVICE MODELS
+// ===================================================================
+
+// A MASTER list of every possible service. Garages and Tow Trucks link to this.
+
+model Service {
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  name        String  @unique
+  description String
+  icon        String?
+  type        String
+
+  // Back-relation to the join table for garages offering this service
+  offeredByGarages GarageService[]
+  bookings         Booking[]       @relation("BookingService")
+
+  @@map("services")
+}
+
+model Garage {
+  id                String  @id @default(auto()) @map("_id") @db.ObjectId
+  name              String
+  licenseNumber     String  @unique
+  address           String
+  ownerName         String
+  contactEmail      String?
+  contactPhone      String?
+  numberOfEmployees Int
+  rating            Float?  @default(0)
+  reviewCount       Int?    @default(0)
+  isOpen            Boolean @default(true)
+  operatingHours    Json?
+  stripeAccountId   String? @unique
+  location          Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  status          VerificationStatus @default(PENDING)
+  rejectionReason String?
+
+  ownerId    String          @unique @db.ObjectId
+  owner      User            @relation(fields: [ownerId], references: [id])
+  services   GarageService[]
+  spareParts SparePart[]
+  bookings   Booking[]
+
+  @@index([location], map: "location_2dsphere")
+  @@map("garages")
+}
+
+// JOIN MODEL: Links a Garage to a master Service and adds a price.
+model GarageService {
+  id    String @id @default(auto()) @map("_id") @db.ObjectId
+  price Float
+
+  garageId  String    @db.ObjectId
+  garage    Garage    @relation(fields: [garageId], references: [id])
+  serviceId String    @db.ObjectId
+  service   Service   @relation(fields: [serviceId], references: [id])
+  bookings  Booking[]
+
+  @@unique([garageId, serviceId])
+  @@map("garage_services")
+}
+
+model TowTruck {
+  id            String @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  driverName    String
+  model         String
+  make          String
+  year          Int
+  plateNumber   String @unique
+  licenseNumber String @unique
+
+  status          VerificationStatus @default(PENDING)
+  rejectionReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ownerId         String             @unique @db.ObjectId
+  owner           User               @relation(fields: [ownerId], references: [id])
+  services        TowTruckService[] // Correctly points to the single TowTruckService model
+  bookings        Booking[]
+  liveLocation    LiveTruckLocation?
+  stripeAccountId String?            @unique
+
+  @@map("tow_trucks")
+}
+
+model TowTruckService {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  price       Float
+  vehicleType VehicleType
+
+  towTruckId String    @db.ObjectId
+  towTruck   TowTruck  @relation(fields: [towTruckId], references: [id])
+  bookings   Booking[]
+
+  @@unique([towTruckId, vehicleType])
+  @@map("tow_truck_services")
+}
+
+model LiveTruckLocation {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  location    Json
+  lastUpdated DateTime @default(now()) @updatedAt
+  isAvailable Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  towTruckId String   @unique @db.ObjectId
+  towTruck   TowTruck @relation(fields: [towTruckId], references: [id])
+
+  @@index([location], map: "location_2dsphere")
+  @@map("live_truck_locations")
+}
+
+model SparePart {
+  id                String @id @default(auto()) @map("_id") @db.ObjectId
+  partName          String
+  compatibleMake    String
+  compatibleModel   String
+  compatibleYear    Int
+  price             Float
+  quantityAvailable Int
+
+  garageId String @db.ObjectId
+  garage   Garage @relation(fields: [garageId], references: [id])
+
+  @@map("spare_parts")
+}
+
+// ===================================================================
+//  TRANSACTIONAL MODELS
+// ===================================================================
+
+model Booking {
+  id               String        @id @default(auto()) @map("_id") @db.ObjectId
+  status           BookingStatus @default(SEARCHING) // --- MODIFIED --- Default to SEARCHING
+  bookedAt         DateTime      @default(now())
+  expiresAt        DateTime?
+  paymentExpiresAt DateTime?
+  notes            String?
+  otp              String?
+  otpExpiresAt     DateTime?
+
+  pickupLocation      Json?
+  destinationLocation Json?
+
+  serviceStartedAt DateTime?
+  serviceEndedAt   DateTime?
+  basePrice        Float
+  additionalFees   Float?    @default(0)
+  discountAmount   Float?    @default(0)
+  finalAmount      Float
+  paymentStatus    String    @default("pending")
+  paymentIntentId  String?   @unique
+  userRating       Int?
+  userReview       String?
+  providerRating   Int?
+  providerReview   String?
+
+  userId    String  @db.ObjectId
+  user      User    @relation(fields: [userId], references: [id])
+  vehicleId String  @db.ObjectId
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
+
+  eligibleProviderIds String[] @db.ObjectId
+
+  serviceId String?  @db.ObjectId // NEW: Direct link to the master Service
+  service   Service? @relation("BookingService", fields: [serviceId], references: [id])
+
+  // A booking is for ONE type of service provider
+  garageId        String?        @db.ObjectId
+  garage          Garage?        @relation(fields: [garageId], references: [id])
+  garageServiceId String?        @db.ObjectId
+  garageService   GarageService? @relation(fields: [garageServiceId], references: [id])
+
+  towTruckId        String?          @db.ObjectId
+  towTruck          TowTruck?        @relation(fields: [towTruckId], references: [id])
+  towTruckServiceId String?          @db.ObjectId
+  towTruckService   TowTruckService? @relation(fields: [towTruckServiceId], references: [id])
+
+  promoCodeId String?    @db.ObjectId
+  promoCode   PromoCode? @relation(fields: [promoCodeId], references: [id])
+
+  @@index([userId, status])
+  @@index([garageId, status])
+  @@index([towTruckId, status])
+  @@map("bookings")
+}
+
+model PromoCode {
+  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  code          String       @unique
+  discountType  DiscountType
+  discountValue Float
+  expiresAt     DateTime
+  maxUses       Int?
+  timesUsed     Int          @default(0)
+  isActive      Boolean      @default(true)
+
+  bookings Booking[]
+
+  @@map("promo_codes")
+}
