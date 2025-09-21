@@ -21,7 +21,7 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
     ) : null
 );
 
-const BookingCard = ({ booking, onAccept, onDecline, onPress }: { booking: any, onAccept: (id: string) => void, onDecline: (id: string) => void, onPress: (booking: any) => void }) => (
+const BookingCard = ({ booking, onAccept, onDecline, onPress, isAccepting, isDeclining = false }: { booking: any, onAccept: (id: string) => void, onDecline: (id: string) => void, onPress: (booking: any) => void, isAccepting: boolean, isDeclining?: boolean }) => (
     <TouchableOpacity style={styles.bookingCard} onPress={() => onPress(booking)}>
         <View style={styles.bookingHeader}>
             <Text style={styles.bookingDate}>{new Date(booking.bookedAt).toLocaleDateString()}</Text>
@@ -32,7 +32,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onPress }: { booking: any, 
             <Text style={styles.bookingText}>{booking.service.name}</Text>
         </View>
         <View style={styles.bookingDetails}>
-            <Ionicons name="person-circle" size={20} color="#9b59b6" />
+            <Ionicons name="person-circle" size={20} color="#9b55b6" />
             <Text style={styles.bookingText}>{booking.user.firstName} {booking.user.lastName}</Text>
         </View>
         <View style={styles.bookingDetails}>
@@ -49,11 +49,27 @@ const BookingCard = ({ booking, onAccept, onDecline, onPress }: { booking: any, 
 
         {booking.status === 'SEARCHING' && (
             <View style={styles.bookingActions}>
-                <TouchableOpacity style={[styles.bookingButton, styles.declineButton]} onPress={() => onDecline(booking.id)}>
-                    <Text style={styles.bookingButtonText}>Decline</Text>
+                <TouchableOpacity 
+                    style={[styles.bookingButton, styles.declineButton, (isDeclining || isAccepting) && styles.disabledButton]} 
+                    onPress={() => onDecline(booking.id)}
+                    disabled={isDeclining || isAccepting}
+                >
+                    {isDeclining ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                        <Text style={styles.bookingButtonText}>Decline</Text>
+                    )}
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.bookingButton, styles.acceptButton]} onPress={() => onAccept(booking.id)}>
-                    <Text style={styles.bookingButtonText}>Accept</Text>
+                <TouchableOpacity 
+                    style={[styles.bookingButton, styles.acceptButton, isAccepting && styles.disabledButton]} 
+                    onPress={() => onAccept(booking.id)}
+                    disabled={isAccepting || isDeclining}
+                >
+                    {isAccepting ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                        <Text style={styles.bookingButtonText}>Accept</Text>
+                    )}
                 </TouchableOpacity>
             </View>
         )}
@@ -72,6 +88,7 @@ export default function GarageDashboard() {
     const [bookings, setBookings] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [acceptingId, setAcceptingId] = useState<string | null>(null);
     
     // State for the main tabs: Jobs or Profile
     const [mainTab, setMainTab] = useState<'Jobs' | 'Profile'>('Jobs');
@@ -229,13 +246,16 @@ export default function GarageDashboard() {
             if (!response.ok) throw new Error("Failed to delete garage.");
             Alert.alert("Success", "Your garage profile has been deleted.");
             resetGarageStore();
-            router.replace('/settings/main-settings');
+            router.replace('../settings');
         } catch (error: any) {
             Alert.alert("Deletion Error", error.message);
         }
     };
 
     const handleAccept = async (bookingId: string) => {
+        console.log(`[handleAccept] Attempting to accept booking: ${bookingId}`);
+        setAcceptingId(bookingId);
+        console.log(`[handleAccept] acceptingId set to: ${bookingId}`);
         try {
             const token = await getToken();
             const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/accept`, {
@@ -246,7 +266,6 @@ export default function GarageDashboard() {
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error("--- ACCEPTANCE API ERROR ---", errorText);
-                // Try to parse as JSON, but fall back to raw text if it fails
                 try {
                     const errorData = JSON.parse(errorText);
                     throw new Error(errorData.error || 'Failed to accept request');
@@ -256,10 +275,14 @@ export default function GarageDashboard() {
             }
 
             Alert.alert('Request accepted successfully!');
-            fetchData(); // Refresh the whole dashboard
+            fetchData();
         } catch (error: any) {
             console.error("Acceptance Error:", error);
             Alert.alert(`Error: ${error.message}`);
+        } finally {
+            console.log(`[handleAccept] Clearing acceptingId. Was: ${bookingId}`);
+            setAcceptingId(null);
+            console.log(`[handleAccept] acceptingId cleared.`);
         }
     };
     
@@ -326,12 +349,14 @@ export default function GarageDashboard() {
                         </View>
                         
                         {filteredBookings.length > 0 ? (
-                            filteredBookings.map(booking => <BookingCard 
+                            filteredBookings.map(booking => 
+                            <BookingCard 
                                 key={booking.id} 
                                 booking={booking} 
                                 onAccept={handleAccept} 
                                 onDecline={handleDecline} 
                                 onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
+                                isAccepting={acceptingId === booking.id}
                             />)
                         ) : (
                             <View style={styles.tabContent}>
@@ -451,6 +476,7 @@ const styles = StyleSheet.create({
     acceptButton: { backgroundColor: '#27ae60' },
     declineButton: { backgroundColor: '#c0392b' },
     bookingButtonText: { color: 'white', fontWeight: 'bold' },
+    disabledButton: { backgroundColor: '#95a5a6' },
     mainTabContainer: {
         flexDirection: 'row',
         backgroundColor: '#fff',

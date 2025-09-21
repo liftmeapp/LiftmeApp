@@ -258,6 +258,12 @@ export default function MainMap() {
             case BookingStage.PAYMENT:
                 setStage(BookingStage.LOCATION_CONFIRMATION);
                 break;
+            case BookingStage.ERROR:
+            case BookingStage.CANCELLED:
+            case BookingStage.EXPIRED:
+                resetBookingFlow();
+                router.replace('/(root)/(tabs)/home');
+                break;
         }
     };
     const navigateToAddVehicle = () => router.replace('/settings/vehicle-page/add-vehicle');
@@ -523,6 +529,7 @@ export default function MainMap() {
                 );
             case BookingStage.EXPIRED:
             case BookingStage.CANCELLED:
+            case BookingStage.ERROR:
                 const failureReason = searchError || "The request was cancelled or expired.";
                 return (
                     <BottomSheetView style={styles.bottomSheetContainer}>

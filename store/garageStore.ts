@@ -1,5 +1,7 @@
 // /app/store/garageStore.ts
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface GarageDetails {
     name: string;
@@ -34,13 +36,25 @@ interface GarageState {
     reset: () => void;
 }
 
-export const useGarageStore = create<GarageState>((set) => ({
+const initialState = {
     details: {},
     services: [],
     location: {},
-    setDetails: (details) => set((state) => ({ details: { ...state.details, ...details } })),
-    setServices: (services) => set({ services }),
-    setLocation: (location) => set({ location }),
-    setStripeAccountId: (id) => set((state) => ({ details: { ...state.details, stripeAccountId: id } })),
-    reset: () => set({ details: {}, services: [], location: {} }),
-}));
+};
+
+export const useGarageStore = create<GarageState>()(
+    persist(
+        (set) => ({
+            ...initialState,
+            setDetails: (details) => set((state) => ({ details: { ...state.details, ...details } })),
+            setServices: (services) => set({ services }),
+            setLocation: (location) => set({ location }),
+            setStripeAccountId: (id) => set((state) => ({ details: { ...state.details, stripeAccountId: id } })),
+            reset: () => set(initialState),
+        }),
+        {
+            name: 'garage-setup-storage', // unique name
+            storage: createJSONStorage(() => AsyncStorage), // Use AsyncStorage for React Native
+        }
+    )
+);

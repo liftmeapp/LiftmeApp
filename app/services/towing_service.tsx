@@ -57,13 +57,12 @@ const TowingServiceMapContent = () => {
         selectedProvider, setConfirmedProvider,
         isInitialLoading,
         isBroadcasting, setIsBroadcasting,
+        isConfirmingPayment, confirmPayment, // Added for payment stage
         startTowingBooking, cancelTowingBooking, resetTowingBookingFlow,
         searchCountdown, eligibleTruckCount
     } = useTowingBooking();
 
     // --- EFFECTS ---
-
-
 
     // Adjust bottom sheet position based on the current stage
     useEffect(() => {
@@ -75,6 +74,9 @@ const TowingServiceMapContent = () => {
             case TowingBookingStage.DESTINATION_SELECTION:
             case TowingBookingStage.VEHICLE_SELECTION:
                 snap(1); // Higher sheet for selection
+                break;
+            case TowingBookingStage.PAYMENT:
+                snap(1); // Higher sheet for payment
                 break;
             case TowingBookingStage.SEARCHING_FOR_PROVIDER:
             case TowingBookingStage.CONFIRMED:
@@ -119,7 +121,7 @@ const TowingServiceMapContent = () => {
             case TowingBookingStage.ERROR:
             case TowingBookingStage.CANCELLED:
                 resetTowingBookingFlow();
-                setShowPlaceSearch(false);
+                router.replace('/(root)/(tabs)/home');
                 break;
         }
     };
@@ -416,6 +418,60 @@ const TowingServiceMapContent = () => {
                 return renderLocationContent();
             case TowingBookingStage.VEHICLE_SELECTION:
                 return renderVehicleContent();
+            case TowingBookingStage.PAYMENT:
+                const finalPrice = selectedProvider?.finalPrice || 0;
+                return (
+                    <BottomSheetView style={styles.contentContainer}>
+                        <View style={styles.headerWithBack}>
+                            <TouchableOpacity onPress={handleGoBack}>
+                                <Ionicons name="arrow-back" size={24} color={color.primary} />
+                            </TouchableOpacity>
+                            <Text style={styles.headerText}>Confirm & Pay</Text>
+                            <View style={{width: 24}} />
+                        </View>
+                        
+                        <View style={styles.confirmationBanner}>
+                            <Ionicons name="checkmark-circle" size={20} color={color.success} />
+                            <Text style={styles.confirmationBannerText}>
+                                {selectedProvider?.name || 'A provider'} has accepted your request!
+                            </Text>
+                        </View>
+                        
+                        <View style={styles.contentArea}>
+                            <View style={styles.tripDetailsContainer}>
+                                <View style={styles.detailRow}>
+                                    <Text style={styles.tripDetailsLabel}>Tow Truck:</Text>
+                                    <Text style={styles.tripDetailsValue}>{selectedProvider?.name || 'N/A'}</Text>
+                                </View>
+                                <View style={styles.detailRow}>
+                                    <Text style={styles.tripDetailsLabel}>Est. Arrival:</Text>
+                                    <Text style={styles.tripDetailsValue}>
+                                        {selectedProvider?.eta ? `${selectedProvider.eta} min` : 'N/A'}
+                                    </Text>
+                                </View>
+    
+                                <View style={styles.priceSummary}>
+                                    <Text style={styles.priceLabel}>Total Price:</Text>
+                                    <Text style={styles.priceValue}>AED {finalPrice.toFixed(2)}</Text>
+                                </View>
+                            </View>
+                        </View>
+    
+                        <TouchableOpacity 
+                            style={[styles.confirmButton, isConfirmingPayment && {backgroundColor: color.darkGray}]} 
+                            onPress={confirmPayment} 
+                            disabled={isConfirmingPayment}
+                        >
+                            {isConfirmingPayment ? (
+                                <ActivityIndicator color={color.white}/>
+                            ) : (
+                                <Text style={styles.confirmButtonText}>
+                                    Pay AED {finalPrice.toFixed(2)} & Confirm
+                                </Text>
+                            )}
+                        </TouchableOpacity>
+                    </BottomSheetView>
+                );
             case TowingBookingStage.SEARCHING_FOR_PROVIDER:
             case TowingBookingStage.CONFIRMED:
             case TowingBookingStage.CANCELLED:
@@ -612,5 +668,88 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 12,
         fontWeight: 'bold',
+    },
+    confirmationBanner: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        backgroundColor: '#e8f5e9', 
+        padding: 14, 
+        borderRadius: 8, 
+        borderWidth: 1, 
+        borderColor: color.success, 
+        marginBottom: 15 
+    },
+    confirmationBannerText: { 
+        color: '#2e7d32', 
+        fontSize: 15, 
+        fontWeight: '500', 
+        marginLeft: 10, 
+        flexShrink: 1 
+    },
+    tripDetailsContainer: { 
+        backgroundColor: color.white, 
+        borderRadius: 8, 
+        padding: 16, 
+        borderWidth: 1, 
+        borderColor: color.border 
+    },
+    detailRow: { 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        marginBottom: 12, 
+        alignItems: 'flex-start' 
+    },
+    tripDetailsLabel: { 
+        fontSize: 14, 
+        color: color.darkGray, 
+        fontWeight: '500', 
+        marginRight: 10 
+    },
+    tripDetailsValue: { 
+        fontSize: 14, 
+        color: color.darkGray, 
+        fontWeight: '500', 
+        textAlign: 'right', 
+        flexShrink: 1 
+    },
+    priceSummary: { 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        borderTopWidth: 1, 
+        borderTopColor: color.border, 
+        paddingTop: 15, 
+        marginTop: 5 
+    },
+    priceLabel: { 
+        fontSize: 16, 
+        fontWeight: '600', 
+        color: color.darkGray 
+    },
+    priceValue: { 
+        fontSize: 16, 
+        fontWeight: 'bold', 
+        color: color.primary 
+    },
+    otpContainer: {
+        marginTop: 20,
+        alignItems: 'center',
+        padding: 15,
+        backgroundColor: '#fff8e1',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#ffecb3'
+    },
+    otpLabel: {
+        fontSize: 14,
+        color: color.darkGray,
+        fontWeight: '500',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    otpCode: {
+        fontSize: 32,
+        fontWeight: 'bold',
+        color: color.primary,
+        letterSpacing: 8,
     },
 });

@@ -412,10 +412,12 @@ bookingsRouter.post('/bookings/request-service', async (req: Request, res: Respo
 
         const nearbyProviders = [];
         for (const garage of allGaragesOfferingService) {
+            console.log(`[Geo-Check] Evaluating garage: ${garage.name} (ID: ${garage.id})`); // <-- ADDED LOG
             const garageLocation = (garage.location as any)?.coordinates;
             if (garageLocation) {
                 try {
                     const { distanceKm } = await getEtaAndDistance({ lat: userLat, lon: userLon }, { lat: garageLocation[1], lon: garageLocation[0] });
+                    console.log(`[Geo-Check] Calculated distance for ${garage.name}: ${distanceKm} km`); // <-- ADDED LOG
                     if (distanceKm !== null && distanceKm <= 30) {
                         nearbyProviders.push({ providerId: garage.id, price: garage.services.find(s => s.serviceId === serviceId)?.price || 0 });
                     }
@@ -445,7 +447,6 @@ bookingsRouter.post('/bookings/request-service', async (req: Request, res: Respo
                 expiresAt: new Date(Date.now() + SEARCH_TIMEOUT_MINUTES * 60 * 1000),
                 eligibleProviderIds: nearbyProviders.map(p => p.providerId),
                 pickupLocation: { type: 'Point', coordinates: [userLon, userLat] },
-                paymentIntentId: `temp_booking_${randomUUID()}`,
             }
         });
 
@@ -800,6 +801,8 @@ bookingsRouter.post(
                 ]
             });
 
+            console.log('[Geo-Check] Raw nearby trucks found by $geoNear:', JSON.stringify(nearbyTrucksRaw)); // <-- ADDED LOG
+
             if (!Array.isArray(nearbyTrucksRaw) || nearbyTrucksRaw.length === 0) {
                  return res.status(404).json({ reason: "No tow trucks are available in your area right now." });
             }
@@ -835,8 +838,8 @@ bookingsRouter.post(
                     finalAmount: basePrice, // This will be recalculated later
                     expiresAt: new Date(Date.now() + SEARCH_TIMEOUT_MINUTES * 60 * 1000),
                     eligibleProviderIds: eligibleProviderIds,
-                    pickupLocation: { type: 'Point', coordinates: [pickup.longitude, pickup.latitude] },
-                    destinationLocation: { type: 'Point', coordinates: [destination.longitude, destination.latitude] },
+                    pickupLocation: pickup,
+                    destinationLocation: destination,
                 }
             });
             

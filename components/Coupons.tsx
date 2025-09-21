@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, View, Text, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const { width } = Dimensions.get('window');
 const cardWidth = width * 0.8; // 80% of screen width
@@ -18,7 +18,7 @@ const HorizontalScrollView = () => {
       snapToInterval={cardWidth + 20}
       decelerationRate="fast"
       showsHorizontalScrollIndicator={false}
-      className="mb-5"
+      className="mb-1"
     >
       {data.map((item) => (
         <View key={item.id} style={styles.cardContainer}>
@@ -37,7 +37,7 @@ const HorizontalScrollView = () => {
 
 const styles = StyleSheet.create({
   cardContainer: {
-    height: 153, // 18rem
+    height: 155, // 18rem
     backgroundColor: '#fff', // slate-50
     marginHorizontal: 8, // mx-2
     marginBottom: 2,

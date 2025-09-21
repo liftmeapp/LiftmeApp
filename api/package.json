@@ -7,6 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "ts-node-dev --respawn --transpile-only index.ts",
     "dev": "nodemon index.ts",
+    "build": "prisma generate && tsc",
     "prisma:seed": "node -r ts-node/register prisma/seed.ts",
     "db:cleanup": "node -r ts-node/register ./scripts/cleanup.ts",
     "generate": "prisma generate"

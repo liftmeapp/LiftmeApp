@@ -1,6 +1,6 @@
 // context/BookingContext.tsx
 import { io } from 'socket.io-client';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import React, {
   createContext,
@@ -95,7 +95,8 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const router = useRouter();
-  const { getToken, user } = useAuth();
+  const { getToken, userId } = useAuth();
+  const { user } = useUser();
 
   const [currentStage, setCurrentStage] = useState<BookingStage>(
     BookingStage.IDLE
@@ -252,7 +253,6 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
         setCurrentBookingId(data.bookingId);
         // Polling useEffect will pick up from here
       } catch (error: any) {
-        console.error('Booking initiation error:', error);
         setSearchError(error.message || 'An error occurred during booking initiation.');
         setCurrentStage(BookingStage.ERROR);
       } finally {
@@ -260,62 +260,6 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     },
     [isBroadcasting, getToken]
-  );
-
-  const cancelBooking = useCallback(
-    async () => {
-      if (!currentBookingId) {
-        resetBookingFlow();
-        return;
-      }
-
-      Alert.alert(
-        'Cancel Booking',
-        'Are you sure you want to cancel this booking request?',
-        [
-          { text: 'No', style: 'cancel' },
-          {
-            text: 'Yes, Cancel',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                const token = await getToken();
-                if (!token) {
-                  Alert.alert('Error', 'Authentication required to cancel.');
-                  return;
-                }
-
-                const response = await fetch(
-                  `${API_BASE_URL}/api/bookings/${currentBookingId}/cancel-by-user`,
-                  {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${token}` },
-                  }
-                );
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                  throw new Error(data.error || 'Failed to cancel the booking.');
-                }
-
-                Alert.alert('Success', 'Your booking has been cancelled.');
-                resetBookingFlow(); // Reset state after successful cancellation
-                router.replace('/(root)/(tabs)/home'); // Navigate home
-
-              } catch (error: any) {
-                console.error('Cancel booking error:', error);
-                Alert.alert(
-                  'Cancellation Failed',
-                  error.message || 'An error occurred. Please try again.'
-                );
-              }
-            },
-          },
-        ]
-      );
-    },
-    [currentBookingId, getToken, resetBookingFlow, router]
   );
 
   const resetBookingFlow = useCallback(() => {
@@ -332,6 +276,78 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
       pollIntervalRef.current = null;
     }
   }, []);
+
+  const cancelBooking = useCallback(
+    async (isUserInitiated: boolean = true) => {
+      // ... existing code ...
+      try {
+        if (isUserInitiated) {
+          const userConfirmed = await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              'Cancel Booking',
+              'Are you sure you want to cancel this booking?',
+              [
+                {
+                  text: 'No',
+                  style: 'cancel',
+                  onPress: () => resolve(false),
+                },
+                {
+                  text: 'Yes, Cancel',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      const token = await getToken();
+                      const response = await fetch(
+                        `${API_BASE_URL}/bookings/${currentBookingId}/cancel`,
+                        {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`,
+                          },
+                        }
+                      );
+
+                      const data = await response.json();
+
+                      if (!response.ok) {
+                        throw new Error(data.error || 'Failed to cancel the booking.');
+                      }
+
+                      Alert.alert('Success', 'Your booking has been cancelled.');
+                      resetBookingFlow(); // Reset state after successful cancellation
+                      router.replace('/(root)/(tabs)/home'); // Navigate home
+
+                    } catch (error: any) {
+                      console.error('Cancel booking error:', error);
+                      Alert.alert(
+                        'Cancellation Failed',
+                        error.message || 'An error occurred. Please try again.'
+                      );
+                    }
+                  },
+                },
+              ]
+            );
+          });
+
+          if (!userConfirmed) return;
+        }
+
+        // If not user-initiated or user confirmed cancellation
+        resetBookingFlow();
+        router.replace('/(root)/(tabs)/home');
+      } catch (error) {
+        console.error('Error during cancellation:', error);
+        Alert.alert(
+          'Error',
+          'An error occurred while cancelling the booking. Please try again.'
+        );
+      }
+    },
+    [currentBookingId, getToken, resetBookingFlow, router]
+  );
 
   const confirmPayment = useCallback(async () => {
     if (!currentBookingId || !selectedProvider) {

@@ -35,11 +35,10 @@ export default function TabLayout() {
         tabBarPosition: 'bottom',
         tabBarStyle: {
           backgroundColor: "#ededed",
-          borderTopWidth: 1,
-          borderTopColor: '#707070',
+          borderTopColor: '#fff',
           height: 85,
           paddingBottom: 20,
-          paddingTop: 20,
+          paddingTop: 10,
         },
       }}
     >

@@ -31,6 +31,8 @@
     HATCHBACK
     SUV
     BIKE
+    LUXURY
+    TRUCK
   }
 
   enum VerificationStatus {
@@ -147,7 +149,7 @@
     reviewCount       Int?     @default(0)
     isOpen            Boolean  @default(true)
     operatingHours    Json?
-    stripeAccountId   String?  @unique
+    stripeAccountId   String?
     location          Json
     
     createdAt         DateTime @default(now())
@@ -202,7 +204,7 @@
     services      TowTruckService[] // Correctly points to the single TowTruckService model
     bookings      Booking[]
     liveLocation  LiveTruckLocation?
-    stripeAccountId String?  @unique
+    stripeAccountId String?
 
     @@map("tow_trucks")
   }
@@ -275,7 +277,7 @@
     discountAmount  Float?        @default(0)
     finalAmount     Float
     paymentStatus   String        @default("pending")
-    paymentIntentId String?       @unique
+    paymentIntentId String?
     userRating      Int?
     userReview      String?
     providerRating  Int?

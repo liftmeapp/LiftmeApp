@@ -30,6 +30,8 @@ export default function Index() {
     <SafeAreaView className="bg-white">
       <View className="h-[100%]">
       <FlatList
+        data={dummyData}
+        keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         renderItem={null}
         ListHeaderComponent={() => (

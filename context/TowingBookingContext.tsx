@@ -1,5 +1,5 @@
 // context/TowingBookingContext.tsx
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth, useUser } from '@clerk/clerk-expo';
 import { router } from 'expo-router';
 import React, {
   createContext,
@@ -10,6 +10,7 @@ import React, {
   useState,
 } from 'react';
 import { Alert } from 'react-native';
+import { io } from 'socket.io-client';
 
 // --- Enums and Interfaces ---
 
@@ -18,6 +19,7 @@ export enum TowingBookingStage {
   DESTINATION_SELECTION = 'destination',
   VEHICLE_SELECTION = 'vehicle',
   SEARCHING_FOR_PROVIDER = 'searching',
+  PAYMENT = 'payment',
   CONFIRMED = 'confirmed',
   CANCELLED = 'cancelled',
   ERROR = 'error',
@@ -50,6 +52,7 @@ export interface TowingBookingState {
   pickupLocation: TowingLocationState | null;
   destinationLocation: TowingLocationState | null;
   isBroadcasting: boolean;
+  isConfirmingPayment: boolean;
   vehicles: any[]; // List of user's vehicles
   isInitialLoading: boolean; // For initial vehicle fetch
 }
@@ -63,6 +66,7 @@ export interface TowingBookingContextType extends TowingBookingState {
   startTowingBooking: () => Promise<void>;
   cancelTowingBooking: () => Promise<void>;
   resetTowingBookingFlow: () => void;
+  confirmPayment: () => Promise<void>;
   setSearchError: (error: string | null) => void;
   setConfirmedProvider: (provider: TowingProviderInfo | null) => void;
   setBookingId: (id: string | null) => void;
@@ -85,7 +89,8 @@ const SEARCH_DURATION_SECONDS = 300; // 5 minutes (new constant)
 export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { getToken, isSignedIn } = useAuth();
+  const { getToken, isSignedIn, userId } = useAuth();
+  const { user } = useUser();
 
   const [currentStage, setCurrentStage] = useState<TowingBookingStage>(
     TowingBookingStage.PICKUP_SELECTION
@@ -105,6 +110,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     TowingLocationState | null
   >(null);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
@@ -138,7 +144,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [isSignedIn, fetchUserVehicles]); 
 
-  // --- Polling Logic ---
+  // --- Polling and Real-time Logic ---
   useEffect(() => {
     const clearPolling = () => {
       if (pollIntervalRef.current) {
@@ -146,6 +152,32 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
         pollIntervalRef.current = null;
       }
     };
+
+    // WebSocket connection
+    const socket = io(API_BASE_URL!, {
+        reconnection: true,
+        transports: ['websocket'],
+    });
+
+    socket.on('connect', () => {
+        console.log('[Socket.IO] Customer connected with ID:', socket.id);
+        if (user?.id) {
+            socket.emit('register_customer', user.id);
+        }
+    });
+
+    socket.on('booking_accepted', (data) => {
+        console.log('🎉 [Socket.IO] Received booking_accepted:', data);
+        if (data.bookingId === currentBookingId) {
+            clearPolling(); // Stop polling since we have a definitive answer
+            setConfirmedProvider(data.provider);
+            setCurrentStage(TowingBookingStage.PAYMENT);
+        }
+    });
+
+    socket.on('disconnect', (reason) => {
+        console.log('[Socket.IO] Customer disconnected:', reason);
+    });
 
     const pollStatus = async () => {
       if (!currentBookingId) {
@@ -176,11 +208,15 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         if (!response.ok) {
+          // This could be the ngrok rate limit error page
+          const errorText = await response.text();
+          try {
+            const errorData = JSON.parse(errorText);
+            setSearchError(errorData.error || 'A server error occurred during polling.');
+          } catch (e) {
+            setSearchError('An unreadable server error occurred during polling.');
+          }
           clearPolling();
-          const errorData = await response.json();
-          setSearchError(
-            errorData.error || 'A server error occurred during polling.'
-          );
           setCurrentStage(TowingBookingStage.ERROR);
           return;
         }
@@ -196,7 +232,6 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
           setSearchError('No tow trucks were available to accept your request.');
           setCurrentStage(TowingBookingStage.CANCELLED);
         }
-        // If status is 'SEARCHING', it will continue polling due to setInterval
       } catch (error: any) {
         console.error('Polling error:', error);
         clearPolling();
@@ -210,15 +245,18 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
       currentBookingId &&
       !searchError
     ) {
-      // Start polling immediately and then every 5 seconds
+      // Using polling as a fallback
       pollStatus();
-      pollIntervalRef.current = setInterval(pollStatus, 5000);
+      pollIntervalRef.current = setInterval(pollStatus, 15000); // Increased interval to 15s
     } else {
       clearPolling();
     }
 
-    return clearPolling; // Cleanup on unmount or stage change
-  }, [currentStage, currentBookingId, searchError]);
+    return () => {
+        clearPolling();
+        socket.disconnect();
+    };
+  }, [currentStage, currentBookingId, searchError, isSignedIn, user]);
 
   // Countdown Timer Effect
   useEffect(() => {
@@ -281,16 +319,19 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
       const payload = { vehicleId: selectedVehicle.id, vehicleType: selectedVehicle.type, pickup: pickupLocation, destination: destinationLocation };
       const response = await fetch(`${API_BASE_URL}/api/bookings/request-towing`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
       const data = await response.json();
-      if (!response.ok) { throw new Error(data.reason || data.error || 'Failed to start the towing request.'); }
+      if (!response.ok) {
+        // This will catch errors like "No providers found" and set them in the state
+        throw new Error(data.reason || data.error || 'Failed to start the towing request.');
+      }
       setBookingId(data.bookingId);
-      setEligibleTruckCount(data.eligibleTruckCount || 0); // Set eligible truck count
+      setEligibleTruckCount(data.eligibleTruckCount || 0);
     } catch (error: any) {
       setSearchError(error.message || 'An error occurred during towing initiation.');
       setCurrentStage(TowingBookingStage.ERROR);
     } finally {
       setIsBroadcasting(false);
     }
-  }, [isBroadcasting, selectedVehicle, pickupLocation, destinationLocation]); // <-- getToken is removed
+  }, [isBroadcasting, selectedVehicle, pickupLocation, destinationLocation, getToken]);
 
   const cancelTowingBooking = useCallback(async () => {
     if (!currentBookingId) {
@@ -319,6 +360,48 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     ]);
   }, [currentBookingId, resetTowingBookingFlow, router]);
 
+  const confirmPayment = useCallback(async () => {
+    if (!currentBookingId || !selectedProvider) {
+      Alert.alert('Error', 'No active booking or provider to confirm payment.');
+      return;
+    }
+    setIsConfirmingPayment(true);
+    try {
+        const token = await getToken();
+        if (!token) throw new Error("Authentication failed.");
+
+        const intentResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/create-payment-intent`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        const intentData = await intentResponse.json();
+        if (!intentResponse.ok) {
+            throw new Error(intentData.error || "Failed to create payment intent.");
+        }
+
+        console.log("Simulating payment sheet completion for client secret:", intentData.clientSecret);
+
+        const confirmResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/confirm-payment`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const confirmData = await confirmResponse.json();
+        if (!confirmResponse.ok) {
+            throw new Error(confirmData.error || "Failed to confirm payment.");
+        }
+
+        setConfirmedProvider(prev => ({ ...prev, otp: confirmData.booking.otp }));
+        setCurrentStage(TowingBookingStage.CONFIRMED);
+
+    } catch (error: any) {
+        Alert.alert('Payment Failed', error.message);
+    } finally {
+        setIsConfirmingPayment(false);
+    }
+  }, [currentBookingId, selectedProvider, getToken]);
+
   const contextValue = {
     currentStage,
     currentBookingId,
@@ -330,6 +413,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     pickupLocation,
     destinationLocation,
     isBroadcasting,
+    isConfirmingPayment,
     vehicles,
     isInitialLoading,
     setCurrentStage,
@@ -339,6 +423,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     startTowingBooking,
     cancelTowingBooking,
     resetTowingBookingFlow,
+    confirmPayment,
     setSearchError,
     setConfirmedProvider,
     setBookingId,

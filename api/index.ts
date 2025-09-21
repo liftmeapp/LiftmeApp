@@ -3,37 +3,28 @@ import { ClerkExpressWithAuth } from '@clerk/clerk-sdk-node';
 import { Client } from '@googlemaps/google-maps-services-js';
 import { PrismaClient, Role } from '@prisma/client';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
 import { createServer } from 'http';
-import { attachSocketServer } from './socket';
 import adminRouter from './admin';
 import bookingsRouter from './bookings';
+import { attachSocketServer } from './socket';
 
 const prisma = new PrismaClient();
-
 const app = express();
 const httpServer = createServer(app);
 attachSocketServer(httpServer); // Attach the socket server
-
-
 app.use(cors());
-
 const CLERK_WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
 if (!CLERK_WEBHOOK_SECRET) {
     throw new Error("Please add CLERK_WEBHOOK_SECRET from Clerk Dashboard to your .env file in the /api directory");
 }
-
 //Google Map setups
-
 const googleMapsClient = new Client();
 
 // ===================================================================
 //  WEBHOOKS (MUST BE DEFINED BEFORE express.json())
 // ===================================================================
-
-
 app.post(
     '/api/clerk-webhook',
     express.raw({ type: 'application/json' }),
@@ -333,7 +324,9 @@ app.post(
         if (!ownerId) {
             return res.status(401).json({ error: 'Unauthorized: No user ID in token.' });
         }
-        const { name, licenseNumber, address, ownerName, numberOfEmployees, contactEmail, contactPhone, operatingHours, stripeAccountId, location, services } = req.body;
+        const { details, services, location } = req.body;
+        const { name, licenseNumber, address, ownerName, numberOfEmployees, contactEmail, contactPhone, operatingHours, stripeAccountId } = details;
+
         if (!name || !licenseNumber || !location || !services || !stripeAccountId) {
             return res.status(400).json({ error: 'Missing required fields.' });
         }
@@ -350,7 +343,7 @@ app.post(
                 contactEmail: contactEmail || null,
                 contactPhone: contactPhone || null,
                 operatingHours: operatingHours && typeof operatingHours === 'object' ? operatingHours : {},
-                numberOfEmployees: Number.isInteger(numberOfEmployees) ? numberOfEmployees : 0,
+                numberOfEmployees: parseInt(String(numberOfEmployees), 10) || 0,
                 owner: { connect: { id: user.id } },
                 services: {
                     create: services.map((service: { serviceId: string; price: number }) => ({
@@ -391,12 +384,30 @@ app.get(
         try {
             const garage = await prisma.garage.findUnique({
                 where: { id: garageId },
-                include: { services: { include: { service: true } } },
+                select: { // Explicitly select fields
+                    id: true,
+                    name: true,
+                    address: true,
+                    ownerName: true,
+                    licenseNumber: true,
+                    contactPhone: true,
+                    contactEmail: true,
+                    numberOfEmployees: true,
+                    operatingHours: true,
+                    stripeAccountId: true,
+                    location: true, // Keep location for editing purposes
+                    services: {
+                        include: {
+                            service: true // Include service details for each garage service
+                        }
+                    },
+                },
             });
             if (!garage) return res.status(404).json({ error: 'Garage not found.' });
             return res.status(200).json(garage);
-        } catch (error) {
-            return res.status(500).json({ error: 'Failed to fetch garage details.' });
+        } catch (error: any) { // Add type to error for better logging
+            console.error("Failed to fetch garage details:", error); // More specific logging
+            return res.status(500).json({ error: 'Failed to fetch garage details.', details: error.message }); // Include error message
         }
     }
 );

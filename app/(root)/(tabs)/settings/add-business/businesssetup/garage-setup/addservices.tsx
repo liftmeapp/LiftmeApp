@@ -1,16 +1,23 @@
 // /app/(root)/(tabs)/settings/add-business/businesssetup/garage-setup/add-services.tsx
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet,
-  Switch, SafeAreaView, Platform, LayoutAnimation, Alert, ActivityIndicator, UIManager,
-} from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-import { useGarageStore } from '@/store/garageStore';
-import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@clerk/clerk-expo';
-import { LinearGradient } from 'expo-linear-gradient';
 import RotatingLoader from '@/components/RotatingLoader';
+import { useGarageStore } from '@/store/garageStore';
+import { useAuth } from '@clerk/clerk-expo';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Stack, useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  LayoutAnimation,
+  Platform,
+  SafeAreaView,
+  ScrollView, StyleSheet,
+  Switch,
+  Text, TextInput, TouchableOpacity,
+  UIManager,
+  View
+} from 'react-native';
 
 
 // --- CONFIGURATION ---

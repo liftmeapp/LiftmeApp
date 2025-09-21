@@ -42,8 +42,6 @@ useEffect(() => {
     setIsLoading(true);
     try {
       const token = await getToken();
-      console.log('🔑 Token exists:', !!token);
-      console.log('🔑 Token preview:', token?.substring(0, 20) + '...');
       
       if (!token) {
         console.log('❌ No token available');
@@ -56,18 +54,12 @@ useEffect(() => {
           'Content-Type': 'application/json'
         },
       });
-
-      console.log('📡 Response status:', response.status);
-      console.log('📡 Response headers:', response.headers);
-      
       if (!response.ok) {
         const errorBody = await response.text();
         console.error(`❌ API Error: Status ${response.status}, Body: ${errorBody}`);
         throw new Error(`Failed to fetch roles: ${response.status}`);
       }
-
       const data = await response.json();
-      console.log('✅ Roles fetched:', data.roles);
       setUserRoles(data.roles || []);
     } catch (error) {
       console.error('💥 Fetch roles error:', error);

@@ -86,7 +86,7 @@ export default function LocationPickerScreen() {
     }
     
     setIsSubmitting(true);
-    // We no longer need to call setLocation here, as the location data is part of the payload.
+    setLocation({ latitude: currentRegion.latitude, longitude: currentRegion.longitude });
 
     const payload = {
         details: details, // Send details as a nested object
