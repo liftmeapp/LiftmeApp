@@ -1,6 +1,6 @@
 
 import { io, providerSockets, customerSockets } from './socket';
-import { ClerkExpressWithAuth } from '@clerk/clerk-sdk-node';
+import { ClerkExpressWithAuth, clerkClient } from '@clerk/clerk-sdk-node';
 
 import { Client } from '@googlemaps/google-maps-services-js';
 import { BookingStatus } from '@prisma/client';
@@ -512,7 +512,10 @@ bookingsRouter.get('/bookings/:id/status', async(req: Request, res: Response) =>
             booking = await prisma.booking.update({
                 where: { id: booking.id },
                 data: { status: BookingStatus.CANCELLED },
-                include: { garage: { select: { id: true, name: true, rating: true, address: true, location: true } } }
+                include: {
+                    garage: { select: { id: true, name: true, rating: true, address: true, location: true } },
+                    towTruck: { select: { id: true, name: true, model: true, make: true, liveLocation: true } },
+                }
             });
             // TODO: Notify garage that the user failed to pay in time.
         }
@@ -521,7 +524,10 @@ bookingsRouter.get('/bookings/:id/status', async(req: Request, res: Response) =>
             booking = await prisma.booking.update({
                 where: { id: booking.id },
                 data: { status: BookingStatus.EXPIRED },
-                include: { garage: { select: { id: true, name: true, rating: true, address: true, location: true } } }
+                include: {
+                    garage: { select: { id: true, name: true, rating: true, address: true, location: true } },
+                    towTruck: { select: { id: true, name: true, model: true, make: true, liveLocation: true } },
+                }
             });
         }
         
@@ -884,9 +890,168 @@ bookingsRouter.post(
 
         } catch (error: any) {
             console.error("🔴 [API] CRITICAL ERROR in /request-towing:", error);
-            return res.status(500).json({ reason: 'An internal server error occurred.', details: error.message });
-        }
+        return res.status(500).json({ reason: 'An internal server error occurred.', details: error.message });
     }
-);
+});
+
+
+bookingsRouter.get('/stripe/payment-methods', async (req: Request, res: Response) => {
+    const customerClerkId = req.auth.userId;
+    if (!customerClerkId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    try {
+        const user = await prisma.user.findUnique({
+            where: { clerkId: customerClerkId },
+        });
+
+        if (!user || !user.stripeCustomerId) {
+            return res.status(200).json([]);
+        }
+
+        const paymentMethods = await stripe.paymentMethods.list({
+            customer: user.stripeCustomerId,
+            type: 'card',
+        });
+
+        const savedCards = paymentMethods.data.map(pm => ({
+            id: pm.id,
+            brand: pm.card?.brand,
+            last4: pm.card?.last4,
+            exp_month: pm.card?.exp_month,
+            exp_year: pm.card?.exp_year,
+        }));
+
+        return res.status(200).json(savedCards);
+
+    } catch (error: any) {
+        console.error("🔴 [API] Error fetching payment methods:", error);
+        return res.status(500).json({ error: 'Failed to retrieve payment methods.' });
+    }
+});
+
+bookingsRouter.post('/stripe/create-setup-intent', async (req: Request, res: Response) => {
+    const customerClerkId = req.auth.userId;
+    if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const user = await prisma.user.findUnique({ where: { clerkId: customerClerkId } });
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+
+        let stripeCustomerId = user.stripeCustomerId;
+        if (!stripeCustomerId) {
+            const customer = await stripe.customers.create({
+                email: user.email,
+                name: `${user.firstName} ${user.lastName || ''}`,
+                phone: user.phone,
+            });
+            stripeCustomerId = customer.id;
+            await prisma.user.update({
+                where: { clerkId: customerClerkId },
+                data: { stripeCustomerId: stripeCustomerId },
+            });
+        }
+
+        const setupIntent = await stripe.setupIntents.create({
+            customer: stripeCustomerId,
+            payment_method_types: ['card'],
+            usage: 'on_session',
+        });
+
+        return res.status(200).json({ clientSecret: setupIntent.client_secret });
+
+    } catch (error: any) {
+        console.error("🔴 [API] Error creating setup intent:", error);
+        return res.status(500).json({ error: 'Could not prepare to save card.' });
+    }
+});
+
+bookingsRouter.post('/stripe/detach-payment-method', async (req: Request, res: Response) => {
+    const { paymentMethodId } = req.body;
+    const customerClerkId = req.auth.userId;
+
+    if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!paymentMethodId) return res.status(400).json({ error: 'paymentMethodId is required.' });
+
+    try {
+        const detachedPaymentMethod = await stripe.paymentMethods.detach(paymentMethodId);
+        return res.status(200).json({ success: true, id: detachedPaymentMethod.id });
+    } catch (error: any) {
+        console.error("🔴 [API] Error detaching payment method:", error);
+        return res.status(500).json({ error: 'Failed to detach payment method.' });
+    }
+});
+
+bookingsRouter.post('/stripe/create-connect-account', async (req: Request, res: Response) => {
+    const ownerClerkId = req.auth.userId;
+    const { businessType, businessId } = req.body;
+
+    if (!ownerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!businessType || !businessId) return res.status(400).json({ error: 'businessType and businessId are required.' });
+    if (businessType !== 'garage' && businessType !== 'tow-truck') return res.status(400).json({ error: 'Invalid businessType.' });
+
+    try {
+        let user = await prisma.user.findUnique({
+            where: { clerkId: ownerClerkId },
+            include: { garage: true, towTruck: true },
+        });
+
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+
+        if (!user.email || !user.email.trim() || user.email.endsWith('@placeholder.email')) {
+            console.log(`[StripeConnect] User ${user.id} has invalid email: "${user.email}". Fetching from Clerk...`);
+            const clerkUser = await clerkClient.users.getUser(ownerClerkId);
+            const primaryEmailObject = clerkUser.emailAddresses.find(e => e.id === clerkUser.primaryEmailAddressId);
+            const primaryEmail = primaryEmailObject?.emailAddress;
+
+            if (primaryEmail && primaryEmail.trim()) {
+                console.log(`[StripeConnect] Found primary email on Clerk: "${primaryEmail}". Updating local DB.`);
+                user = await prisma.user.update({
+                    where: { id: user.id },
+                    data: { email: primaryEmail },
+                    include: { garage: true, towTruck: true }, // Re-include relations
+                });
+            } else {
+                console.error(`[StripeConnect] Could not find a valid email for user ${user.id} on Clerk.`);
+                return res.status(400).json({ error: 'A valid email is required to create a Stripe account, but none was found for your profile.' });
+            }
+        }
+
+        const business = businessType === 'garage' ? user.garage : user.towTruck;
+        if (!business || business.id !== businessId) return res.status(403).json({ error: 'User does not own this business.' });
+
+        let accountId = business.stripeAccountId;
+        if (!accountId) {
+            const account = await stripe.accounts.create({
+                type: 'express',
+                country: 'IN',
+                email: user.email,
+                business_type: 'individual',
+            });
+            accountId = account.id;
+
+            if (businessType === 'garage') {
+                await prisma.garage.update({ where: { id: businessId }, data: { stripeAccountId: accountId } });
+            } else {
+                await prisma.towTruck.update({ where: { id: businessId }, data: { stripeAccountId: accountId } });
+            }
+        }
+
+        const accountLink = await stripe.accountLinks.create({
+            account: accountId,
+            // TODO: Replace these placeholder URLs with your actual frontend URLs
+            refresh_url: `http://localhost:8081/settings/payments?reauth=true`,
+            return_url: `http://localhost:8081/settings/payments?stripe_return=true`,
+            type: 'account_onboarding',
+        });
+
+        return res.status(200).json({ url: accountLink.url });
+
+    } catch (error: any) {
+        console.error("🔴 [API] Error creating Stripe connect account:", error);
+        return res.status(500).json({ error: 'Failed to create Stripe connection.' });
+    }
+});
 
 export default bookingsRouter;

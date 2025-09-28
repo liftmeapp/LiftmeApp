@@ -1,5 +1,5 @@
 // /api/index.ts
-import { ClerkExpressWithAuth } from '@clerk/clerk-sdk-node';
+import { ClerkExpressWithAuth, clerkClient } from '@clerk/clerk-sdk-node';
 import { Client } from '@googlemaps/google-maps-services-js';
 import { PrismaClient, Role } from '@prisma/client';
 import cors from 'cors';
@@ -63,7 +63,7 @@ app.post(
             console.log("Processing 'user.created' event...");
             console.log("Webhook payload (evt.data):", JSON.stringify(evt.data, null, 2));
 
-            const { id, first_name, last_name, phone_numbers, email_addresses, unsafe_metadata } = evt.data;
+            const { id, first_name, last_name, phone_numbers, email_addresses, unsafe_metadata, primary_email_address_id } = evt.data;
 
             if (!id) {
                 console.error('🔴 Error: Clerk user ID is missing from payload.');
@@ -73,13 +73,15 @@ app.post(
 
             // --- THIS IS THE CRITICAL LOGIC CORRECTION ---
             const primaryPhoneNumber = phone_numbers?.[0]?.phone_number;
-            const primaryEmail = email_addresses?.[0]?.email_address;
+            const primaryEmailObject = email_addresses?.find((email: any) => email.id === primary_email_address_id);
+            const primaryEmail = primaryEmailObject?.email_address;
+
 
             // Prepare the data for Prisma, ensuring no required fields are null/undefined
             const userDataForDb = {
                 clerkId: id,
                 // Fallback to a placeholder if email is missing. Your schema requires it.
-                email: primaryEmail || `user_${id}@placeholder.email`,
+                email: primaryEmail || (email_addresses?.[0]?.email_address) || `user_${id}@placeholder.email`,
                 firstName: first_name || (unsafe_metadata?.firstName as string) || 'New',
                 lastName: last_name || (unsafe_metadata?.lastName as string) || 'User',
                 // Fallback for phone. Your schema requires it.
@@ -624,7 +626,7 @@ app.post(
     async (req: Request, res: Response) => {
         const ownerId = req.auth.userId;
         if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
-        const { name, driverName, model, make, year, plateNumber, licenseNumber, location, services } = req.body;
+        const { name, driverName, contactEmail, model, make, year, plateNumber, licenseNumber, location, services } = req.body;
         if (!name || !plateNumber || !location || !services || services.length === 0) {
             return res.status(400).json({ error: 'Missing required fields.' });
         }
@@ -633,7 +635,7 @@ app.post(
             if (!user) return res.status(404).json({ error: 'User profile not found.' });
             const newTowTruck = await prisma.towTruck.create({
                 data: {
-                    name, driverName, model, make, licenseNumber, plateNumber,
+                    name, driverName, contactEmail, model, make, licenseNumber, plateNumber,
                     year: parseInt(String(year), 10),
                     owner: { connect: { id: user.id } },
                     services: {
@@ -741,7 +743,7 @@ app.put(
             const updatedTruck = await prisma.towTruck.update({
                 where: { id: truckId },
                 data: {
-                    name: details.name, driverName: details.driverName, model: details.model, make: details.make,
+                    name: details.name, driverName: details.driverName, contactEmail: details.contactEmail, model: details.model, make: details.make,
                     year: parseInt(String(details.year), 10),
                     plateNumber: details.plateNumber, licenseNumber: details.licenseNumber,
                     services: {
@@ -781,6 +783,40 @@ app.delete(
         } catch (error) {
             console.error("Failed to delete tow truck:", error);
             return res.status(500).json({ error: 'Failed to delete tow truck.' });
+        }
+    }
+);
+
+app.put(
+    '/api/users/me',
+    ClerkExpressWithAuth(),
+    async (req: Request, res: Response) => {
+        const clerkId = req.auth.userId;
+        if (!clerkId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const { firstName, lastName } = req.body;
+
+        try {
+            const updatedUser = await clerkClient.users.updateUser(clerkId, {
+                firstName,
+                lastName,
+            });
+
+            // Also update our local database
+            await prisma.user.update({
+                where: { clerkId },
+                data: {
+                    firstName: updatedUser.firstName || undefined,
+                    lastName: updatedUser.lastName || undefined,
+                }
+            });
+
+            return res.status(200).json(updatedUser);
+        } catch (error: any) {
+            console.error("Failed to update user:", error);
+            return res.status(500).json({ error: 'Failed to update user profile.' });
         }
     }
 );

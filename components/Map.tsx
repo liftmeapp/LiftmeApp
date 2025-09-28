@@ -425,9 +425,9 @@ export default function Map({ isPinningLocation, onPinLocationChange, onMapReady
                 rotateEnabled={!isPinningLocation}
             >
                 <>
-                    {garages.filter(g => g.location?.coordinates).map((g) => 
+                    {garages.filter(g => g.location?.coordinates).map((g, index) => 
                         <CustomMapMarker 
-                            key={`g-${g._id}`} 
+                            key={`g-${g.id}-${index}`} 
                             coordinate={{
                                 latitude: g.location.coordinates[1], 
                                 longitude: g.location.coordinates[0]
@@ -436,9 +436,9 @@ export default function Map({ isPinningLocation, onPinLocationChange, onMapReady
                             type="garage" 
                         />
                     )}
-                    {towTrucks.filter(t => t.location?.coordinates).map(t => 
+                    {towTrucks.filter(t => t.location?.coordinates).map((t, index) => 
                         <CustomMapMarker 
-                            key={`t-${t._id}`} 
+                            key={`t-${t.id}-${index}`} 
                             coordinate={{
                                 latitude: t.location.coordinates[1], 
                                 longitude: t.location.coordinates[0]

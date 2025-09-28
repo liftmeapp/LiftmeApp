@@ -35,6 +35,7 @@ export default function TowTruckSignupScreen() {
   // State for all the text inputs and pickers
   const [name, setName] = useState('');
   const [driverName, setDriverName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
   const [model, setModel] = useState('');
   const [year, setYear] = useState('');
   const [make, setMake] = useState('');
@@ -101,6 +102,7 @@ export default function TowTruckSignupScreen() {
     setDetails({
         name: name.trim(),
         driverName: driverName.trim(),
+        contactEmail: contactEmail.trim(),
         model,
         make,
         year: parseInt(year, 10),
@@ -124,6 +126,7 @@ export default function TowTruckSignupScreen() {
 
           <TextInput style={styles.input} placeholder="Business or Truck Name *" value={name} onChangeText={setName} />
           <TextInput style={styles.input} placeholder="Primary Driver's Name *" value={driverName} onChangeText={setDriverName} />
+          <TextInput style={styles.input} placeholder="Contact Email (optional)" value={contactEmail} onChangeText={setContactEmail} keyboardType="email-address" autoCapitalize="none" />
           <TextInput style={styles.input} placeholder="Vehicle Plate Number *" value={plateNumber} onChangeText={text => setPlateNumber(text.toUpperCase())} autoCapitalize="characters" />
           <TextInput style={styles.input} placeholder="Official License No *" value={licenseNumber} onChangeText={setLicenseNumber} />
 

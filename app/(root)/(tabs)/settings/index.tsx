@@ -68,11 +68,9 @@ useEffect(() => {
       setIsLoading(false);
     }
   };
-
   fetchRoles();
-}, [isSignedIn]);// <--- The dependency array is crucial to break the loop
+}, [isSignedIn]);
 
-  
   // Logout handler with a confirmation dialog
   const handleSignOut = () => {
     Alert.alert(
@@ -97,9 +95,10 @@ useEffect(() => {
   };
 
   const settingsOptions = [
-    { icon: 'cog-outline', label: 'Settings' },
+    { icon: 'cog-outline', label: 'User-Settings', link: '/settings/usersettings' },
     { icon: 'domain', label: 'Your Business Profile', subtitle: 'Set up your Lift-Me business profile', link: "/settings/add-business/businesssetup/businesspage" },
     { icon: 'car-outline', label: 'Manage Vehicles', link: '/settings/vehicle-page/vehicle-board' },
+    { icon: 'wallet-outline', label: 'Manage Payment Methods', link: '/settings/payments' },
     { icon: 'car-outline', label: 'Premium Account', subtitle: 'Get more features ', link: "/settings/premium" },
     { icon: 'umbrella-outline', label: 'Rider insurance', subtitle: '₹10L cover for ₹3/trip' },
     { icon: 'logout', label: 'Logout' },

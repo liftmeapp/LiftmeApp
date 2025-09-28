@@ -22,10 +22,10 @@ export default function SettingsStackLayout() {
   return (
     <Stack>
       <Stack.Screen name="index" options={{ headerShown: false }} />
-       <Stack.Screen name="vehicle-page/add-vehicle" options={{ headerShown: false }} />
-       <Stack.Screen name="vehicle-page/vehicle-board" options={{ headerShown: false }} />
-       <Stack.Screen name="add-business/businesssetup/businesspage" options={{ headerShown: false }} />
+       <Stack.Screen name="vehicle-page" options={{ headerShown: false }} />
+       <Stack.Screen name="add-business" options={{ headerShown: false }} />
        <Stack.Screen name="premium" options={{ headerShown: false }} />
+       <Stack.Screen name="payments" options={{ headerShown: false }} />
        {/* The admin dashboard is in a different layout group `(admin)`, so it should not be listed here. */}
     </Stack>
   );

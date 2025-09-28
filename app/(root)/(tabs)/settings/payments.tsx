@@ -1,11 +1,11 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, FlatList, Linking } from 'react-native';
+import RotatingLoader from '@/components/RotatingLoader';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
 import { CardField, useConfirmSetupIntent } from '@stripe/stripe-react-native';
-import RotatingLoader from '@/components/RotatingLoader';
+import { useFocusEffect } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
+import React, { useCallback, useState } from 'react';
+import { Alert, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -39,7 +39,7 @@ const StripeConnectCard = ({ business, businessType }: { business: any, business
         } finally {
             setIsLoading(false);
         }
-    }, [getToken, business.id, apiPath]);
+    }, [ business.id, apiPath]);
     
     useFocusEffect(useCallback(() => { fetchDetailedBusiness(); }, [fetchDetailedBusiness]));
     
@@ -172,17 +172,30 @@ export default function PaymentSettingsScreen() {
                 fetch(`${API_BASE_URL}/api/stripe/payment-methods`, { headers: { 'Authorization': `Bearer ${token}` } })
             ]);
             
-            if (!businessRes.ok || !cardsRes.ok) throw new Error("Could not load data.");
+            // Process business response
+            if (businessRes.status === 404) {
+                setUserBusiness(null); // User has no business, which is a valid state
+            } else if (businessRes.ok) {
+                setUserBusiness(await businessRes.json());
+            } else {
+                // Any other error for business is a problem
+                throw new Error("Could not load your business information.");
+            }
 
-            setUserBusiness(await businessRes.json());
-            setSavedCards(await cardsRes.json());
+            // Process cards response
+            if (cardsRes.ok) {
+                setSavedCards(await cardsRes.json());
+            } else {
+                // Any error for cards is a problem
+                throw new Error("Could not load your saved payment methods.");
+            }
 
         } catch (error: any) {
             Alert.alert("Error", error.message);
         } finally {
             setLoading(false);
         }
-    }, [getToken]);
+    }, []);
 
     useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
