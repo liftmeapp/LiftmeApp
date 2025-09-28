@@ -26,7 +26,6 @@ export default function SettingsStackLayout() {
        <Stack.Screen name="add-business" options={{ headerShown: false }} />
        <Stack.Screen name="premium" options={{ headerShown: false }} />
        <Stack.Screen name="payments" options={{ headerShown: false }} />
-       {/* The admin dashboard is in a different layout group `(admin)`, so it should not be listed here. */}
     </Stack>
   );
 }

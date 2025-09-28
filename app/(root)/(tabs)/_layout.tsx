@@ -1,26 +1,36 @@
-// app/(tabs)/_layout.tsx
 import { icons } from "@/constants";
 import { Tabs } from "expo-router";
 import React from 'react';
 import { Image, ImageSourcePropType, View } from "react-native";
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const TabIcon = ({
   source,
+  iconName ='help-circle',
   focused,
 }: {
-  source: ImageSourcePropType;
+  source?: ImageSourcePropType;
+  iconName?: string;
   focused: boolean;
 }) => (
   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-    <Image
-      source={source}
-      resizeMode="contain"
-      style={{
-        width: 28,
-        height: 28,
-        tintColor: focused ? 'black' : '#7b381a',
-      }}
-    />
+    {source ? (
+      <Image
+        source={source}
+        resizeMode="contain"
+        style={{
+          width: 28,
+          height: 28,
+          tintColor: focused ? 'black' : '#7b381a',
+        }}
+      />
+    ) : (
+      <Icon
+        name={iconName}
+        size={28}
+        color={focused ? 'black' : '#7b381a'}
+      />
+    )}
   </View>
 );
 
@@ -70,6 +80,16 @@ export default function TabLayout() {
         }}
       />
 
+      <Tabs.Screen
+        name="orders"
+        options={{
+          title: "Orders",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon source={icons.list} focused={focused} />
+          ),
+        }}
+      />
+
       {/* --- THIS IS THE CORRECT WAY TO CONFIGURE A GROUPED TAB --- */}
       {/* The `name` points to the DIRECTORY. */}
       {/* All screens inside `app/(tabs)/settings` will now belong to this tab. */}
@@ -78,7 +98,7 @@ export default function TabLayout() {
         options={{
           title: "Settings", // This is the title for the tab
           tabBarIcon: ({ focused }) => (
-            <TabIcon source={icons.list} focused={focused} />
+            <TabIcon iconName="cog-outline" focused={focused} />
           ),
         }}
       />
