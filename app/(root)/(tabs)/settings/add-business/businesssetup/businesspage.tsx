@@ -1,11 +1,11 @@
 //app/(root)/(tabs)/settings/add-business/businesssetup/businesspage.tsx
-import React, { useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
-import { useRouter, useFocusEffect, usePathname } from "expo-router";
+import RotatingLoader from '@/components/RotatingLoader';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useRef, useState } from 'react';
+import { Alert, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ScrollView } from 'react-native-gesture-handler';
-import RotatingLoader from '@/components/RotatingLoader';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -76,7 +76,12 @@ export default function ServicesHome() {
             const token = await getToken();
             if (!token) throw new Error("Not authenticated");
             const response = await fetch(`${API_BASE_URL}/api/users/my-business`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                }
             });
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
@@ -91,7 +96,7 @@ export default function ServicesHome() {
             setInitialLoading(false);
             setRefreshing(false);
         }
-    }, [getToken]);
+    }, []);
 
     // useFocusEffect will re-fetch data every time the screen comes into view
     useFocusEffect(
@@ -150,7 +155,14 @@ export default function ServicesHome() {
             case 'REJECTED':
                 Alert.alert(
                     "Application Rejected",
-                    `Your garage application was rejected for the following reason: ${garage.rejectionReason || 'No reason provided.'}`
+                    `Your garage application was rejected for the following reason: ${garage.rejectionReason || 'No reason provided.'}`, 
+                    [
+                        { text: "OK", style: "cancel" },
+                        { text: "Re-apply", onPress: () => router.push({
+                            pathname: '/settings/add-business/businesssetup/edit-garage/edit-details',
+                            params: { garageId: garage.id }
+                        } as any) }
+                    ]
                 );
                 break;
             default:
@@ -178,7 +190,14 @@ export default function ServicesHome() {
             case 'REJECTED':
                 Alert.alert(
                     "Application Rejected",
-                    `Your tow truck application was rejected for the following reason: ${towTruck.rejectionReason || 'No reason provided.'}`
+                    `Your tow truck application was rejected for the following reason: ${towTruck.rejectionReason || 'No reason provided.'}`, 
+                    [
+                        { text: "OK", style: "cancel" },
+                        { text: "Re-apply", onPress: () => router.push({
+                            pathname: '/settings/add-business/businesssetup/edit-tow-truck/edit-tow-truck-details',
+                            params: { towTruckId: towTruck.id }
+                        } as any) }
+                    ]
                 );
                 break;
             default:

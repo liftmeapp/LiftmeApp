@@ -2,12 +2,11 @@
 import Map, { PinnedLocationData } from "@/components/Map";
 import RotatingLoader from '@/components/RotatingLoader';
 import RideOptionCard from '@/components/ServiceOption'; // Assuming ServiceOption component exists
-import { BookingStage, LocationState, useBooking } from '@/context/BookingContext';
+import { BookingStage, useBooking } from '@/context/BookingContext';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons'; // Ensure @expo/vector-icons is installed
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { useRouter } from 'expo-router';
-import { debounce } from 'lodash';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -22,7 +21,6 @@ import {
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-get-random-values'; // Required for UUID or similar libraries if used indirectly
 import MapView from 'react-native-maps';
-import { getAddressFromCoords } from '../../utils/locationUtils';
 
 
 // Helper functions for responsive sizing
@@ -44,15 +42,6 @@ const color = {
     black: "#000000", // Black
     danger: '#e53935'
 };
-
-const ROADSIDBIKE_ASSISTANCE_SERVICES = new Set([
-    "Bike Jumpstarting",
-    "Bike Tire Fixing Assistance",
-    "Bike Oil Changing Assistance",
-    "Bike Alignment Assistance",
-    "Bike Brake Assistance"
-]);
-
 
 // --- Main Component ---
 export default function MainMap() {
@@ -89,21 +78,15 @@ export default function MainMap() {
     const [isPinModeActive, setIsPinModeActive] = useState(false);
     const [pinnedLocation, setPinnedLocation] = useState<PinnedLocationData | null>(null);
     const [isGeocoding, setIsGeocoding] = useState(false);
-   
-    const [useCurrentLocation, setUseCurrentLocation] = useState(true);
-    const [recentPlaces, setRecentPlaces] = useState<LocationState[]>([]);
-    const [pinnedAddress, setPinnedAddress] = useState("Move map to set location...");
-    
+
     // --- Data from API ---
     const [vehicles, setVehicles] = useState<any[]>([]);
     const [services, setServices] = useState<any[]>([]);
 
     // --- Loading & UI States ---
     const [isInitialLoading, setIsInitialLoading] = useState(true);
-    const [keyboardAvoidingHeight, setKeyboardAvoidingHeight] = useState(false);
-
     const filteredServices = useMemo(
-        () => services.filter(service => ROADSIDBIKE_ASSISTANCE_SERVICES.has(service.name)),
+        () => services.filter(service => service.category === 'ROADSIDE_BIKE'),
         [services]
     );
 
@@ -141,7 +124,6 @@ export default function MainMap() {
     }, [currentStage, isBottomSheetReady]);
 
     // --- Data Fetching (Initial) ---
-    // --- Data Fetching (Initial) ---
     useEffect(() => {
         const fetchInitialData = async () => {
         setIsInitialLoading(true);
@@ -167,8 +149,6 @@ export default function MainMap() {
         };
     fetchInitialData();
     }, []); // The empty array ensures this runs only ONCE when the component mounts.
-
-
 
     // --- Handler Functions ---
     const handlePinLocationChange = useCallback((location: PinnedLocationData) => {
@@ -205,42 +185,15 @@ export default function MainMap() {
         }
     };
 
-
-
-    const debouncedGetAddress = useCallback(
-        debounce(async () => {
-            if (mapRef.current) {
-                setIsGeocoding(true);
-                const camera = await mapRef.current.getCamera();
-                const address = await getAddressFromCoords(camera.center.latitude, camera.center.longitude);
-                setPinnedAddress(address);
-                setIsGeocoding(false);
-            }
-        }, 500),
-        []
-    );
     const handleMapReady = useCallback((ref: React.RefObject<MapView | null>) => {
         mapRef.current = ref.current;
     }, []);
 
     const handleServiceSelect = (service: any) => setSelectedService(service);
     const handleVehicleSelect = (vehicle: any) => setSelectedVehicle(vehicle);
-    
-    const handleSelectOnMap = () => setIsPinModeActive(true);
-
-
 
     const handleConfirmPayment = () => {
        confirmPayment();
-    };
-
-    const handlePlaceSelect = (place: any) => {
-        setPickupLocation(place);
-        setUseCurrentLocation(false);
-        setKeyboardAvoidingHeight(false); // Hide keyboard/extra space
-        if (!recentPlaces.some(p => p.place_id === place.place_id)) {
-            setRecentPlaces(prev => [place, ...prev.slice(0, 4)]);
-        }
     };
 
     // --- Navigation ---
@@ -261,8 +214,6 @@ export default function MainMap() {
         }
     };
     const navigateToAddVehicle = () => router.replace('/settings/vehicle-page/add-vehicle');
-
-    // --- RENDER FUNCTIONS ---
     const renderVehicleItem = ({ item }: { item: any }) => {
         const isSelected = selectedVehicle?.id === item.id;
         return (
@@ -289,7 +240,6 @@ export default function MainMap() {
         );
     };
     // --- Main Content Renderer (Handles Stages) ---
-    
     const renderContent = () => {
         const getServiceInfo = () => services.find(s => s.id === selectedService?.id) || null;
     
@@ -478,7 +428,6 @@ export default function MainMap() {
                    </BottomSheetView>
                 );
            }
-
                 return (
                     <BottomSheetView style={styles.bottomSheetContainer}>
                         <View style={styles.headerWithBack}>

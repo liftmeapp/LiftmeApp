@@ -1,12 +1,12 @@
 // app/_layout.tsx
 import RotatingLoader from "@/components/RotatingLoader";
-import { BookingProvider } from '../context/BookingContext';
 import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-expo";
 import { Slot, SplashScreen, usePathname, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BookingProvider } from '../context/BookingContext';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
@@ -65,16 +65,12 @@ function InitialLayout() {
 
     // [This is your main navigation effect, now with the loop-causing dependencies removed]
     useEffect(() => {
-        console.log("InitialLayout useEffect triggered. Pathname:", pathname, "isSignedIn:", isSignedIn, "isAuthLoaded:", isAuthLoaded, "isUserLoaded:", isUserLoaded);
-
         if (!isAuthLoaded || !isUserLoaded || !pathname) {
-            console.log("InitialLayout: Auth/User not loaded or pathname missing. Returning.");
             return;
         }
         SplashScreen.hideAsync();
 
         if (pathname.includes('/oauth-native-callback')) {
-            console.log("InitialLayout: On OAuth callback path. Returning.");
             return;
         }
 
@@ -85,13 +81,10 @@ function InitialLayout() {
             console.log("InitialLayout: User is signed in. Pathname:", pathname);
             const hasVerifiedPhone = user.phoneNumbers?.some(pn => pn.verification?.status === 'verified');
             if (!hasVerifiedPhone) {
-                console.log("InitialLayout: Signed in but phone not verified.");
                 if (!isOnCompleteProfile) {
-                    console.log("InitialLayout: Redirecting to complete-profile.");
                     router.replace("/(auth)/complete-profile");
                 }
             } else {
-                console.log("InitialLayout: Signed in and phone verified.");
                 const inTabsGroup = segments[0] === '(root)' && segments[1] === '(tabs)';
                 const authPaths = ["/(auth)/welcome", "/(auth)/signin", "/(auth)/signup"];
                 const isOnAuthPath = authPaths.some(path => pathname === path);
@@ -100,15 +93,12 @@ function InitialLayout() {
                 const isSettingsPath = segments.length > 0 && segments[0] === 'settings';
                 
                 if ((!inTabsGroup && !isServicePath && !isSettingsPath) || isOnAuthPath) {
-                    console.log("InitialLayout: Signed in, redirecting to home.");
                     router.replace("/(root)/(tabs)/home");
                 }
             }
         }
         else { // Not signed in
-            console.log("InitialLayout: User is NOT signed in. Pathname:", pathname);
             if (justSignedOut) {
-                console.log("InitialLayout: Just signed out. Returning.");
                 return;
             }
             const authFlowPaths = [
@@ -119,10 +109,8 @@ function InitialLayout() {
                 "/complete-profile"
             ];
             const isOnAuthFlowPath = authFlowPaths.some(p => pathname === p);
-            console.log("InitialLayout: isOnAuthFlowPath for current pathname (", pathname, ") is", isOnAuthFlowPath);
 
             if (!isOnAuthFlowPath) {
-                console.log("InitialLayout: Not on auth flow path, redirecting to welcome.");
                 router.replace("/(auth)/welcome");
             }
         }

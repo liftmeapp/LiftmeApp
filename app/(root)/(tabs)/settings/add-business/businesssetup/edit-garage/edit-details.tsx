@@ -1,5 +1,5 @@
 // /app/(root)/(tabs)/settings/add-business/businesssetup/edit-garage/edit-details.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
     View, Text, TextInput, TouchableOpacity, StyleSheet, 
     ScrollView, Alert, ActivityIndicator, SafeAreaView,
@@ -9,6 +9,10 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useGarageStore } from '@/store/garageStore';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useAuth } from '@clerk/clerk-expo';
+import RotatingLoader from '@/components/RotatingLoader';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 const Card = ({ title, children }: { title: string, children: React.ReactNode }) => (
     <View style={styles.card}>
@@ -27,8 +31,64 @@ const IconInput = ({ icon, ...props }: { icon: keyof typeof Ionicons.glyphMap } 
 export default function EditGarageDetailsScreen() {
     const router = useRouter();
     const { garageId } = useLocalSearchParams<{ garageId: string }>();
-    const { details, setDetails, setStripeAccountId } = useGarageStore();
+    const { details, setDetails, setStripeAccountId, setServices } = useGarageStore();
+    const { getToken } = useAuth();
+    
+    const [isLoading, setIsLoading] = useState(true);
     const [isConnectingStripe, setIsConnectingStripe] = useState(false);
+
+    // Effect to pre-populate the form with existing garage data
+    useEffect(() => {
+        if (!garageId) {
+            setIsLoading(false);
+            return;
+        };
+
+        const fetchGarageData = async () => {
+            console.log("EditGarageDetailsScreen: Fetching existing garage data...");
+            try {
+                const token = await getToken();
+                if (!token) throw new Error("Authentication failed.");
+
+                const response = await fetch(`${API_BASE_URL}/api/garages/${garageId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Failed to fetch garage details: ${errorText}`);
+                }
+                
+                const data = await response.json();
+                console.log("EditGarageDetailsScreen: Data fetched, populating store.");
+
+                // Populate the store with all the fetched details
+                setDetails({
+                    name: data.name || '',
+                    licenseNumber: data.licenseNumber || '',
+                    ownerName: data.ownerName || '',
+                    address: data.address || '',
+                    contactEmail: data.contactEmail || '',
+                    contactPhone: data.contactPhone || '',
+                    numberOfEmployees: data.numberOfEmployees ? String(data.numberOfEmployees) : '0',
+                    stripeAccountId: data.stripeAccountId || null,
+                });
+                
+                // Also populate the services in the store so the next screen is pre-filled
+                if (data.services && Array.isArray(data.services)) {
+                    setServices(data.services.map((s: any) => ({ serviceId: s.serviceId, price: s.price })));
+                }
+
+            } catch (error: any) {
+                Alert.alert("Error Loading Data", error.message || "Could not load your existing garage data.");
+                router.back(); // Go back if we can't load the data
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchGarageData();
+    }, [garageId]);
 
     const handleConnectStripe = async () => {
         setIsConnectingStripe(true);
@@ -51,6 +111,14 @@ export default function EditGarageDetailsScreen() {
             params: { garageId } 
         });
     };
+
+    if (isLoading) {
+        return (
+            <View style={styles.centered}>
+                <RotatingLoader message="Loading Your Details..." iconName="id-card-outline" color="#ed8b65" size={50} />
+            </View>
+        );
+    }
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -113,6 +181,11 @@ const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
         backgroundColor: '#f8f9fa',
+    },
+    centered: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     scrollContainer: {
         paddingHorizontal: 16,

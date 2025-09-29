@@ -13,7 +13,7 @@ async function fixMissingUserTimestamps() {
     where: {
       createdAt: {
         isSet: false
-      }
+      } as any
     }
   });
 
@@ -50,7 +50,7 @@ async function fixMissingLiveTruckLocationTimestamps() {
     where: {
       createdAt: {
         isSet: false
-      }
+      } as any
     }
   });
 

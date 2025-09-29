@@ -10,6 +10,7 @@ interface TowTruckDetails {
     model: string;      // e.g., "Flatbed", "Wheel-Lift"
     make: string;       // e.g., "Ford", "Chevrolet"
     year: number;
+    contactEmail: string;
     plateNumber: string;
     licenseNumber: string; // The UI has "License No"
 }

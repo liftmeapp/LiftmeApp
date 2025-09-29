@@ -41,6 +41,15 @@
     REJECTED
   }
 
+  enum ServiceCategory {
+  ROADSIDE_CAR
+  ROADSIDE_BIKE
+  HOME_SERVICE
+  TOWING
+  LUXURY
+  GARAGE_LISTING
+}
+
   enum ServiceType {
     GARAGE
     TOW_TRUCK
@@ -127,7 +136,8 @@
     name        String  @unique
     description String
     icon        String?
-    type        String  
+    type        String 
+    category    ServiceCategory  
 
     // Back-relation to the join table for garages offering this service
     offeredByGarages GarageService[]
@@ -283,13 +293,14 @@
     userReview      String?
     providerRating  Int?
     providerReview  String?
-    cancellationReason String?
-
-    userId    String  @db.ObjectId
-    user      User    @relation(fields: [userId], references: [id])
-    vehicleId String  @db.ObjectId
-    vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
-
+      cancellationReason String?
+    
+        updatedAt DateTime @updatedAt
+      
+        userId    String  @db.ObjectId
+        user      User    @relation(fields: [userId], references: [id])
+        vehicleId String  @db.ObjectId
+        vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
     eligibleProviderIds String[] @db.ObjectId
 
     serviceId       String?        @db.ObjectId // NEW: Direct link to the master Service

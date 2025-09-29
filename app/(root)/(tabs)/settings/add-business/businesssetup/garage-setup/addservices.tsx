@@ -34,6 +34,7 @@ interface ApiService {
   name: string;
   description: string;
   type: string; // Keep as string for flexibility from API
+  category: string;
 }
 
 // State to track only the user's choices
@@ -150,6 +151,8 @@ export default function AddServicesScreen() {
       .map(([serviceId, value]) => ({
         serviceId,
         price: parseFloat(value.price),
+        duration: 60, // Add default duration
+        garageId: '',  // Add placeholder for new garage
       }));
 
     if (selectedServices.length === 0) {
@@ -166,15 +169,17 @@ export default function AddServicesScreen() {
   const categorizedServices = useMemo(() => {
     if (!masterServices.length) return [];
     
-    const groups = masterServices.reduce((acc, service) => {
-        const key = service.type || 'GENERAL_LISTING';
+    const garageServices = masterServices.filter(service => service.category !== 'TOWING');
+
+    const groups = garageServices.reduce((acc, service) => {
+        const key = service.category || 'GENERAL_LISTING';
         if (!acc[key]) { acc[key] = []; }
         acc[key].push(service);
         return acc;
     }, {} as Record<string, ApiService[]>);
 
-    return Object.entries(groups).map(([type, servicesList]) => ({
-        title: type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) + ' Services',
+    return Object.entries(groups).map(([category, servicesList]) => ({
+        title: category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
         services: servicesList,
     }));
   }, [masterServices]);

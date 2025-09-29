@@ -1,14 +1,22 @@
 // /app/(root)/(tabs)/settings/add-business/businesssetup/edit-tow-truck/edit-tow-truck-details.tsx
 
-import React, { useState, useEffect } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity, SafeAreaView, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, Alert, Switch, ActivityIndicator,
-} from 'react-native';
-import { Picker } from '@react-native-picker/picker';
-import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
-import { useTowTruckStore, TowableVehicleType } from '@/store/towtruckStore';
+import RotatingLoader from '@/components/RotatingLoader';
+import { TowableVehicleType } from '@/store/towtruckStore';
 import { useAuth } from '@clerk/clerk-expo';
+import { Picker } from '@react-native-picker/picker';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView, Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text, TextInput, TouchableOpacity,
+  View,
+} from 'react-native';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -32,9 +40,9 @@ export default function EditTowTruckDetailsScreen() {
   const router = useRouter();
   const { getToken } = useAuth();
   const { towTruckId } = useLocalSearchParams<{ towTruckId: string }>();
-  const { details: storeDetails, services: storeServices } = useTowTruckStore();
 
   // --- FORM STATE ---
+  const [isLoading, setIsLoading] = useState(true);
   const [name, setName] = useState('');
   const [driverName, setDriverName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
@@ -45,31 +53,57 @@ export default function EditTowTruckDetailsScreen() {
   const [plateNumber, setPlateNumber] = useState('');
   const [serviceSelections, setServiceSelections] = useState<ServiceSelectionState[]>(ALL_SERVICE_TYPES);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentTowTruckData, setCurrentTowTruckData] = useState<any>(null);
 
-  // Pre-populate the form with data from the store
+  // Pre-populate the form with existing data on load
   useEffect(() => {
-    if (storeDetails) {
-      setName(storeDetails.name || '');
-      setDriverName(storeDetails.driverName || '');
-      setContactEmail(storeDetails.contactEmail || '');
-      setModel(storeDetails.model || '');
-      setYear(String(storeDetails.year || ''));
-      setMake(storeDetails.make || '');
-      setLicenseNumber(storeDetails.licenseNumber || '');
-      setPlateNumber(storeDetails.plateNumber || '');
+    if (!towTruckId) {
+        setIsLoading(false);
+        Alert.alert("Error", "No Tow Truck ID provided.");
+        return;
     }
-    if (storeServices) {
-        const existingServicesMap = new Map(storeServices.map(s => [s.vehicleType, s.price]));
-        setServiceSelections(ALL_SERVICE_TYPES.map(s => {
-            const price = existingServicesMap.get(s.type);
-            return {
-                ...s,
-                selected: price !== undefined,
-                price: price !== undefined ? String(price) : '',
+
+    const fetchTowTruckData = async () => {
+        console.log("EditTowTruckDetailsScreen: Fetching existing data...");
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) throw new Error("Failed to fetch tow truck details.");
+            
+            const data = await response.json();
+            setCurrentTowTruckData(data); // Save original data for status check
+
+            // Pre-fill form state
+            setName(data.name || '');
+            setDriverName(data.driverName || '');
+            setContactEmail(data.contactEmail || '');
+            setModel(data.model || '');
+            setYear(String(data.year || ''));
+            setMake(data.make || '');
+            setLicenseNumber(data.licenseNumber || '');
+            setPlateNumber(data.plateNumber || '');
+
+            // Pre-fill services
+            if (data.services && Array.isArray(data.services)) {
+                const existingServicesMap = new Map(data.services.map((s: any) => [s.vehicleType, s.price]));
+                setServiceSelections(ALL_SERVICE_TYPES.map(s => {
+                    const price = existingServicesMap.get(s.type);
+                    return { ...s, selected: price !== undefined, price: price !== undefined ? String(price) : '' };
+                }));
             }
-        }));
-    }
-  }, [storeDetails, storeServices]);
+
+        } catch (error: any) {
+            console.error("Error fetching tow truck details:", error);
+            Alert.alert("Error", "Could not load existing tow truck details.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    fetchTowTruckData();
+  }, [towTruckId]);
 
   const handleServiceToggle = (index: number) => {
     const newSelections = [...serviceSelections];
@@ -103,7 +137,7 @@ export default function EditTowTruckDetailsScreen() {
 
     setIsSubmitting(true);
 
-    const payload = {
+    const payload: any = {
       details: {
         name: name.trim(),
         driverName: driverName.trim(),
@@ -115,6 +149,11 @@ export default function EditTowTruckDetailsScreen() {
       },
       services: selectedServices,
     };
+
+    // If re-applying for a rejected business, set status to PENDING
+    if (currentTowTruckData && currentTowTruckData.status === 'REJECTED') {
+        payload.details.status = 'PENDING';
+    }
 
     try {
         const token = await getToken();
@@ -129,8 +168,8 @@ export default function EditTowTruckDetailsScreen() {
             throw new Error(errData.error || `Server error: ${response.status}`);
         }
 
-        Alert.alert('Success!', 'Your tow truck details have been updated.', [
-            { text: 'OK', onPress: () => router.back() },
+        Alert.alert('Success!', 'Your tow truck details have been updated and submitted for review.', [
+            { text: 'OK', onPress: () => router.replace('/settings/add-business/businesssetup/businesspage') },
         ]);
 
     } catch (e: any) {
@@ -139,6 +178,14 @@ export default function EditTowTruckDetailsScreen() {
         setIsSubmitting(false);
     }
   };
+
+  if (isLoading) {
+    return (
+        <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+            <RotatingLoader message="Loading Tow Truck Details..." />
+        </View>
+    )
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -181,7 +228,7 @@ export default function EditTowTruckDetailsScreen() {
                       </View>
                       {service.selected && (
                           <View style={styles.priceInputRow}>
-                              <Text style={styles.priceLabel}>Price (AED):</Text>
+                              <Text style={styles.priceLabel}>Price (INR):</Text>
                               <TextInput style={styles.priceInput} placeholder="e.g., 150" keyboardType="numeric" value={service.price} onChangeText={(text) => handlePriceChange(text, index)} />
                           </View>
                       )}
@@ -190,7 +237,7 @@ export default function EditTowTruckDetailsScreen() {
           </View>
 
           <TouchableOpacity style={styles.button} onPress={handleUpdate} disabled={isSubmitting}>
-            {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save Changes</Text>}
+            {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save Changes & Re-apply</Text>}
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

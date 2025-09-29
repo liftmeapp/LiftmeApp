@@ -4,6 +4,7 @@ import { Client } from '@googlemaps/google-maps-services-js';
 import { PrismaClient, Role } from '@prisma/client';
 import cors from 'cors';
 import express, { Request, Response } from 'express';
+import { Webhook } from 'svix';
 import { createServer } from 'http';
 import adminRouter from './admin';
 import bookingsRouter from './bookings';
@@ -397,6 +398,7 @@ app.get(
                     numberOfEmployees: true,
                     operatingHours: true,
                     stripeAccountId: true,
+                    status: true,
                     location: true, // Keep location for editing purposes
                     services: {
                         include: {
@@ -444,29 +446,34 @@ app.put(
                 // 1. Delete existing services for this garage
                 await tx.garageService.deleteMany({ where: { garageId: garageId } });
 
-                // 2. Update the garage with new details and create new services
+                // 2. Prepare the data for update
+                const dataToUpdate: any = {
+                    name: details.name,
+                    licenseNumber: details.licenseNumber,
+                    address: details.address,
+                    ownerName: details.ownerName,
+                    numberOfEmployees: parseInt(String(details.numberOfEmployees), 10) || 0,
+                    contactEmail: details.contactEmail,
+                    contactPhone: details.contactPhone,
+                    operatingHours: details.operatingHours && typeof details.operatingHours === 'object' ? details.operatingHours : {},
+                    location: location,
+                    services: {
+                        create: services.map((service: { serviceId: string; price: number }) => ({
+                            price: service.price,
+                            service: { connect: { id: service.serviceId } },
+                        })),
+                    },
+                };
+
+                // 3. Conditionally add the status if it's part of the re-application
+                if (details.status) {
+                    dataToUpdate.status = details.status;
+                }
+
+                // 4. Update the garage with new details and create new services
                 const result = await tx.garage.update({
                     where: { id: garageId },
-                    data: {
-                        // Update all details from the request
-                        name: details.name,
-                        licenseNumber: details.licenseNumber,
-                        address: details.address,
-                        ownerName: details.ownerName,
-                        numberOfEmployees: parseInt(String(details.numberOfEmployees), 10) || 0,
-                        contactEmail: details.contactEmail,
-                        contactPhone: details.contactPhone,
-                        operatingHours: details.operatingHours && typeof details.operatingHours === 'object' ? details.operatingHours : {},
-                        // Update location
-                        location: location,
-                        // Create the new set of services
-                        services: {
-                            create: services.map((service: { serviceId: string; price: number }) => ({
-                                price: service.price,
-                                service: { connect: { id: service.serviceId } },
-                            })),
-                        },
-                    },
+                    data: dataToUpdate,
                     include: { services: { include: { service: true } } } // Include services in the response
                 });
                 return result;
@@ -740,19 +747,32 @@ app.put(
             });
             if (!existingTruck) return res.status(403).json({ error: 'You are not authorized to edit this tow truck.' });
             await prisma.towTruckService.deleteMany({ where: { towTruckId: truckId } });
+
+            const dataToUpdate: any = {
+                name: details.name, 
+                driverName: details.driverName, 
+                contactEmail: details.contactEmail, 
+                model: details.model, 
+                make: details.make,
+                year: parseInt(String(details.year), 10),
+                plateNumber: details.plateNumber, 
+                licenseNumber: details.licenseNumber,
+                services: {
+                    create: services.map((s: { vehicleType: string, price: number }) => ({
+                        vehicleType: s.vehicleType as any,
+                        price: s.price,
+                    })),
+                },
+            };
+
+            // Conditionally add status if it exists in the request (for re-applications)
+            if (details.status) {
+                dataToUpdate.status = details.status;
+            }
+
             const updatedTruck = await prisma.towTruck.update({
                 where: { id: truckId },
-                data: {
-                    name: details.name, driverName: details.driverName, contactEmail: details.contactEmail, model: details.model, make: details.make,
-                    year: parseInt(String(details.year), 10),
-                    plateNumber: details.plateNumber, licenseNumber: details.licenseNumber,
-                    services: {
-                        create: services.map((s: { vehicleType: string, price: number }) => ({
-                            vehicleType: s.vehicleType as any,
-                            price: s.price,
-                        })),
-                    },
-                },
+                data: dataToUpdate,
             });
             return res.status(200).json(updatedTruck);
         } catch (error) {

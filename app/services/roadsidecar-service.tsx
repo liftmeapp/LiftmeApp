@@ -45,15 +45,6 @@ const color = {
     danger: '#e53935'
 };
 
-const ROADSIDE_ASSISTANCE_SERVICES = new Set([
-    "Tire Fixing assistance (Fixing Puncture, changing spare)",
-    "Battery Booting assistance",
-    "Mechanical Assistance",
-    "Car starting up assistance",
-    "Car Break Assistance",
-]);
-
-
 // --- Main Component ---
 export default function MainMap() {
     const mapRef = useRef<MapView>(null);
@@ -103,7 +94,7 @@ export default function MainMap() {
     const [keyboardAvoidingHeight, setKeyboardAvoidingHeight] = useState(false);
 
     const filteredServices = useMemo(
-        () => services.filter(service => ROADSIDE_ASSISTANCE_SERVICES.has(service.name)),
+        () => services.filter(service => service.category === 'ROADSIDE_CAR'),
         [services]
     );
 
@@ -268,6 +259,11 @@ export default function MainMap() {
     };
     const navigateToAddVehicle = () => router.replace('/settings/vehicle-page/add-vehicle');
 
+    // --- Helper function to format service names for display ---
+    const formatServiceName = (name: string) => {
+        return name.replace(/^(Car-|Bike - |Home - )/g, '');
+    };
+
     // --- RENDER FUNCTIONS ---
     const renderVehicleItem = ({ item }: { item: any }) => {
         const isSelected = selectedVehicle?.id === item.id;
@@ -319,7 +315,7 @@ export default function MainMap() {
                                     keyExtractor={item => item.id}
                                     renderItem={({ item }) => (
                                         <RideOptionCard
-                                            name={item.name}
+                                            name={formatServiceName(item.name)} // Use the formatter here
                                             description={item.description}
                                             selected={selectedService?.id === item.id}
                                             onPress={() => handleServiceSelect(item)}

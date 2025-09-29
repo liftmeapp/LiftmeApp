@@ -45,14 +45,6 @@ const color = {
     danger: '#e53935'
 };
 
-const HOME_SERVICES = new Set([
-   "Car Cleaning Service",
-   "Oil Changing Service",
-   "Air conditioner cleaning service",
-   "Tire Fixing Service"
-]);
-
-
 // --- Main Component ---
 export default function MainMap() {
     const mapRef = useRef<MapView>(null);
@@ -102,7 +94,7 @@ export default function MainMap() {
     const [keyboardAvoidingHeight, setKeyboardAvoidingHeight] = useState(false);
 
     const filteredServices = useMemo(
-        () => services.filter(service => HOME_SERVICES.has(service.name)),
+        () => services.filter(service => service.category === 'HOME_SERVICE'),
         [services]
     );
 

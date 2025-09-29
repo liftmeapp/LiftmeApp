@@ -1,16 +1,26 @@
 // /app/(root)/(tabs)/settings/add-business/businesssetup/edit-garage/edit-services.tsx
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet,
-  Switch, SafeAreaView, Platform, LayoutAnimation, Alert, ActivityIndicator, UIManager,
-} from 'react-native';
-import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
-import { useGarageStore } from '@/store/garageStore';
-import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@clerk/clerk-expo';
-import { LinearGradient } from 'expo-linear-gradient';
+import ModalLoader from '@/components/ModalLoader'; // Import the new modal loader
 import RotatingLoader from '@/components/RotatingLoader';
+import { useGarageStore } from '@/store/garageStore';
+import { useAuth } from '@clerk/clerk-expo';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView, StyleSheet,
+  Switch,
+  Text, TextInput,
+  UIManager,
+  View
+} from 'react-native';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -23,6 +33,7 @@ interface ApiService {
   name: string;
   description: string;
   type: string;
+  category: string;
 }
 
 interface ServiceSelectionState {
@@ -36,13 +47,13 @@ export default function EditServicesScreen() {
   const router = useRouter();
   const { garageId } = useLocalSearchParams<{ garageId: string }>();
   const { getToken, isSignedIn } = useAuth();
-  // `existingServices` holds the data we loaded in the dashboard.
   const { services: existingServices, setServices: saveServicesToStore } = useGarageStore();
   
   const [masterServices, setMasterServices] = useState<ApiService[]>([]);
   const [selections, setSelections] = useState<ServiceSelectionState>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
 
   const fetchInitiated = useRef(false);
 
@@ -53,12 +64,9 @@ export default function EditServicesScreen() {
       const fetchAndInitialize = async () => {
         setLoading(true);
         setError(null);
-        console.log("--- EditServicesScreen: Initializing ---");
         try {
             const token = await getToken();
             if (!token) throw new Error("Authentication token not found.");
-
-            console.log("1. Fetching master list of all services...");
             const response = await fetch(`${API_BASE_URL}/api/services`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (!response.ok) throw new Error(`Failed to fetch services list (Status: ${response.status}).`);
 
@@ -66,25 +74,18 @@ export default function EditServicesScreen() {
             if (!Array.isArray(allServices)) throw new Error("API did not return a valid list of services.");
             
             setMasterServices(allServices);
-            console.log(`2. Fetched ${allServices.length} master services.`);
-            console.log("3. Pre-populating selections from the store. Existing services count:", existingServices.length);
 
-            // Create a lookup map for existing services for efficiency
             const existingServicesMap = new Map(existingServices.map(s => [s.serviceId, s.price]));
-
-            // Initialize the selection state by iterating over the master list
             const initialSelections: ServiceSelectionState = {};
             allServices.forEach(service => {
                 const price = existingServicesMap.get(service.id);
                 initialSelections[service.id] = {
-                    selected: price !== undefined, // If a price exists, it's selected
+                    selected: price !== undefined,
                     price: price !== undefined ? String(price) : '',
                 };
             });
             
             setSelections(initialSelections);
-            console.log("4. Initialization complete.");
-
         } catch (e: any) {
             console.error("💥 ERROR during initialization:", e);
             setError(e.message || 'An unknown error occurred.');
@@ -95,7 +96,7 @@ export default function EditServicesScreen() {
 
       fetchAndInitialize();
     }
-  }, [isSignedIn, getToken, existingServices]); // Dependency on existingServices ensures this runs if the store updates
+  }, [isSignedIn, getToken, existingServices]);
 
   const toggleService = (serviceId: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -107,7 +108,7 @@ export default function EditServicesScreen() {
             [serviceId]: {
                 ...currentSelection,
                 selected: isNowSelected,
-                price: isNowSelected ? currentSelection.price : '', // Clear price on deselect
+                price: isNowSelected ? currentSelection.price : '',
             },
         };
     });
@@ -118,47 +119,66 @@ export default function EditServicesScreen() {
         ...prev,
         [serviceId]: {
             ...prev[serviceId],
-            price: text.replace(/[^0-9.]/g, ''), // Allow only numbers and dots
+            price: text.replace(/[^0-9.]/g, ''),
         },
     }));
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    if (!garageId) {
+      console.error('garageId is undefined');
+      Alert.alert('Error', 'Garage ID is missing. Please go back and try again.');
+      return;
+    }
+
     const selectedServices = Object.entries(selections)
       .filter(([, value]) => value.selected)
       .map(([serviceId, value]) => ({
         serviceId,
+        garageId,
         price: parseFloat(value.price),
+        duration: 60, // Default duration of 60 minutes, adjust as needed
       }));
-
+  
     if (selectedServices.length === 0) {
       return Alert.alert('No Services Selected', 'You must offer at least one service.');
     }
-    if (selectedServices.some(s => isNaN(s.price) || s.price <= 0)) {
+    
+    const invalidPriceService = selectedServices.find(s => isNaN(s.price) || s.price <= 0);
+    if (invalidPriceService) {
       return Alert.alert('Invalid Price', 'Please enter a valid, positive price for all selected services.');
     }
-
-    console.log("Updating services in store:", selectedServices);
-    saveServicesToStore(selectedServices);
-    
-    // Navigate to the location picker, making sure to pass the garageId for edit mode
-    router.push({
+  
+    try {
+      setIsNavigating(true);
+      
+      // Save services to store
+      saveServicesToStore(selectedServices);
+      
+      // Navigate to the next screen
+      router.push({
         pathname: '/settings/add-business/businesssetup/garage-setup/location-picker',
         params: { garageId }
-    });
+      });
+      
+    } catch (error) {
+      console.error('Error saving services:', error);
+      Alert.alert('Error', 'Failed to save services. Please try again.');
+      setIsNavigating(false);
+    }
   };
 
-  // Memoized calculation for categorized services
   const categorizedServices = useMemo(() => {
     if (!masterServices.length) return [];
-    const groups = masterServices.reduce((acc, service) => {
-        const key = service.type || 'GENERAL_LISTING';
+    const garageServices = masterServices.filter(service => service.category !== 'TOWING');
+    const groups = garageServices.reduce((acc, service) => {
+        const key = service.category || 'GENERAL_LISTING';
         if (!acc[key]) { acc[key] = []; }
         acc[key].push(service);
         return acc;
     }, {} as Record<string, ApiService[]>);
-    return Object.entries(groups).map(([type, servicesList]) => ({
-        title: type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) + ' Services',
+    return Object.entries(groups).map(([category, servicesList]) => ({
+        title: category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
         services: servicesList,
     }));
   }, [masterServices]);
@@ -175,6 +195,7 @@ export default function EditServicesScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ModalLoader visible={isNavigating} message="Preparing Location Setup..." />
       <Stack.Screen options={{ title: 'Step 2: Update Services' }} />
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.headerContainer}>
@@ -187,7 +208,7 @@ export default function EditServicesScreen() {
                 <Text style={styles.categoryTitle}>{category.title}</Text>
                 {category.services.map((service, index) => {
                     const selectionState = selections[service.id];
-                    if (!selectionState) return null; // Safeguard
+                    if (!selectionState) return null;
 
                     return (
                         <View key={service.id} style={[styles.serviceItemContainer, index === category.services.length - 1 && { borderBottomWidth: 0 }]}>
@@ -219,21 +240,54 @@ export default function EditServicesScreen() {
         ))}
       </ScrollView>
 
-      <TouchableOpacity onPress={handleNext} disabled={loading}>
-          <LinearGradient colors={['#c3683c', '#b95528']} style={styles.fab}>
-              <View style={styles.fabContent}>
-                <Text style={styles.fabText}>Next: Update Location</Text>
-                {selectedCount > 0 && <View style={styles.fabBadge}><Text style={styles.fabBadgeText}>{selectedCount}</Text></View>}
-              </View>
-              <Ionicons name="arrow-forward" size={22} color="#fff" />
+      <View style={styles.fabContainer}>
+        <Pressable 
+          onPress={handleNext} 
+          disabled={loading || isNavigating}
+          style={({ pressed }) => [
+            styles.fab,
+            (loading || isNavigating) && styles.disabledFab,
+            pressed && !loading && !isNavigating && styles.pressedFab
+          ]}
+        >
+          <LinearGradient 
+            colors={['#c3683c', '#b95528']} 
+            style={styles.fabGradient}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+          >
+            <View style={styles.fabContent}>
+              {isNavigating ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.fabText}>
+                    {selectedCount > 0 
+                      ? 'Next: Update Location' 
+                      : 'Select Services to Continue'}
+                  </Text>
+                </>
+              )}
+            </View>
+            {!isNavigating && selectedCount > 0 && (
+              <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 8 }} />
+            )}
           </LinearGradient>
-      </TouchableOpacity>
+        </Pressable>
+      </View>
     </SafeAreaView>
   );
 }
 
-// Using the same styles as addservices.tsx
 const styles = StyleSheet.create({
+    fabContainer: {
+      position: 'absolute',
+      bottom: 20,
+      left: 20,
+      right: 20,
+      alignItems: 'center',
+      borderRadius: 30,
+    },
     safeArea: { flex: 1, backgroundColor: '#f8f9fa' },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
     errorText: { marginTop: 15, textAlign: 'center', color: '#d9534f', fontSize: 16, fontWeight: '500' },
@@ -258,21 +312,31 @@ const styles = StyleSheet.create({
     serviceName: { fontSize: 16, color: '#444', flex: 1, marginRight: 10 },
     priceInputContainer: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f7f7f7' },
     priceInput: { 
-        height: 45, borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
-        paddingHorizontal: 15, fontSize: 15, backgroundColor: '#fdfdfd'
     },
     fab: {
-        position: 'absolute', bottom: 20, left: 20, right: 20,
-        borderRadius: 15, paddingVertical: 15, paddingHorizontal: 20,
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        shadowColor: '#b95528', shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4, shadowRadius: 6, elevation: 8,
+      width: '100%',
+      borderRadius: 30,
+      overflow: 'hidden',
+    },
+    fabGradient: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 16,
+      paddingHorizontal: 24,
+      width: '100%',
+    },
+    disabledFab: {
+      opacity: 0.6,
+    },
+    pressedFab: {
+      opacity: 0.8,
+      transform: [{ scale: 0.98 }],
     },
     fabContent: { flexDirection: 'row', alignItems: 'center' },
     fabText: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginRight: 10 },
     fabBadge: {
         backgroundColor: '#fff', borderRadius: 12, width: 24, height: 24,
-        justifyContent: 'center', alignItems: 'center',
     },
     fabBadgeText: { color: '#b95528', fontWeight: 'bold', fontSize: 14 }
 });

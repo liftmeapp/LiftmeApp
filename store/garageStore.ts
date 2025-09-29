@@ -3,6 +3,20 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+type GarageService = {
+  id?: string;
+  serviceId: string;
+  garageId: string;
+  price: number;
+  duration: number; // in minutes
+  description?: string;
+  isActive?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
+export type GarageStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'INACTIVE';
+
 interface GarageDetails {
     name: string;
     licenseNumber: string;
@@ -13,11 +27,7 @@ interface GarageDetails {
     contactPhone: string;
     operatingHours: any; // Can be a simple object
     stripeAccountId: string;
-}
-
-interface GarageService {
-    serviceId: string;
-    price: number;
+    status?: GarageStatus;
 }
 
 interface GarageLocation {

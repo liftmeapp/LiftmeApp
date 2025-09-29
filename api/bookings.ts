@@ -11,7 +11,7 @@ import prisma from './lib/prisma';
 
 const bookingsRouter = Router();
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-04-10' });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-04-10' as any });
 const googleMapsClient = new Client();
 
 bookingsRouter.use(ClerkExpressWithAuth());
@@ -677,7 +677,7 @@ bookingsRouter.post('/bookings/:bookingId/cancel-by-user', async (req: Request, 
 
         if (!booking) return res.status(404).json({ error: 'Booking not found.' });
 
-        const cancellableStatuses = [
+        const cancellableStatuses: BookingStatus[] = [
             BookingStatus.SEARCHING,
             BookingStatus.AWAITING_PAYMENT,
             BookingStatus.CONFIRMED,
@@ -740,7 +740,7 @@ bookingsRouter.post('/bookings/:bookingId/cancel-by-provider', async (req: Reque
 
         if (!booking || (!booking.garage && !booking.towTruck)) return res.status(404).json({ error: 'Booking not found or you are not the assigned provider.' });
 
-        if (![BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS].includes(booking.status)) {
+        if (!([BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS] as BookingStatus[]).includes(booking.status)) {
             return res.status(403).json({ error: 'This booking cannot be cancelled at its current stage.' });
         }
 

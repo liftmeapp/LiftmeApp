@@ -45,15 +45,6 @@ const color = {
     danger: '#e53935'
 };
 
-const LUXURY_SERVICES = new Set([
-    "Tire Fixing assistance (Fixing Puncture, changing spare)",
-    "Battery Booting assistance",
-    "Mechanical Assistance",
-    "Car starting up assistance",
-    "Car Break Assistance",
-]);
-
-
 // --- Main Component ---
 export default function MainMap() {
     const mapRef = useRef<MapView>(null);
@@ -103,7 +94,7 @@ export default function MainMap() {
     const [keyboardAvoidingHeight, setKeyboardAvoidingHeight] = useState(false);
 
     const filteredServices = useMemo(
-        () => services.filter(service => LUXURY_SERVICES.has(service.name)),
+        () => services.filter(service => service.category === 'LUXURY'),
         [services]
     );
 
