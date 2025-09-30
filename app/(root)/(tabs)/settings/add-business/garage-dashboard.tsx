@@ -3,7 +3,7 @@ import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { io } from "socket.io-client";
 
 // --- CONFIGURATION ---
@@ -21,11 +21,11 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
     ) : null
 );
 
-const BookingCard = ({ booking, onAccept, onDecline, onPress, isAccepting, isDeclining = false }: { booking: any, onAccept: (id: string) => void, onDecline: (id: string) => void, onPress: (booking: any) => void, isAccepting: boolean, isDeclining?: boolean }) => (
+const BookingCard = ({ booking, onAccept, onDecline, onPress, onComplete, isAccepting, isDeclining = false }: { booking: any, onAccept: (id: string) => void, onDecline: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, isAccepting: boolean, isDeclining?: boolean }) => (
     <TouchableOpacity style={styles.bookingCard} onPress={() => onPress(booking)}>
         <View style={styles.bookingHeader}>
             <Text style={styles.bookingDate}>{new Date(booking.bookedAt).toLocaleDateString()}</Text>
-            <Text style={styles.bookingPrice}>AED {booking.finalAmount.toFixed(2)}</Text>
+            <Text style={styles.bookingPrice}>INR {booking.finalAmount.toFixed(2)}</Text>
         </View>
         <View style={styles.bookingDetails}>
             <Ionicons name="build" size={20} color="#3498db" />
@@ -44,6 +44,17 @@ const BookingCard = ({ booking, onAccept, onDecline, onPress, isAccepting, isDec
              <View style={styles.bookingDetails}>
                 <Ionicons name="map-outline" size={20} color="#16a085" />
                 <Text style={styles.bookingText}>~{booking.distance.toFixed(1)} km away</Text>
+            </View>
+        )}
+
+        {booking.status === 'CONFIRMED' && (
+            <View style={styles.bookingActions}>
+                <TouchableOpacity 
+                    style={[styles.bookingButton, styles.completeButton]} 
+                    onPress={() => onComplete(booking.id)}
+                >
+                    <Text style={styles.bookingButtonText}>Complete Service</Text>
+                </TouchableOpacity>
             </View>
         )}
 
@@ -97,6 +108,80 @@ export default function GarageDashboard() {
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [selectedBooking, setSelectedBooking] = useState<any>(null);
 
+    const [otpModalVisible, setOtpModalVisible] = useState(false);
+    const [bookingToComplete, setBookingToComplete] = useState<string | null>(null);
+    const [otp, setOtp] = useState('');
+    const [isVerifying, setIsVerifying] = useState(false);
+
+    const handleOpenOtpModal = (bookingId: string) => {
+        setBookingToComplete(bookingId);
+        setOtpModalVisible(true);
+        setOtp('');
+    };
+
+    const handleVerifyOtp = async () => {
+        if (!bookingToComplete || otp.length !== 6) {
+            Alert.alert("Invalid OTP", "Please enter a valid 6-digit OTP.");
+            return;
+        }
+        setIsVerifying(true);
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingToComplete}/verify-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ otp }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'OTP verification failed.');
+            
+            Alert.alert('Service Complete!', 'The payment has been captured successfully.');
+            setOtpModalVisible(false);
+            fetchData(); // Refresh the dashboard
+        } catch (error: any) {
+            Alert.alert('Verification Error', error.message);
+        } finally {
+            setIsVerifying(false);
+        }
+    };
+
+    const OtpVerificationModal = () => (
+        <Modal
+            animationType="slide"
+            transparent={true}
+            visible={otpModalVisible}
+            onRequestClose={() => setOtpModalVisible(false)}
+        >
+            <View style={modalStyles.modalOverlay}>
+                <View style={modalStyles.modalContent}>
+                    <Text style={modalStyles.modalTitle}>Complete Service</Text>
+                    <Text style={modalStyles.modalSubtitle}>Enter the 6-digit OTP from the customer to confirm service completion and capture payment.</Text>
+                    <TextInput
+                        style={modalStyles.otpInput}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        value={otp}
+                        onChangeText={setOtp}
+                        placeholder="123456"
+                    />
+                    <TouchableOpacity 
+                        style={[styles.bookingButton, styles.acceptButton, isVerifying && styles.disabledButton]} 
+                        onPress={handleVerifyOtp} 
+                        disabled={isVerifying}
+                    >
+                        {isVerifying 
+                            ? <ActivityIndicator color="#fff" /> 
+                            : <Text style={styles.bookingButtonText}>Verify & Complete</Text>}
+                    </TouchableOpacity>
+                    <TouchableOpacity style={{marginTop: 10}} onPress={() => setOtpModalVisible(false)}>
+                        <Text style={{textAlign: 'center', color: '#7f8c8d'}}>Cancel</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
+    );
+
+
     const BookingDetailsModal = ({ booking, onClose }: { booking: any, onClose: () => void }) => {
         if (!booking) return null;
         return (
@@ -111,7 +196,7 @@ export default function GarageDashboard() {
                     <InfoRow icon="car-outline" label="Vehicle" value={`${booking.vehicle.brand} ${booking.vehicle.name} (${booking.vehicle.plateNumber})`} />
                     <InfoRow icon="build-outline" label="Service" value={booking.service.name} />
                     {booking.distance != null && <InfoRow icon="map-outline" label="Distance" value={`~${booking.distance.toFixed(1)} km`} />}
-                    <InfoRow icon="cash-outline" label="Amount" value={`AED ${booking.finalAmount.toFixed(2)}`} />
+                    <InfoRow icon="cash-outline" label="Amount" value={`INR ${booking.finalAmount.toFixed(2)}`} />
                     <InfoRow icon="time-outline" label="Booked At" value={new Date(booking.bookedAt).toLocaleString()} />
                     <InfoRow icon="information-circle-outline" label="Status" value={booking.status} />
                 </View>
@@ -123,13 +208,16 @@ export default function GarageDashboard() {
     const fetchData = useCallback(async (isManualRefresh = false) => {
         if (!garageId) return;
         console.log(`[GarageDashboard] Fetching data for garageId: ${garageId}`);
+        if (!isManualRefresh) {
+            setLoading(true);
+        }
         try {
             const token = await getToken();
             if (!token) throw new Error("Authentication failed.");
 
-            const status = jobsSubTab === 'Pending' 
-                ? 'SEARCHING,AWAITING_PAYMENT,CONFIRMED,IN_PROGRESS' 
-                : 'COMPLETED,CANCELLED,EXPIRED';
+            const status = jobsSubTab === 'Pending'
+                ? 'SEARCHING'
+                : 'AWAITING_PAYMENT,CONFIRMED,IN_PROGRESS,COMPLETED,CANCELLED,EXPIRED';
             
             const [garageRes, bookingsRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/api/garages/${garageId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
@@ -161,7 +249,7 @@ export default function GarageDashboard() {
             }
             setLoading(false);
         }
-    }, [garageId, jobsSubTab, getToken]);
+    }, [garageId, jobsSubTab]);
 
     // --- Real-time WebSocket Logic ---
     useEffect(() => {
@@ -301,8 +389,8 @@ export default function GarageDashboard() {
     };
 
     const filteredBookings = bookings.filter(b => {
-        if (jobsSubTab === 'Pending') return ['SEARCHING', 'CONFIRMED', 'IN_PROGRESS'].includes(b.status);
-        return ['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(b.status);
+        if (jobsSubTab === 'Pending') return ['SEARCHING'].includes(b.status);
+        return ['AWAITING_PAYMENT', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'EXPIRED'].includes(b.status);
     });
     
     if (loading && !garage) {
@@ -314,7 +402,7 @@ export default function GarageDashboard() {
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             <Stack.Screen options={{ title: garage.name || 'Garage Dashboard' }} />
             <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#b95528" />}>
                 {/* Header Card - Always visible */}
@@ -338,7 +426,6 @@ export default function GarageDashboard() {
                 {mainTab === 'Jobs' ? (
                     <View>
                         {/* Bookings Section */}
-                        <Text style={styles.bookingsHeader}>Job Requests</Text>
                         <View style={styles.tabContainer}>
                             <TouchableOpacity onPress={() => setJobsSubTab('Pending')} style={[styles.tab, jobsSubTab === 'Pending' && styles.activeTab]}>
                                 <Text style={[styles.tabText, jobsSubTab === 'Pending' && styles.activeTabText]}>Pending</Text>
@@ -348,13 +435,19 @@ export default function GarageDashboard() {
                             </TouchableOpacity>
                         </View>
                         
-                        {filteredBookings.length > 0 ? (
+                        
+                        {loading ? (
+                            <View style={styles.centeredTabContent}>
+                                <ActivityIndicator size="large" color="#b95528" />
+                            </View>
+                        ) : filteredBookings.length > 0 ? (
                             filteredBookings.map(booking => 
                             <BookingCard 
                                 key={booking.id} 
                                 booking={booking} 
                                 onAccept={handleAccept} 
                                 onDecline={handleDecline} 
+                                onComplete={handleOpenOtpModal}
                                 onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
                                 isAccepting={acceptingId === booking.id}
                             />)
@@ -382,7 +475,7 @@ export default function GarageDashboard() {
                                 garage.services.map((serviceItem: any) => (
                                     <View key={serviceItem.id} style={styles.serviceRow}>
                                         <Text style={styles.serviceName}>{serviceItem.service.name}</Text>
-                                        <Text style={styles.servicePrice}>AED {serviceItem.price.toFixed(2)}</Text>
+                                        <Text style={styles.servicePrice}>INR {serviceItem.price.toFixed(2)}</Text>
                                     </View>
                                 ))
                             ) : (
@@ -405,7 +498,8 @@ export default function GarageDashboard() {
                 )}
             </ScrollView>
             {isModalVisible && <BookingDetailsModal booking={selectedBooking} onClose={() => setIsModalVisible(false)} />}
-        </SafeAreaView>
+            <OtpVerificationModal />
+        </View>
     );
 }
 
@@ -430,6 +524,17 @@ const modalStyles = StyleSheet.create({
     },
     modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#34495e' },
     closeButton: { position: 'absolute', top: 10, right: 10, zIndex: 1 },
+    modalSubtitle: { fontSize: 15, color: '#7f8c8d', textAlign: 'center', marginBottom: 20 },
+    otpInput: {
+        borderWidth: 1,
+        borderColor: '#ccc',
+        borderRadius: 8,
+        padding: 15,
+        fontSize: 24,
+        textAlign: 'center',
+        letterSpacing: 10,
+        marginBottom: 20,
+    },
 });
 
 const styles = StyleSheet.create({
@@ -437,7 +542,7 @@ const styles = StyleSheet.create({
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
     errorText: { fontSize: 16, color: '#e74c3c', textAlign: 'center' },
     headerCard: {
-        backgroundColor: '#fff', margin: 15, borderRadius: 16, padding: 20, alignItems: 'center',
+        backgroundColor: '#fff', marginHorizontal: 15,marginTop:39,marginBottom:3, borderRadius: 16, padding: 20, alignItems: 'center',
         elevation: 5, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8,
     },
     truckName: { fontSize: 24, fontWeight: 'bold', color: '#333', marginTop: 10 },
@@ -457,7 +562,7 @@ const styles = StyleSheet.create({
     editButton: { backgroundColor: '#3498db' },
     deleteButton: { backgroundColor: '#e74c3c' },
     actionButtonText: { color: 'white', fontWeight: 'bold', marginLeft: 8 },
-    bookingsHeader: { fontSize: 22, fontWeight: 'bold', marginHorizontal: 15, marginTop: 20, textAlign: 'center', color: '#34495e' },
+    bookingsHeader: { fontSize: 22, fontWeight: 'bold', marginHorizontal: 15, marginTop: 20, textAlign: 'left', color: '#34495e' },
     tabContainer: { flexDirection: 'row', backgroundColor: '#e9ecef', marginHorizontal: 15, borderRadius: 10, padding: 4, marginTop: 15, marginBottom: 10 },
     tab: { flex: 1, padding: 10, borderRadius: 8, alignItems: 'center' },
     activeTab: { backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 2 },
@@ -483,7 +588,7 @@ const styles = StyleSheet.create({
         marginHorizontal: 15,
         borderRadius: 10,
         padding: 5,
-        marginTop: 15,
+        marginTop: 0,
         marginBottom: 10,
         elevation: 2,
         shadowColor: '#000',
@@ -506,5 +611,10 @@ const styles = StyleSheet.create({
     },
     activeMainTabText: {
         color: '#fff',
+    },
+    centeredTabContent: {
+        padding: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 });

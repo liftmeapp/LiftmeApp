@@ -13,6 +13,7 @@ const bookingsRouter = Router();
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-04-10' as any });
 const googleMapsClient = new Client();
+const PRICE_PER_KM = 15; // in INR
 
 bookingsRouter.use(ClerkExpressWithAuth());
 
@@ -144,14 +145,23 @@ bookingsRouter.post('/bookings/:id/accept', async (req: Request, res: Response) 
     const garageOwnerId = req.auth.userId;
     
     try {
-        const garage = await prisma.garage.findFirst({ where: { owner: {clerkId: garageOwnerId} } });
+        // 1. Fetch garage with its service offerings
+        const garage = await prisma.garage.findFirst({ 
+            where: { owner: {clerkId: garageOwnerId} },
+            include: { services: true }
+        });
         if (!garage) return res.status(403).json({ error: "Garage profile not found."});
 
-        const bookingToAccept = await prisma.booking.findUnique({ where: { id: bookingId } });
+        // 2. Fetch the booking request, including user details for location
+        const bookingToAccept = await prisma.booking.findUnique({ 
+            where: { id: bookingId },
+            include: { user: true }
+        });
         if (!bookingToAccept) return res.status(404).json({ error: "Booking request not found." });
 
+        // 3. Validate the booking status and eligibility
         if (bookingToAccept.status !== BookingStatus.SEARCHING) {
-            return res.status(409).json({ error: "This request has already been handled by another provider." });
+            return res.status(409).json({ error: "This request has already been handled." });
         }
         if (bookingToAccept.expiresAt && new Date() > bookingToAccept.expiresAt) {
             return res.status(410).json({ error: "This request has expired." });
@@ -160,11 +170,43 @@ bookingsRouter.post('/bookings/:id/accept', async (req: Request, res: Response) 
             return res.status(403).json({ error: "Your garage is not eligible for this request." });
         }
 
+        // 4. Get the specific service price from the accepting garage
+        const garageService = garage.services.find(s => s.serviceId === bookingToAccept.serviceId);
+        if (!garageService) {
+            return res.status(400).json({ error: "This garage does not offer the requested service." });
+        }
+        const servicePrice = garageService.price;
+
+        // 5. Calculate distance and final price
+        let finalAmount = servicePrice;
+        let etaMinutes: number | null = null;
+        let distanceKm: number | null = null;
+
+        const userLocation = bookingToAccept.pickupLocation;
+        const garageLocation = garage.location;
+
+        if (isGeoJSONPoint(userLocation) && isGeoJSONPoint(garageLocation)) {
+            const origin = { lat: userLocation.coordinates[1], lon: userLocation.coordinates[0] };
+            const destination = { lat: garageLocation.coordinates[1], lon: garageLocation.coordinates[0] };
+            
+            const etaResult = await getEtaAndDistance(destination, origin); // Garage to User
+            etaMinutes = etaResult.etaMinutes;
+            distanceKm = etaResult.distanceKm;
+
+            if (distanceKm !== null) {
+                const distanceCost = distanceKm * PRICE_PER_KM;
+                finalAmount += distanceCost;
+            }
+        }
+
+        // 6. Update booking with the new finalAmount
         const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
                 status: BookingStatus.AWAITING_PAYMENT,
                 garage: { connect: { id: garage.id } },
+                basePrice: servicePrice, // Update base price to the actual garage's price
+                finalAmount: finalAmount, // Set the calculated final amount
                 eligibleProviderIds: [],
                 expiresAt: null,
                 paymentExpiresAt: new Date(Date.now() + 6 * 60 * 1000),
@@ -172,14 +214,20 @@ bookingsRouter.post('/bookings/:id/accept', async (req: Request, res: Response) 
             include: { user: true, garage: true }
         });
 
-        // --- Notify customer via WebSocket ---
+        // 7. Emit a detailed provider object in the socket event
         const customerSocketId = customerSockets[updatedBooking.user.clerkId];
         if (customerSocketId) {
+            const providerPayload = {
+                ...updatedBooking.garage,
+                eta: etaMinutes,
+                distance: distanceKm,
+                finalPrice: finalAmount
+            };
             io.to(customerSocketId).emit('booking_accepted', {
                 bookingId: updatedBooking.id,
-                provider: updatedBooking.garage
+                provider: providerPayload
             });
-            console.log(`📬 Emitted 'booking_accepted' to customer ${updatedBooking.user.clerkId}`);
+            console.log(`📬 Emitted 'booking_accepted' to customer ${updatedBooking.user.clerkId} with final price ${finalAmount}`);
         }
 
         return res.status(200).json({ success: true, booking: updatedBooking });
@@ -312,7 +360,8 @@ bookingsRouter.post('/bookings/:id/verify-otp', async (req: Request, res: Respon
 
     try {
         const booking = await prisma.booking.findFirst({
-            where: { id: bookingId, garage: { owner: { clerkId: garageOwnerId } } }
+            where: { id: bookingId, garage: { owner: { clerkId: garageOwnerId } } },
+            include: { user: true } // Include user to get clerkId for socket event
         });
 
         if (!booking) return res.status(404).json({ error: "Booking not found or not assigned to you." });
@@ -323,16 +372,23 @@ bookingsRouter.post('/bookings/:id/verify-otp', async (req: Request, res: Respon
 
         await stripe.paymentIntents.capture(booking.paymentIntentId);
 
-        await prisma.booking.update({
+        const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
-                status: BookingStatus.IN_PROGRESS,
+                status: BookingStatus.COMPLETED, // Set status to COMPLETED
                 paymentStatus: 'paid',
                 serviceStartedAt: new Date(),
                 otp: null,
                 otpExpiresAt: null,
             }
         });
+
+        // --- Notify customer that service is complete ---
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('service_completed', { bookingId: updatedBooking.id });
+            console.log(`✅ Emitted 'service_completed' to customer ${booking.user.clerkId}`);
+        }
 
         return res.status(200).json({ success: true, message: 'Service started and payment captured successfully.' });
 
@@ -354,7 +410,8 @@ bookingsRouter.post('/bookings/:id/verify-otp-tow', async (req: Request, res: Re
 
     try {
         const booking = await prisma.booking.findFirst({
-            where: { id: bookingId, towTruck: { owner: { clerkId: towTruckOwnerId } } }
+            where: { id: bookingId, towTruck: { owner: { clerkId: towTruckOwnerId } } },
+            include: { user: true } // Include user to get clerkId for socket event
         });
 
         if (!booking) return res.status(404).json({ error: "Booking not found or not assigned to you." });
@@ -365,16 +422,23 @@ bookingsRouter.post('/bookings/:id/verify-otp-tow', async (req: Request, res: Re
 
         await stripe.paymentIntents.capture(booking.paymentIntentId);
 
-        await prisma.booking.update({
+        const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
-                status: BookingStatus.IN_PROGRESS,
+                status: BookingStatus.COMPLETED, // Set status to COMPLETED
                 paymentStatus: 'paid',
                 serviceStartedAt: new Date(),
                 otp: null,
                 otpExpiresAt: null,
             }
         });
+
+        // --- Notify customer that service is complete ---
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('service_completed', { bookingId: updatedBooking.id });
+            console.log(`✅ Emitted 'service_completed' to customer ${booking.user.clerkId}`);
+        }
 
         return res.status(200).json({ success: true, message: 'Service started and payment captured successfully.' });
 
@@ -383,6 +447,47 @@ bookingsRouter.post('/bookings/:id/verify-otp-tow', async (req: Request, res: Re
         if (error instanceof Stripe.errors.StripeError) {
             return res.status(402).json({ error: `Payment capture failed: ${error.message}` });
         }
+        return res.status(500).json({ error: 'An internal server error occurred' });
+    }
+});
+
+bookingsRouter.get('/bookings/active', async (req: Request, res: Response) => {
+    const customerClerkId = req.auth.userId;
+    if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const activeBookings = await prisma.booking.findMany({
+            where: {
+                user: { clerkId: customerClerkId },
+                status: { in: [BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS] }
+            },
+            include: {
+                garage: true,
+                towTruck: true,
+                service: true,
+            },
+            orderBy: {
+                bookedAt: 'desc'
+            }
+        });
+
+        const bookingsWithEta = await Promise.all(activeBookings.map(async (booking) => {
+            const provider = booking.garage || booking.towTruck;
+            const providerLocation = booking.garage?.location || booking.towTruck?.liveLocation;
+
+            if (provider && isGeoJSONPoint(booking.pickupLocation) && isGeoJSONPoint(providerLocation)) {
+                const userCoords = booking.pickupLocation.coordinates;
+                const providerCoords = providerLocation.coordinates;
+                const { etaMinutes, distanceKm } = await getEtaAndDistance({ lat: providerCoords[1], lon: providerCoords[0] }, { lat: userCoords[1], lon: userCoords[0] });
+                return { ...booking, providerEta: etaMinutes, providerDistance: distanceKm };
+            }
+            return { ...booking, providerEta: null, providerDistance: null };
+        }));
+
+        return res.status(200).json(bookingsWithEta);
+
+    } catch (error: any) {
+        console.error("Failed to fetch active bookings:", error);
         return res.status(500).json({ error: 'An internal server error occurred' });
     }
 });

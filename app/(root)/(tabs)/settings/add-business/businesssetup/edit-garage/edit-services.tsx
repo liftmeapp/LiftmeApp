@@ -58,45 +58,48 @@ export default function EditServicesScreen() {
   const fetchInitiated = useRef(false);
 
   useEffect(() => {
-    if (isSignedIn && !fetchInitiated.current) {
-      fetchInitiated.current = true;
-      
-      const fetchAndInitialize = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const token = await getToken();
-            if (!token) throw new Error("Authentication token not found.");
-            const response = await fetch(`${API_BASE_URL}/api/services`, { headers: { 'Authorization': `Bearer ${token}` } });
-            if (!response.ok) throw new Error(`Failed to fetch services list (Status: ${response.status}).`);
-
-            const allServices: ApiService[] = await response.json();
-            if (!Array.isArray(allServices)) throw new Error("API did not return a valid list of services.");
-            
-            setMasterServices(allServices);
-
-            const existingServicesMap = new Map(existingServices.map(s => [s.serviceId, s.price]));
-            const initialSelections: ServiceSelectionState = {};
-            allServices.forEach(service => {
-                const price = existingServicesMap.get(service.id);
-                initialSelections[service.id] = {
-                    selected: price !== undefined,
-                    price: price !== undefined ? String(price) : '',
-                };
-            });
-            
-            setSelections(initialSelections);
-        } catch (e: any) {
-            console.error("💥 ERROR during initialization:", e);
-            setError(e.message || 'An unknown error occurred.');
-        } finally {
-            setLoading(false);
-        }
-      };
-
-      fetchAndInitialize();
+    // This check prevents fetching if the user is not signed in when the component mounts.
+    if (!isSignedIn) {
+      setLoading(false);
+      setError("Authentication required to load services.");
+      return;
     }
-  }, [isSignedIn, getToken, existingServices]);
+
+    const fetchAndInitialize = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+          const token = await getToken();
+          if (!token) throw new Error("Authentication token not found.");
+          const response = await fetch(`${API_BASE_URL}/api/services`, { headers: { 'Authorization': `Bearer ${token}` } });
+          if (!response.ok) throw new Error(`Failed to fetch services list (Status: ${response.status}).`);
+
+          const allServices: ApiService[] = await response.json();
+          if (!Array.isArray(allServices)) throw new Error("API did not return a valid list of services.");
+          
+          setMasterServices(allServices);
+
+          const existingServicesMap = new Map(existingServices.map(s => [s.serviceId, s.price]));
+          const initialSelections: ServiceSelectionState = {};
+          allServices.forEach(service => {
+              const price = existingServicesMap.get(service.id);
+              initialSelections[service.id] = {
+                  selected: price !== undefined,
+                  price: price !== undefined ? String(price) : '',
+              };
+          });
+          
+          setSelections(initialSelections);
+      } catch (e: any) {
+          console.error("💥 ERROR during initialization:", e);
+          setError(e.message || 'An unknown error occurred.');
+      } finally {
+          setLoading(false);
+      }
+    };
+
+    fetchAndInitialize();
+  }, []);
 
   const toggleService = (serviceId: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);

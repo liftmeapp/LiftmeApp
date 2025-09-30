@@ -20,7 +20,6 @@ export default function Index() {
         console.log("Sign out: Clerk signOut complete.");
         // Navigate to sign in page after successful sign out
         router.replace('/(auth)/signin'); // Ensure this path is correct and recognized by InitialLayout as public
-        console.log("Sign out: Navigation to /signin initiated.");
     } catch (error) {
         console.error('Error signing out:', error);
     }

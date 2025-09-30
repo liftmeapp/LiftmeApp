@@ -7,6 +7,8 @@ import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BookingProvider } from '../context/BookingContext';
+import { TowingBookingProvider } from '../context/TowingBookingContext';
+import { StripeProvider } from '@stripe/stripe-react-native';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
@@ -30,9 +32,13 @@ const tokenCache = {
 export default function RootLayout() {
     return (
         <ClerkProvider tokenCache={tokenCache} publishableKey={CLERK_PUBLISHABLE_KEY as string}>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-                <InitialLayout />
-            </GestureHandlerRootView>
+            <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY!}>
+                <TowingBookingProvider>
+                    <GestureHandlerRootView style={{ flex: 1 }}>
+                        <InitialLayout />
+                    </GestureHandlerRootView>
+                </TowingBookingProvider>
+            </StripeProvider>
         </ClerkProvider>
     );
 }

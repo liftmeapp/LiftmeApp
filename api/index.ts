@@ -478,7 +478,7 @@ app.put(
                 });
                 return result;
             }, {
-                timeout: 10000, // Set timeout to 10 seconds
+                timeout: 30000, // Set timeout to 30 seconds
             });
 
             return res.status(200).json(updatedGarage);
@@ -746,34 +746,41 @@ app.put(
                 where: { id: truckId, owner: { clerkId: ownerId } },
             });
             if (!existingTruck) return res.status(403).json({ error: 'You are not authorized to edit this tow truck.' });
-            await prisma.towTruckService.deleteMany({ where: { towTruckId: truckId } });
+            const updatedTruck = await prisma.$transaction(async (tx) => {
+                await tx.towTruckService.deleteMany({ where: { towTruckId: truckId } });
 
-            const dataToUpdate: any = {
-                name: details.name, 
-                driverName: details.driverName, 
-                contactEmail: details.contactEmail, 
-                model: details.model, 
-                make: details.make,
-                year: parseInt(String(details.year), 10),
-                plateNumber: details.plateNumber, 
-                licenseNumber: details.licenseNumber,
-                services: {
-                    create: services.map((s: { vehicleType: string, price: number }) => ({
-                        vehicleType: s.vehicleType as any,
-                        price: s.price,
-                    })),
-                },
-            };
+                const dataToUpdate: any = {
+                    name: details.name, 
+                    driverName: details.driverName, 
+                    contactEmail: details.contactEmail, 
+                    model: details.model, 
+                    make: details.make,
+                    year: parseInt(String(details.year), 10),
+                    plateNumber: details.plateNumber, 
+                    licenseNumber: details.licenseNumber,
+                    services: {
+                        create: services.map((s: { vehicleType: string, price: number }) => ({
+                            vehicleType: s.vehicleType as any,
+                            price: s.price,
+                        })),
+                    },
+                };
+    
+                // Conditionally add status if it exists in the request (for re-applications)
+                if (details.status) {
+                    dataToUpdate.status = details.status;
+                }
+    
+                const result = await tx.towTruck.update({
+                    where: { id: truckId },
+                    data: dataToUpdate,
+                });
 
-            // Conditionally add status if it exists in the request (for re-applications)
-            if (details.status) {
-                dataToUpdate.status = details.status;
-            }
-
-            const updatedTruck = await prisma.towTruck.update({
-                where: { id: truckId },
-                data: dataToUpdate,
+                return result;
+            }, {
+                timeout: 30000, // Set timeout to 30 seconds
             });
+
             return res.status(200).json(updatedTruck);
         } catch (error) {
             console.error("Failed to update tow truck:", error);

@@ -116,7 +116,7 @@ export default function AddServicesScreen() {
       fetchServices();
     }
   // 4. The dependency array now includes `isSignedIn`. The ref handles the "run once" logic.
-  }, [isSignedIn, getToken]);
+  }, [isSignedIn]);
 
   const toggleService = (serviceId: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);

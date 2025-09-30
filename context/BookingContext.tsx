@@ -11,6 +11,7 @@ import React, {
   useState,
 } from 'react';
 import { Alert } from 'react-native';
+import { useConfirmPayment } from '@stripe/stripe-react-native';
 
 // --- Enums and Interfaces ---
 
@@ -73,7 +74,7 @@ export interface BookingContextType extends BookingState {
   startBooking: (payload: BookingPayload) => Promise<void>;
   cancelBooking: () => Promise<void>;
   resetBookingFlow: () => void;
-  confirmPayment: () => Promise<void>;
+  confirmPayment: (options: { paymentMethodId: string }) => Promise<void>;
   // Potentially setters for stages if needed by components
   setStage: (stage: BookingStage) => void;
   setSelectedService: (service: any) => void;
@@ -97,6 +98,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
   const router = useRouter();
   const { getToken, userId } = useAuth();
   const { user } = useUser();
+  const { confirmPayment: confirmStripePayment } = useConfirmPayment();
 
   const [currentStage, setCurrentStage] = useState<BookingStage>(
     BookingStage.IDLE
@@ -135,10 +137,14 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const handleBookingAccepted = (data: any) => {
         console.log(`🎉 [Socket.IO] Received 'booking_accepted':`, data);
+        console.log(`[BookingContext] Comparing received bookingId (${data.bookingId}) with current context bookingId (${currentBookingId})`);
         if (data.bookingId === currentBookingId) {
+            console.log('[BookingContext] Booking IDs match! Updating stage to PAYMENT.');
             setSelectedProvider(data.provider);
             setCurrentStage(BookingStage.PAYMENT); // Move to payment stage
             socket.disconnect();
+        } else {
+            console.warn(`[BookingContext] Booking ID mismatch. Current: ${currentBookingId}, Received: ${data.bookingId}. Ignoring event.`);
         }
     };
 
@@ -349,25 +355,62 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
     [currentBookingId, getToken, resetBookingFlow, router]
   );
 
-  const confirmPayment = useCallback(async () => {
+  const confirmPayment = useCallback(async ({ paymentMethodId }: { paymentMethodId: string }) => {
     if (!currentBookingId || !selectedProvider) {
       Alert.alert('Error', 'No active booking or provider to confirm payment.');
       return;
     }
     setIsConfirmingPayment(true);
-    // TODO: Implement actual payment logic here (e.g., Stripe API call)
-    console.log('Payment initiated for booking:', currentBookingId);
-    Alert.alert(
-      'Payment Confirmed!',
-      `Service booked with ${selectedProvider.name}! They are on their way. (Payment logic is a placeholder)`
-    );
-    setTimeout(() => {
-      // Simulate payment success and navigation
-      resetBookingFlow();
+
+    try {
+      // 1. Create Payment Intent on the server
+      const token = await getToken();
+      const intentResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/create-payment-intent`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const { clientSecret, error: intentError } = await intentResponse.json();
+
+      if (intentError || !clientSecret) {
+        throw new Error(intentError || 'Failed to create payment intent.');
+      }
+
+      // 2. Confirm the payment on the client
+      const { paymentIntent, error: paymentError } = await confirmStripePayment(clientSecret, {
+        paymentMethodType: 'Card',
+        paymentMethodData: {
+          paymentMethodId: paymentMethodId,
+        },
+      });
+
+      if (paymentError) {
+        throw new Error(paymentError.message);
+      }
+
+      // 3. If payment is successful, confirm on the backend
+      if (paymentIntent && (paymentIntent.status === 'Succeeded' || paymentIntent.status === 'RequiresCapture')) {
+        const confirmResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/confirm-payment`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const confirmData = await confirmResponse.json();
+        if (!confirmResponse.ok) {
+          throw new Error(confirmData.error || 'Failed to confirm booking after payment.');
+        }
+
+        // Update UI to CONFIRMED stage
+        setSelectedProvider(prev => ({ ...prev, otp: confirmData.booking.otp }));
+        setCurrentStage(BookingStage.CONFIRMED);
+      } else {
+        throw new Error('Payment was not successful.');
+      }
+
+    } catch (error: any) {
+      Alert.alert('Payment Failed', error.message);
+    } finally {
       setIsConfirmingPayment(false);
-      // router.push(`/tracking/${currentBookingId}`); // Example navigation
-    }, 2000);
-  }, [currentBookingId, selectedProvider, resetBookingFlow]);
+    }
+  }, [currentBookingId, selectedProvider, getToken, confirmStripePayment]);
 
   const contextValue = {
     currentStage,
