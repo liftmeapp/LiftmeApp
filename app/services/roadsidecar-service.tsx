@@ -625,7 +625,7 @@ export default function MainMap() {
                                 <Text style={styles.addCardButtonText}>Add New Card</Text>
                             </TouchableOpacity>
                             <View style={styles.priceSummary}>
-                                <Text style={styles.priceLabel}>Total:</Text>
+                                <Text style={styles.priceLabel}>Total (Service + Distance):</Text>
                                 <Text style={styles.priceValue}>₹{finalPrice.toFixed(2)}</Text>
                             </View>
                         </View>

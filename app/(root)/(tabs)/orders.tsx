@@ -6,6 +6,17 @@ import { ActivityIndicator, Alert, FlatList, Linking, RefreshControl, SafeAreaVi
 import { io } from 'socket.io-client';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+type OrderStatus = 'CONFIRMED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | string; // Add all possible statuses
+type OrderStyles = {
+    container: any;
+    header: any;
+    // ... other style properties
+    status: any;
+    status_CONFIRMED: any;
+    status_IN_PROGRESS: any;
+    // ... other dynamic status styles
+    [key: `status_${string}`]: any; // This tells TypeScript that any key starting with "status_" is valid
+  } & Record<string, any>;
 
 const OrderCard = ({ booking }: { booking: any }) => {
     const provider = booking.garage || booking.towTruck;
@@ -216,4 +227,4 @@ const styles = StyleSheet.create({
         marginTop: 5,
     },
     callButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginLeft: 10 },
-});
+})as OrderStyles;;

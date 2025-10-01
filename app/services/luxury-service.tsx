@@ -54,6 +54,10 @@ export default function MainMap() {
     const snapPoints = useMemo(() => ['15%', '45%', '75%'], []);
     const [isBottomSheetReady, setIsBottomSheetReady] = useState(false);
 
+    const [savedCards, setSavedCards] = useState<any[]>([]);
+    const [selectedCard, setSelectedCard] = useState<string | null>(null);
+    const [isFetchingCards, setIsFetchingCards] = useState(false);
+
     const {
         currentStage,
         searchCountdown,
@@ -159,6 +163,33 @@ export default function MainMap() {
     fetchInitialData();
     }, []); // The empty array ensures this runs only ONCE when the component mounts.
 
+    const fetchSavedCards = useCallback(async () => {
+        setIsFetchingCards(true);
+        try {
+            const token = await getToken();
+            if (!token) throw new Error("Authentication failed.");
+            const res = await fetch(`${API_BASE_URL}/api/stripe/payment-methods`, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (!res.ok) throw new Error("Could not load your saved cards.");
+            const cards = await res.json();
+            setSavedCards(cards);
+            if (cards.length > 0) {
+                setSelectedCard(cards[0].id);
+            }
+        } catch (error: any) {
+            Alert.alert("Error loading cards", error.message);
+        } finally {
+            setIsFetchingCards(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (currentStage === BookingStage.PAYMENT) {
+            fetchSavedCards();
+        } else if (currentStage === BookingStage.CONFIRMED) {
+            router.replace('/(root)/(tabs)/orders');
+        }
+    }, [currentStage, fetchSavedCards, router]);
+
 
 
     // --- Handler Functions ---
@@ -222,7 +253,11 @@ export default function MainMap() {
 
 
     const handleConfirmPayment = () => {
-       confirmPayment();
+        if (!selectedCard) {
+            Alert.alert("Payment Method", "Please select a payment method to continue.");
+            return;
+        }
+       confirmPayment({ paymentMethodId: selectedCard });
     };
 
     const handlePlaceSelect = (place: any) => {
@@ -549,30 +584,44 @@ export default function MainMap() {
                         </View>
                         
                         <View style={styles.contentArea}>
-                            <View style={styles.tripDetailsContainer}>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.tripDetailsLabel}>Garage:</Text>
-                                    <Text style={styles.tripDetailsValue}>{selectedProvider?.name || 'N/A'}</Text>
-                                </View>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.tripDetailsLabel}>Est. Arrival:</Text>
-                                    <Text style={styles.tripDetailsValue}>
-                                        {selectedProvider?.eta ? `${selectedProvider.eta} min` : 'N/A'}
-                                    </Text>
-                                </View>
-    
-                                {/* Final Price Summary */}
-                                <View style={styles.priceSummary}>
-                                    <Text style={styles.priceLabel}>Total (Service + Distance):</Text>
-                                    <Text style={styles.priceValue}>₹{finalPrice.toFixed(2)}</Text>
-                                </View>
+                            <Text style={styles.paymentMethodHeader}>Select Payment Method</Text>
+                            {isFetchingCards ? (
+                                <ActivityIndicator style={{ marginVertical: 20 }} size="small" color={color.primary} />
+                            ) : (
+                                <FlatList
+                                    data={savedCards}
+                                    renderItem={({ item }) => (
+                                        <TouchableOpacity 
+                                            style={[styles.cardItem, selectedCard === item.id && styles.selectedCardItem]}
+                                            onPress={() => setSelectedCard(item.id)}
+                                        >
+                                            <Ionicons name={selectedCard === item.id ? "radio-button-on" : "radio-button-off"} size={24} color={color.primary} />
+                                            <Ionicons name="card" size={24} color="#555" style={{marginHorizontal: 15}} />
+                                            <Text style={styles.cardText}>{item.brand.toUpperCase()} ending in {item.last4}</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                    keyExtractor={item => item.id}
+                                    ListEmptyComponent={
+                                        <View style={styles.centeredMessageContainer}>
+                                            <Text style={styles.subHeaderText}>No saved cards found.</Text>
+                                        </View>
+                                    }
+                                />
+                            )}
+                            <TouchableOpacity style={styles.addCardButton} onPress={() => router.push('/(root)/(tabs)/settings/payments')}>
+                                <Ionicons name="add-circle-outline" size={20} color={color.primary} />
+                                <Text style={styles.addCardButtonText}>Add New Card</Text>
+                            </TouchableOpacity>
+                            <View style={styles.priceSummary}>
+                                <Text style={styles.priceLabel}>Total (Service + Distance):</Text>
+                                <Text style={styles.priceValue}>₹{finalPrice.toFixed(2)}</Text>
                             </View>
                         </View>
     
                         <TouchableOpacity 
-                            style={[styles.confirmButton, isConfirmingPayment && {backgroundColor: color.darkGray}]} 
+                            style={[styles.confirmButton, (isConfirmingPayment || !selectedCard) && styles.disabledButton]} 
                             onPress={handleConfirmPayment} 
-                            disabled={isConfirmingPayment}
+                            disabled={isConfirmingPayment || !selectedCard}
                         >
                             {isConfirmingPayment ? (
                                 <ActivityIndicator color={color.white}/>
@@ -1002,5 +1051,40 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: color.primary,
         letterSpacing: 8,
+    },
+    paymentMethodHeader: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: color.textPrimary,
+        marginBottom: 10,
+    },
+    cardItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: color.lightGray,
+    },
+    selectedCardItem: {
+        backgroundColor: '#fff8f2',
+    },
+    cardText: {
+        fontSize: 16,
+        color: color.textPrimary,
+    },
+    addCardButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        marginTop: 10,
+        borderWidth: 1,
+        borderColor: color.primary,
+        borderRadius: 8,
+    },
+    addCardButtonText: {
+        color: color.primary,
+        marginLeft: 8,
+        fontWeight: '600',
     },
 });

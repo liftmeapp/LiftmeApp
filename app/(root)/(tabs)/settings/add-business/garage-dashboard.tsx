@@ -580,6 +580,7 @@ const styles = StyleSheet.create({
     bookingButton: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 8, marginLeft: 10 },
     acceptButton: { backgroundColor: '#27ae60' },
     declineButton: { backgroundColor: '#c0392b' },
+    completeButton: { backgroundColor: '#2980b9' },
     bookingButtonText: { color: 'white', fontWeight: 'bold' },
     disabledButton: { backgroundColor: '#95a5a6' },
     mainTabContainer: {

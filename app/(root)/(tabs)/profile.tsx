@@ -1,9 +1,9 @@
 // app/(root)/(tabs)/profile.tsx (or your chosen path for the profile screen)
-import React from 'react';
-import { View, Text, Image, StyleSheet, SafeAreaView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { useUser, useAuth } from '@clerk/clerk-expo';
-import { useRouter } from 'expo-router';
 import CustomButton from '@/components/CustomButton'; // Assuming you have this
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import { useRouter } from 'expo-router';
+import React from 'react';
+import { ActivityIndicator, Alert, Image, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 // Fallback profile image if user.imageUrl is not available
 // const defaultProfileImage = require('@/assets/images/profile.png'); // Ensure this path is correct
@@ -65,10 +65,6 @@ export default function ProfileScreen() {
           {user.primaryPhoneNumber?.phoneNumber && (
             <Text style={styles.contactInfo}>{user.primaryPhoneNumber.phoneNumber}</Text>
           )}
-          {/* To display custom address, you'd fetch it:
-          <Text style={styles.address}>Mukkom, Calicut</Text>
-          <Text style={styles.address}>673602</Text>
-          */}
         </View>
       </View>
 
@@ -90,14 +86,6 @@ export default function ProfileScreen() {
       {/* Add your service summary content here */}
       <Text style={styles.placeholderText}>Your service history and summaries will appear here.</Text>
 
-
-      <View style={styles.signOutButtonContainer}>
-        <CustomButton
-            title="Sign Out"
-            onPress={onSignOutPress}
-            className="bg-red-500" // Example: different style for sign out
-         />
-      </View>
     </SafeAreaView>
   );
 }
