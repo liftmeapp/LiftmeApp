@@ -786,10 +786,14 @@ async function setupGeospatialIndexes() {
 }
 const PORT = process.env.PORT || 3000;
 async function startServer() {
+    console.log("Initializing server...");
     await setupGeospatialIndexes();
     httpServer.listen(PORT, () => {
-        console.log(`Server listening on port ${PORT}`);
+        console.log(`🚀 Server listening on port ${PORT}`);
     });
 }
-startServer();
+startServer().catch((error) => {
+    console.error("🔴 FAILED TO START SERVER:", error);
+    process.exit(1);
+});
 //# sourceMappingURL=index.js.map
