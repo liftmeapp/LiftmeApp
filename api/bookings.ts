@@ -1,12 +1,10 @@
-
 import { ClerkExpressWithAuth, clerkClient } from '@clerk/clerk-sdk-node';
-import { customerSockets, io, providerSockets } from './socket';
-
 import { Client } from '@googlemaps/google-maps-services-js';
 import { BookingStatus } from '@prisma/client';
 import { Request, Response, Router } from 'express';
 import Stripe from 'stripe';
 import prisma from './lib/prisma';
+import { customerSockets, io, providerSockets } from './socket';
 
 const bookingsRouter = Router();
 
@@ -478,12 +476,14 @@ bookingsRouter.get('/bookings/active', async (req: Request, res: Response) => {
                         const provider = booking.garage || booking.towTruck;
                         const providerLocation = booking.garage?.location || booking.towTruck?.liveLocation?.location;
             
-                        if (provider && isGeoJSONPoint(booking.pickupLocation) && isGeoJSONPoint(providerLocation)) {                const userCoords = booking.pickupLocation.coordinates;
-                const providerCoords = providerLocation.coordinates;
-                const { etaMinutes, distanceKm } = await getEtaAndDistance({ lat: providerCoords[1], lon: providerCoords[0] }, { lat: userCoords[1], lon: userCoords[0] });
-                return { ...booking, providerEta: etaMinutes, providerDistance: distanceKm };
-            }
-            return { ...booking, providerEta: null, providerDistance: null };
+                        if (provider && isGeoJSONPoint(booking.pickupLocation) && isGeoJSONPoint(providerLocation)) 
+                            {
+                                const userCoords = booking.pickupLocation.coordinates;
+                                const providerCoords = providerLocation.coordinates;
+                                const { etaMinutes, distanceKm } = await getEtaAndDistance({ lat: providerCoords[1], lon: providerCoords[0] }, { lat: userCoords[1], lon: userCoords[0] });
+                                return { ...booking, providerEta: etaMinutes, providerDistance: distanceKm };
+                            }
+                    return { ...booking, providerEta: null, providerDistance: null };
         }));
 
         return res.status(200).json(bookingsWithEta);
