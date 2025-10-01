@@ -4,12 +4,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const clerk_sdk_node_1 = require("@clerk/clerk-sdk-node");
-const socket_1 = require("./socket");
 const google_maps_services_js_1 = require("@googlemaps/google-maps-services-js");
 const client_1 = require("@prisma/client");
 const express_1 = require("express");
 const stripe_1 = __importDefault(require("stripe"));
 const prisma_1 = __importDefault(require("./lib/prisma"));
+const socket_1 = require("./socket");
 const bookingsRouter = (0, express_1.Router)();
 const stripe = new stripe_1.default(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-04-10' });
 const googleMapsClient = new google_maps_services_js_1.Client();
