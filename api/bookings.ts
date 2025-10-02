@@ -996,8 +996,6 @@ bookingsRouter.post(
                     }
                 }
             }
-            // --- End of real-time logic ---
-
             return res.status(202).json({ bookingId: newBooking.id, eligibleTruckCount: eligibleTrucks.length });
 
         } catch (error: any) {
