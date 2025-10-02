@@ -31,7 +31,9 @@
     "socket.io-client": "^4.8.1",
     "stripe": "^18.5.0",
     "svix": "^1.21.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "prisma": "^5.12.1",
+    "typescript": "^5.4.5"
   },
   "devDependencies": {
     "@types/babel__core": "^7.20.5",
@@ -39,9 +41,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^20.12.7",
     "nodemon": "^3.1.0",
-    "prisma": "^5.12.1",
     "ts-node": "^10.9.2",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^5.4.5"
+    "ts-node-dev": "^2.0.0"
   }
 }
