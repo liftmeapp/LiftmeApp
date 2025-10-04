@@ -1,18 +1,18 @@
-    import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { debounce } from 'lodash';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps'; // Import Polyline
+import { TowingBookingStage } from '../context/TowingBookingContext';
 import RotatingLoader from './RotatingLoader';
 
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+const FALLBACK_REGION: Region = { latitude: 11.2588, longitude: 75.7804, latitudeDelta: 0.5, longitudeDelta: 0.5 };
+const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-    // --- CONFIGURATION & CONSTANTS ---
-    const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
-    const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
-    const FALLBACK_REGION: Region = { latitude: 11.2588, longitude: 75.7804, latitudeDelta: 0.5, longitudeDelta: 0.5 };
-    const MAP_STYLE = [ 
+const MAP_STYLE = [ 
         { elementType: "geometry", stylers: [{ color: "#f5f5f5" }] }, 
         { elementType: "labels.icon", stylers: [{ visibility: "off" }] }, 
         { elementType: "labels.text.fill", stylers: [{ color: "#616161" }] }, 
@@ -31,8 +31,6 @@ import RotatingLoader from './RotatingLoader';
         { featureType: "water", elementType: "geometry", stylers: [{ color: "#c9c9c9" }] }, 
         { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#9e9e9e" }] 
     }];
-
-import { TowingBookingStage } from '../context/TowingBookingContext';
 
     // --- INTERFACES ---
     export interface PinnedLocationData {
@@ -83,6 +81,8 @@ import { TowingBookingStage } from '../context/TowingBookingContext';
             </Marker>
         );
     });
+
+    CustomMapMarker.displayName = 'CustomMapMarker';
 
 
     // --- MAIN COMPONENT ---
@@ -192,8 +192,8 @@ import { TowingBookingStage } from '../context/TowingBookingContext';
                 rotateEnabled={!isPinningLocation}
             >
                     {/* --- Provider Markers (Existing Logic) --- */}
-                    {garages.map((g) => g.location?.coordinates && <CustomMapMarker key={`g-${g._id}`} coordinate={{latitude: g.location.coordinates[1], longitude: g.location.coordinates[0]}} name={g.name} type="garage" /> )}
-                    {towTrucks.map(t => t.location?.coordinates && <CustomMapMarker key={`t-${t._id}`} coordinate={{latitude: t.location.coordinates[1], longitude: t.location.coordinates[0]}} name={t.name} type="truck" /> )}
+                    {garages.map((g, index) => g.location?.coordinates && <CustomMapMarker key={`g-${g._id}-${index}`} coordinate={{latitude: g.location.coordinates[1], longitude: g.location.coordinates[0]}} name={g.name} type="garage" /> )}
+                    {towTrucks.map((t, index) => t.location?.coordinates && <CustomMapMarker key={`t-${t._id}-${index}`} coordinate={{latitude: t.location.coordinates[1], longitude: t.location.coordinates[0]}} name={t.name} type="truck" /> )}
                     
                                         {/* --- Pickup Marker --- */}
                                         {pickupMarker && (currentStage === TowingBookingStage.DESTINATION_SELECTION || currentStage === TowingBookingStage.VEHICLE_SELECTION || currentStage === TowingBookingStage.SEARCHING_FOR_PROVIDER || currentStage === TowingBookingStage.CONFIRMED) && (

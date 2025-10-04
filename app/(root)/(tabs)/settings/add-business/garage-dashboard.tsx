@@ -21,7 +21,7 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
     ) : null
 );
 
-const BookingCard = ({ booking, onAccept, onDecline, onPress, onComplete, isAccepting, isDeclining = false }: { booking: any, onAccept: (id: string) => void, onDecline: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, isAccepting: boolean, isDeclining?: boolean }) => (
+const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, isAccepting, isDeclining = false }: { booking: any, onAccept: (id: string) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, isAccepting: boolean, isDeclining?: boolean }) => (
     <TouchableOpacity style={styles.bookingCard} onPress={() => onPress(booking)}>
         <View style={styles.bookingHeader}>
             <Text style={styles.bookingDate}>{new Date(booking.bookedAt).toLocaleDateString()}</Text>
@@ -47,8 +47,14 @@ const BookingCard = ({ booking, onAccept, onDecline, onPress, onComplete, isAcce
             </View>
         )}
 
-        {booking.status === 'CONFIRMED' && (
+        {(booking.status === 'CONFIRMED' || booking.status === 'IN_PROGRESS') && (
             <View style={styles.bookingActions}>
+                <TouchableOpacity 
+                    style={[styles.bookingButton, styles.cancelButton]} 
+                    onPress={() => onCancel(booking.id)}
+                >
+                    <Text style={styles.bookingButtonText}>Cancel</Text>
+                </TouchableOpacity>
                 <TouchableOpacity 
                     style={[styles.bookingButton, styles.completeButton]} 
                     onPress={() => onComplete(booking.id)}
@@ -87,6 +93,42 @@ const BookingCard = ({ booking, onAccept, onDecline, onPress, onComplete, isAcce
     </TouchableOpacity>
 );
 
+const OtpVerificationModal = ({ visible, onClose, otp, setOtp, onVerify, isVerifying }: any) => (
+    <Modal
+        animationType="slide"
+        transparent={true}
+        visible={visible}
+        onRequestClose={onClose}
+    >
+        <View style={modalStyles.modalOverlay}>
+            <View style={modalStyles.modalContent}>
+                <Text style={modalStyles.modalTitle}>Complete Service</Text>
+                <Text style={modalStyles.modalSubtitle}>Enter the 6-digit OTP from the customer to confirm service completion and capture payment.</Text>
+                <TextInput
+                    style={modalStyles.otpInput}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    value={otp}
+                    onChangeText={setOtp}
+                    placeholder="123456"
+                />
+                <TouchableOpacity 
+                    style={[styles.bookingButton, styles.acceptButton, isVerifying && styles.disabledButton]} 
+                    onPress={onVerify} 
+                    disabled={isVerifying}
+                >
+                    {isVerifying 
+                        ? <ActivityIndicator color="#fff" /> 
+                        : <Text style={styles.bookingButtonText}>Verify & Complete</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity style={{marginTop: 10}} onPress={onClose}>
+                    <Text style={{textAlign: 'center', color: '#7f8c8d'}}>Cancel</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+    </Modal>
+);
+
 // --- Main Dashboard Component ---
 
 export default function GarageDashboard() {
@@ -104,7 +146,7 @@ export default function GarageDashboard() {
     // State for the main tabs: Jobs or Profile
     const [mainTab, setMainTab] = useState<'Jobs' | 'Profile'>('Jobs');
     // State for the sub-tabs within Jobs
-    const [jobsSubTab, setJobsSubTab] = useState<'Pending' | 'History'>('Pending');
+    const [jobsSubTab, setJobsSubTab] = useState<'Pending' | 'Current' | 'History'>('Pending');
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [selectedBooking, setSelectedBooking] = useState<any>(null);
 
@@ -145,41 +187,7 @@ export default function GarageDashboard() {
         }
     };
 
-    const OtpVerificationModal = () => (
-        <Modal
-            animationType="slide"
-            transparent={true}
-            visible={otpModalVisible}
-            onRequestClose={() => setOtpModalVisible(false)}
-        >
-            <View style={modalStyles.modalOverlay}>
-                <View style={modalStyles.modalContent}>
-                    <Text style={modalStyles.modalTitle}>Complete Service</Text>
-                    <Text style={modalStyles.modalSubtitle}>Enter the 6-digit OTP from the customer to confirm service completion and capture payment.</Text>
-                    <TextInput
-                        style={modalStyles.otpInput}
-                        keyboardType="number-pad"
-                        maxLength={6}
-                        value={otp}
-                        onChangeText={setOtp}
-                        placeholder="123456"
-                    />
-                    <TouchableOpacity 
-                        style={[styles.bookingButton, styles.acceptButton, isVerifying && styles.disabledButton]} 
-                        onPress={handleVerifyOtp} 
-                        disabled={isVerifying}
-                    >
-                        {isVerifying 
-                            ? <ActivityIndicator color="#fff" /> 
-                            : <Text style={styles.bookingButtonText}>Verify & Complete</Text>}
-                    </TouchableOpacity>
-                    <TouchableOpacity style={{marginTop: 10}} onPress={() => setOtpModalVisible(false)}>
-                        <Text style={{textAlign: 'center', color: '#7f8c8d'}}>Cancel</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </Modal>
-    );
+
 
 
     const BookingDetailsModal = ({ booking, onClose }: { booking: any, onClose: () => void }) => {
@@ -217,7 +225,9 @@ export default function GarageDashboard() {
 
             const status = jobsSubTab === 'Pending'
                 ? 'SEARCHING'
-                : 'AWAITING_PAYMENT,CONFIRMED,IN_PROGRESS,COMPLETED,CANCELLED,EXPIRED';
+                : jobsSubTab === 'Current'
+                ? 'CONFIRMED,IN_PROGRESS'
+                : 'AWAITING_PAYMENT,COMPLETED,CANCELLED,EXPIRED';
             
             const [garageRes, bookingsRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/api/garages/${garageId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
@@ -388,9 +398,50 @@ export default function GarageDashboard() {
         }
     };
 
+    const handleCancel = (bookingId: string) => {
+        Alert.alert(
+            "Cancel Booking",
+            "You have not completed the service. Are you sure you want to cancel?",
+            [
+                { text: "No", style: "cancel" },
+                {
+                    text: "Yes",
+                    style: "destructive",
+                    onPress: async () => {
+                        const reason = "Service cancelled by garage."; // Default reason
+                        try {
+                            const token = await getToken();
+                            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/cancel-by-provider`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                body: JSON.stringify({ reason }),
+                            });
+                            if (!response.ok) {
+                                const data = await response.json();
+                                throw new Error(data.error || "Failed to cancel booking.");
+                            }
+                            Alert.alert("Success", "The booking has been cancelled.");
+                            fetchData();
+                        } catch (error: any) {
+                            Alert.alert("Cancellation Error", error.message);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
     const filteredBookings = bookings.filter(b => {
-        if (jobsSubTab === 'Pending') return ['SEARCHING'].includes(b.status);
-        return ['AWAITING_PAYMENT', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'EXPIRED'].includes(b.status);
+        if (jobsSubTab === 'Pending') {
+            return b.status === 'SEARCHING';
+        }
+        if (jobsSubTab === 'Current') {
+            return ['CONFIRMED', 'IN_PROGRESS'].includes(b.status);
+        }
+        if (jobsSubTab === 'History') {
+            return ['AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED', 'EXPIRED'].includes(b.status);
+        }
+        return false;
     });
     
     if (loading && !garage) {
@@ -430,6 +481,9 @@ export default function GarageDashboard() {
                             <TouchableOpacity onPress={() => setJobsSubTab('Pending')} style={[styles.tab, jobsSubTab === 'Pending' && styles.activeTab]}>
                                 <Text style={[styles.tabText, jobsSubTab === 'Pending' && styles.activeTabText]}>Pending</Text>
                             </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setJobsSubTab('Current')} style={[styles.tab, jobsSubTab === 'Current' && styles.activeTab]}>
+                                <Text style={[styles.tabText, jobsSubTab === 'Current' && styles.activeTabText]}>Current</Text>
+                            </TouchableOpacity>
                             <TouchableOpacity onPress={() => setJobsSubTab('History')} style={[styles.tab, jobsSubTab === 'History' && styles.activeTab]}>
                                 <Text style={[styles.tabText, jobsSubTab === 'History' && styles.activeTabText]}>History</Text>
                             </TouchableOpacity>
@@ -447,6 +501,7 @@ export default function GarageDashboard() {
                                 booking={booking} 
                                 onAccept={handleAccept} 
                                 onDecline={handleDecline} 
+                                onCancel={handleCancel}
                                 onComplete={handleOpenOtpModal}
                                 onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
                                 isAccepting={acceptingId === booking.id}
@@ -498,7 +553,14 @@ export default function GarageDashboard() {
                 )}
             </ScrollView>
             {isModalVisible && <BookingDetailsModal booking={selectedBooking} onClose={() => setIsModalVisible(false)} />}
-            <OtpVerificationModal />
+            <OtpVerificationModal 
+                visible={otpModalVisible}
+                onClose={() => setOtpModalVisible(false)}
+                otp={otp}
+                setOtp={setOtp}
+                onVerify={handleVerifyOtp}
+                isVerifying={isVerifying}
+            />
         </View>
     );
 }
@@ -580,6 +642,7 @@ const styles = StyleSheet.create({
     bookingButton: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 8, marginLeft: 10 },
     acceptButton: { backgroundColor: '#27ae60' },
     declineButton: { backgroundColor: '#c0392b' },
+    cancelButton: { backgroundColor: '#f39c12' },
     completeButton: { backgroundColor: '#2980b9' },
     bookingButtonText: { color: 'white', fontWeight: 'bold' },
     disabledButton: { backgroundColor: '#95a5a6' },

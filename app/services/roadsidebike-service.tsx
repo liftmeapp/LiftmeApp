@@ -71,6 +71,7 @@ export default function MainMap() {
         cancelBooking,
         resetBookingFlow,
         confirmPayment,
+        confirmCashBooking,
         setStage,
         setSelectedService,
         setSelectedVehicle,
@@ -223,12 +224,18 @@ export default function MainMap() {
     const handleServiceSelect = (service: any) => setSelectedService(service);
     const handleVehicleSelect = (vehicle: any) => setSelectedVehicle(vehicle);
 
-    const handleConfirmPayment = () => {
-        if (!selectedCard) {
-            Alert.alert("Payment Method", "Please select a payment method to continue.");
-            return;
+    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CARD');
+
+    const handleConfirmBooking = () => {
+        if (paymentMethod === 'CARD') {
+            if (!selectedCard) {
+                Alert.alert("Payment Method", "Please select a payment method to continue.");
+                return;
+            }
+            confirmPayment({ paymentMethodId: selectedCard });
+        } else {
+            confirmCashBooking();
         }
-       confirmPayment({ paymentMethodId: selectedCard });
     };
 
     // --- Navigation ---
@@ -496,10 +503,11 @@ export default function MainMap() {
                                     </Text>
                                 </View>
                                 <TouchableOpacity
-                                    style={[styles.inlineButton, {backgroundColor: color.danger, marginTop: 20}]}
+                                    style={[styles.inlineButton, {backgroundColor: color.danger, marginTop: 20}, isBroadcasting && styles.disabledButton]}
                                     onPress={handleGoBack}
+                                    disabled={isBroadcasting}
                                 >
-                                    <Text style={styles.inlineButtonText}>Cancel Search</Text>
+                                    <Text style={styles.inlineButtonText}>{isBroadcasting ? 'checking..' : 'Cancel Search'}</Text>
                                 </TouchableOpacity>
                             </View>
                         )}
@@ -531,25 +539,44 @@ export default function MainMap() {
                             {isFetchingCards ? (
                                 <ActivityIndicator style={{ marginVertical: 20 }} size="small" color={color.primary} />
                             ) : (
-                                <FlatList
-                                    data={savedCards}
-                                    renderItem={({ item }) => (
-                                        <TouchableOpacity 
-                                            style={[styles.cardItem, selectedCard === item.id && styles.selectedCardItem]}
-                                            onPress={() => setSelectedCard(item.id)}
-                                        >
-                                            <Ionicons name={selectedCard === item.id ? "radio-button-on" : "radio-button-off"} size={24} color={color.primary} />
-                                            <Ionicons name="card" size={24} color="#555" style={{marginHorizontal: 15}} />
-                                            <Text style={styles.cardText}>{item.brand.toUpperCase()} ending in {item.last4}</Text>
-                                        </TouchableOpacity>
-                                    )}
-                                    keyExtractor={item => item.id}
-                                    ListEmptyComponent={
-                                        <View style={styles.centeredMessageContainer}>
-                                            <Text style={styles.subHeaderText}>No saved cards found.</Text>
-                                        </View>
-                                    }
-                                />
+                                <View>
+                                    {/* CASH OPTION */}
+                                    <TouchableOpacity
+                                        style={[styles.cardItem, paymentMethod === 'CASH' && styles.selectedCardItem]}
+                                        onPress={() => {
+                                            setPaymentMethod('CASH');
+                                            setSelectedCard(null);
+                                        }}
+                                    >
+                                        <Ionicons name={paymentMethod === 'CASH' ? "radio-button-on" : "radio-button-off"} size={24} color={color.primary} />
+                                        <Ionicons name="cash-outline" size={24} color="#555" style={{marginHorizontal: 15}} />
+                                        <Text style={styles.cardText}>Pay with Cash</Text>
+                                    </TouchableOpacity>
+
+                                    {/* CARD OPTIONS */}
+                                    <FlatList
+                                        data={savedCards}
+                                        renderItem={({ item }) => (
+                                            <TouchableOpacity 
+                                                style={[styles.cardItem, selectedCard === item.id && styles.selectedCardItem]}
+                                                onPress={() => {
+                                                    setPaymentMethod('CARD');
+                                                    setSelectedCard(item.id);
+                                                }}
+                                            >
+                                                <Ionicons name={selectedCard === item.id ? "radio-button-on" : "radio-button-off"} size={24} color={color.primary} />
+                                                <Ionicons name="card" size={24} color="#555" style={{marginHorizontal: 15}} />
+                                                <Text style={styles.cardText}>{item.brand.toUpperCase()} ending in {item.last4}</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                        keyExtractor={item => item.id}
+                                        ListEmptyComponent={
+                                            <View style={styles.centeredMessageContainer}>
+                                                <Text style={styles.subHeaderText}>No saved cards found.</Text>
+                                            </View>
+                                        }
+                                    />
+                                </View>
                             )}
                             <TouchableOpacity style={styles.addCardButton} onPress={() => router.push('/(root)/(tabs)/settings/payments')}>
                                 <Ionicons name="add-circle-outline" size={20} color={color.primary} />
@@ -562,15 +589,15 @@ export default function MainMap() {
                         </View>
     
                         <TouchableOpacity 
-                            style={[styles.confirmButton, (isConfirmingPayment || !selectedCard) && styles.disabledButton]} 
-                            onPress={handleConfirmPayment} 
-                            disabled={isConfirmingPayment || !selectedCard}
+                            style={[styles.confirmButton, (isConfirmingPayment || (paymentMethod === 'CARD' && !selectedCard)) && styles.disabledButton]} 
+                            onPress={handleConfirmBooking} 
+                            disabled={isConfirmingPayment || (paymentMethod === 'CARD' && !selectedCard)}
                         >
                             {isConfirmingPayment ? (
                                 <ActivityIndicator color={color.white}/>
                             ) : (
                                 <Text style={styles.confirmButtonText}>
-                                    Pay ₹{finalPrice.toFixed(2)} & Confirm
+                                    {paymentMethod === 'CASH' ? 'Confirm Booking' : `Pay ₹${finalPrice.toFixed(2)} & Confirm`}
                                 </Text>
                             )}
                         </TouchableOpacity>
@@ -655,7 +682,7 @@ const styles = StyleSheet.create({
         paddingVertical: 15,
         borderRadius: 8,
         marginTop: 10,
-        marginBottom: 35,
+        marginBottom: 10,
     },
     inlineElectricButton: {
         flexDirection: 'row',
@@ -688,7 +715,7 @@ const styles = StyleSheet.create({
         paddingVertical: 12, 
         paddingHorizontal: 14, 
         borderRadius: 8, 
-        marginTop: 10,
+        marginTop: 0,
         marginBottom: 5,
     },
     addVehicleButtonText: { 

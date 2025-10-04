@@ -1,4 +1,4 @@
-import { Text, Image, TouchableOpacity, View, FlatList } from "react-native";
+import { Text, Image, TouchableOpacity, View, FlatList, Dimensions } from "react-native";
 import { useRouter } from 'expo-router';
 
 const opts = [{
@@ -41,30 +41,38 @@ export default function NavOptions() {
       horizontal
       showsHorizontalScrollIndicator={false}
       keyExtractor={(item) => item.id.toString()}
-      renderItem={({ item }) => (
-        <View className="top-2">
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={() => router.push(item.link as any)}
-            className="bg-[#fff] w-[19rem] h-[9rem] overflow-hidden  justify-center shadow-xl border-red-950/8 shadow-slate-900 m-2 rounded-r-md "
-          >
-            <View className="flex-row">
-              {/* Icon */}
-              <Image
-                source={item.icon}
-                className="w-[7rem] h-[9rem] object-cover overflow-hidden"
-              />
-    
-              {/* Text */}
-              <View className="ml-5 p-3 text-wrap overflow-hidden">
-                <Text className="text-slate-500 text-lg font-bold flex-shrink flex-wrap max-w-[10rem]">{item.name}</Text>
-                {/* Subheading */}
-                <Text className="text-slate-300 text-sm mt-1 top-3 flex-shrink flex-wrap max-w-[10rem] pr-1">{item.details}</Text>
+      renderItem={({ item }) => {
+        const isSmallDevice = Dimensions.get('window').width < 380;
+        
+        const containerWidth = isSmallDevice ? 'w-[17rem]' : 'w-[19rem]';
+        const containerHeight = isSmallDevice ? 'h-[8rem]' : 'h-[9rem]';
+        const imageWidth = isSmallDevice ? 'w-[6rem]' : 'w-[7rem]';
+        const imageHeight = isSmallDevice ? 'h-[8rem]' : 'h-[9rem]';
+        const textContainerMargin = isSmallDevice ? 'ml-3' : 'ml-5';
+        const textContainerPadding = isSmallDevice ? 'p-2' : 'p-3';
+        const textMaxWidth = isSmallDevice ? 'max-w-[9rem]' : 'max-w-[10rem]';
+
+        return (
+          <View>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => router.push(item.link as any)}
+              className={`bg-[#fff] ${containerWidth} ${containerHeight} overflow-hidden shadow-xl border-red-950/8 shadow-slate-900 m-2 rounded-r-md`}
+            >
+              <View className="flex-row">
+                <Image
+                  source={item.icon}
+                  className={`${imageWidth} ${imageHeight} object-cover overflow-hidden`}
+                />
+                <View className={`${textContainerMargin} ${textContainerPadding} text-wrap overflow-hidden`}>
+                  <Text className={`text-slate-500 text-lg font-bold flex-shrink flex-wrap ${textMaxWidth}`}>{item.name}</Text>
+                  <Text className={`text-slate-300 text-sm mt-2 flex-shrink flex-wrap ${textMaxWidth} pr-1`}>{item.details}</Text>
+                </View>
               </View>
-            </View>
-          </TouchableOpacity>
-        </View>
-      )}
+            </TouchableOpacity>
+          </View>
+        );
+      }}
     />
     
   );

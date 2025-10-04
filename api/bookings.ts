@@ -240,10 +240,16 @@ bookingsRouter.post('/bookings/:id/accept-tow', async (req: Request, res: Respon
     const towTruckOwnerId = req.auth.userId;
     
     try {
-        const towTruck = await prisma.towTruck.findFirst({ where: { owner: {clerkId: towTruckOwnerId} } });
+        const towTruck = await prisma.towTruck.findFirst({ 
+            where: { owner: {clerkId: towTruckOwnerId} },
+            include: { services: true }
+        });
         if (!towTruck) return res.status(403).json({ error: "Tow Truck profile not found."});
 
-        const bookingToAccept = await prisma.booking.findUnique({ where: { id: bookingId } });
+        const bookingToAccept = await prisma.booking.findUnique({ 
+            where: { id: bookingId },
+            include: { user: true, vehicle: true } // Include vehicle to get vehicleType
+        });
         if (!bookingToAccept) return res.status(404).json({ error: "Booking request not found." });
 
         if (bookingToAccept.status !== BookingStatus.SEARCHING) {
@@ -256,11 +262,42 @@ bookingsRouter.post('/bookings/:id/accept-tow', async (req: Request, res: Respon
             return res.status(403).json({ error: "Your tow truck is not eligible for this request." });
         }
 
+        // Get the specific service price from the accepting tow truck
+        const towTruckService = towTruck.services.find(s => s.vehicleType === bookingToAccept.vehicle?.type);
+        if (!towTruckService) {
+            return res.status(400).json({ error: "This tow truck does not offer service for the requested vehicle type." });
+        }
+        const servicePrice = towTruckService.price;
+
+        // Calculate distance and final price
+        let finalAmount = servicePrice;
+        let etaMinutes: number | null = null;
+        let distanceKm: number | null = null;
+
+        const pickupLocation = bookingToAccept.pickupLocation;
+        const destinationLocation = bookingToAccept.destinationLocation;
+
+        if (isGeoJSONPoint(pickupLocation) && isGeoJSONPoint(destinationLocation)) {
+            const origin = { lat: pickupLocation.coordinates[1], lon: pickupLocation.coordinates[0] };
+            const destination = { lat: destinationLocation.coordinates[1], lon: destinationLocation.coordinates[0] };
+            
+            const etaResult = await getEtaAndDistance(origin, destination); // Pickup to Destination
+            etaMinutes = etaResult.etaMinutes;
+            distanceKm = etaResult.distanceKm;
+
+            if (distanceKm !== null) {
+                const distanceCost = distanceKm * PRICE_PER_KM;
+                finalAmount += distanceCost;
+            }
+        }
+
         const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
                 status: BookingStatus.AWAITING_PAYMENT,
                 towTruck: { connect: { id: towTruck.id } },
+                basePrice: servicePrice, // Update base price to the actual tow truck's price
+                finalAmount: finalAmount, // Set the calculated final amount
                 eligibleProviderIds: [],
                 expiresAt: null,
                 paymentExpiresAt: new Date(Date.now() + 6 * 60 * 1000),
@@ -271,11 +308,17 @@ bookingsRouter.post('/bookings/:id/accept-tow', async (req: Request, res: Respon
         // --- Notify customer via WebSocket ---
         const customerSocketId = customerSockets[updatedBooking.user.clerkId];
         if (customerSocketId) {
+            const providerPayload = {
+                ...updatedBooking.towTruck,
+                eta: etaMinutes,
+                distance: distanceKm,
+                finalPrice: finalAmount
+            };
             io.to(customerSocketId).emit('booking_accepted', {
                 bookingId: updatedBooking.id,
-                provider: updatedBooking.towTruck
+                provider: providerPayload
             });
-            console.log(`📬 Emitted 'booking_accepted' to customer ${updatedBooking.user.clerkId}`);
+            console.log(`📬 Emitted 'booking_accepted' to customer ${updatedBooking.user.clerkId} with final price ${finalAmount}`);
         }
 
         return res.status(200).json({ success: true, booking: updatedBooking });
@@ -365,16 +408,21 @@ bookingsRouter.post('/bookings/:id/verify-otp', async (req: Request, res: Respon
         if (booking.status !== 'CONFIRMED') return res.status(409).json({ error: 'Booking is not in a verifiable state.' });
         if (booking.otp !== otp) return res.status(400).json({ error: 'Invalid OTP provided.' });
         if (booking.otpExpiresAt && new Date() > booking.otpExpiresAt) return res.status(410).json({ error: 'The OTP has expired.' });
-        if (!booking.paymentIntentId) return res.status(400).json({ error: 'Cannot complete service: Payment Intent not found.' });
 
-        await stripe.paymentIntents.capture(booking.paymentIntentId);
+        // Only capture payment if it's a card payment
+        if (booking.paymentMethod === 'CARD') {
+            if (!booking.paymentIntentId) {
+                return res.status(400).json({ error: 'Cannot complete service: Payment Intent not found for a card payment.' });
+            }
+            await stripe.paymentIntents.capture(booking.paymentIntentId);
+        }
 
         const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
-                status: BookingStatus.COMPLETED, // Set status to COMPLETED
-                paymentStatus: 'paid',
-                serviceStartedAt: new Date(),
+                status: BookingStatus.COMPLETED,
+                paymentStatus: booking.paymentMethod === 'CARD' ? 'paid' : 'paid_in_cash',
+                serviceEndedAt: new Date(),
                 otp: null,
                 otpExpiresAt: null,
             }
@@ -387,10 +435,10 @@ bookingsRouter.post('/bookings/:id/verify-otp', async (req: Request, res: Respon
             console.log(`✅ Emitted 'service_completed' to customer ${booking.user.clerkId}`);
         }
 
-        return res.status(200).json({ success: true, message: 'Service started and payment captured successfully.' });
+        return res.status(200).json({ success: true, message: 'Service completed and payment processed.' });
 
     } catch (error: any) {
-        console.error("Failed to verify OTP and capture payment:", error);
+        console.error("Failed to verify OTP and process payment:", error);
         if (error instanceof Stripe.errors.StripeError) {
             return res.status(402).json({ error: `Payment capture failed: ${error.message}` });
         }
@@ -415,16 +463,21 @@ bookingsRouter.post('/bookings/:id/verify-otp-tow', async (req: Request, res: Re
         if (booking.status !== 'CONFIRMED') return res.status(409).json({ error: 'Booking is not in a verifiable state.' });
         if (booking.otp !== otp) return res.status(400).json({ error: 'Invalid OTP provided.' });
         if (booking.otpExpiresAt && new Date() > booking.otpExpiresAt) return res.status(410).json({ error: 'The OTP has expired.' });
-        if (!booking.paymentIntentId) return res.status(400).json({ error: 'Cannot complete service: Payment Intent not found.' });
 
-        await stripe.paymentIntents.capture(booking.paymentIntentId);
+        // Only capture payment if it's a card payment
+        if (booking.paymentMethod === 'CARD') {
+            if (!booking.paymentIntentId) {
+                return res.status(400).json({ error: 'Cannot complete service: Payment Intent not found for a card payment.' });
+            }
+            await stripe.paymentIntents.capture(booking.paymentIntentId);
+        }
 
         const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
-                status: BookingStatus.COMPLETED, // Set status to COMPLETED
-                paymentStatus: 'paid',
-                serviceStartedAt: new Date(),
+                status: BookingStatus.COMPLETED,
+                paymentStatus: booking.paymentMethod === 'CARD' ? 'paid' : 'paid_in_cash',
+                serviceEndedAt: new Date(),
                 otp: null,
                 otpExpiresAt: null,
             }
@@ -437,10 +490,10 @@ bookingsRouter.post('/bookings/:id/verify-otp-tow', async (req: Request, res: Re
             console.log(`✅ Emitted 'service_completed' to customer ${booking.user.clerkId}`);
         }
 
-        return res.status(200).json({ success: true, message: 'Service started and payment captured successfully.' });
+        return res.status(200).json({ success: true, message: 'Service completed and payment processed.' });
 
     } catch (error: any) {
-        console.error("Failed to verify OTP and capture payment for tow booking:", error);
+        console.error("Failed to verify OTP and process payment for tow booking:", error);
         if (error instanceof Stripe.errors.StripeError) {
             return res.status(402).json({ error: `Payment capture failed: ${error.message}` });
         }
@@ -490,6 +543,38 @@ bookingsRouter.get('/bookings/active', async (req: Request, res: Response) => {
 
     } catch (error: any) {
         console.error("Failed to fetch active bookings:", error);
+        return res.status(500).json({ error: 'An internal server error occurred' });
+    }
+});
+
+bookingsRouter.get('/bookings/history', async (req: Request, res: Response) => {
+    const customerClerkId = req.auth.userId;
+    console.log(`[API] Fetching history for customer: ${customerClerkId}`);
+    if (!customerClerkId) {
+        console.error("[API] Unauthorized: customerClerkId is missing.");
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    try {
+        const pastBookings = await prisma.booking.findMany({
+            where: {
+                user: { clerkId: customerClerkId },
+                status: { in: [BookingStatus.COMPLETED, BookingStatus.CANCELLED, BookingStatus.EXPIRED] }
+            },
+            include: {
+                garage: { select: { name: true } },
+                towTruck: { select: { name: true } },
+                service: { select: { name: true } },
+            },
+            orderBy: {
+                bookedAt: 'desc'
+            }
+        });
+        console.log(`[API] Found ${pastBookings.length} past bookings for ${customerClerkId}`);
+        return res.status(200).json(pastBookings);
+
+    } catch (error: any) {
+        console.error("Failed to fetch past bookings:", error);
         return res.status(500).json({ error: 'An internal server error occurred' });
     }
 });
@@ -689,7 +774,6 @@ bookingsRouter.post('/bookings/:bookingId/confirm-payment', async (req: Request,
         }
 
         const otp = generateOtp();
-        const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
         const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
@@ -698,7 +782,7 @@ bookingsRouter.post('/bookings/:bookingId/confirm-payment', async (req: Request,
                 paymentStatus: 'authorized',
                 paymentExpiresAt: null,
                 otp: otp,
-                otpExpiresAt: otpExpiresAt,
+                otpExpiresAt: null,
             }
         });
 
@@ -707,6 +791,46 @@ bookingsRouter.post('/bookings/:bookingId/confirm-payment', async (req: Request,
 
     } catch (error: any) {
         console.error("Failed to confirm payment:", error);
+        return res.status(500).json({ error: 'An internal server error occurred' });
+    }
+});
+
+bookingsRouter.post('/bookings/:bookingId/confirm-cash', async (req: Request, res: Response) => {
+    const { bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+        });
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+        if (booking.status !== 'AWAITING_PAYMENT') return res.status(409).json({ error: 'This booking is not awaiting payment.' });
+        if (booking.paymentExpiresAt && new Date() > booking.paymentExpiresAt) return res.status(410).json({ error: 'The payment window for this booking has expired.' });
+
+        // No payment intent to check for cash payments
+
+        const otp = generateOtp();
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                status: BookingStatus.CONFIRMED,
+                paymentMethod: 'CASH', // Set payment method to CASH
+                paymentStatus: 'authorized', // Or a new status like 'pending_cash'
+                paymentExpiresAt: null,
+                otp: otp,
+                otpExpiresAt: null,
+            },
+        });
+
+        // TODO: Notify provider that the booking is confirmed
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to confirm cash payment:", error);
         return res.status(500).json({ error: 'An internal server error occurred' });
     }
 });
@@ -801,9 +925,9 @@ bookingsRouter.post('/bookings/:bookingId/cancel-by-user', async (req: Request, 
 
         // If confirmed, only allow cancellation within 2 minutes.
         if (booking.status === BookingStatus.CONFIRMED) {
-            const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-            if (booking.updatedAt < twoMinutesAgo) {
-                return res.status(403).json({ error: 'This booking was confirmed more than 2 minutes ago and can no longer be cancelled.' });
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+            if (booking.updatedAt < fiveMinutesAgo) {
+                return res.status(403).json({ error: 'This booking was confirmed more than 5 minutes ago and can no longer be cancelled.' });
             }
         }
 
@@ -847,7 +971,7 @@ bookingsRouter.post('/bookings/:bookingId/cancel-by-provider', async (req: Reque
                     { towTruck: { owner: { clerkId: providerClerkId } } },
                 ],
             },
-            include: { garage: true, towTruck: true },
+            include: { garage: true, towTruck: true, user: true },
         });
 
         if (!booking || (!booking.garage && !booking.towTruck)) return res.status(404).json({ error: 'Booking not found or you are not the assigned provider.' });
@@ -864,7 +988,7 @@ bookingsRouter.post('/bookings/:bookingId/cancel-by-provider', async (req: Reque
             }
         }
 
-        await prisma.booking.update({
+        const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
                 status: BookingStatus.CANCELLED,
@@ -873,7 +997,16 @@ bookingsRouter.post('/bookings/:bookingId/cancel-by-provider', async (req: Reque
             }
         });
 
-        // TODO: Notify user of the cancellation and refund.
+        // Notify user of the cancellation and refund.
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('booking_cancelled_by_provider', { 
+                bookingId: updatedBooking.id,
+                reason: reason 
+            });
+            console.log(`📬 Emitted 'booking_cancelled_by_provider' to customer ${booking.user.clerkId}`);
+        }
+
         return res.status(200).json({ success: true, message: 'Booking cancelled and refund processed.' });
 
     } catch (error: any) {
@@ -1003,7 +1136,6 @@ bookingsRouter.post(
         return res.status(500).json({ reason: 'An internal server error occurred.', details: error.message });
     }
 });
-
 
 bookingsRouter.get('/stripe/payment-methods', async (req: Request, res: Response) => {
     const customerClerkId = req.auth.userId;

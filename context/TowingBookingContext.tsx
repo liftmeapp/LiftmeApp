@@ -1,5 +1,6 @@
 // context/TowingBookingContext.tsx
 import { useAuth, useUser } from '@clerk/clerk-expo';
+import { useConfirmPayment } from '@stripe/stripe-react-native';
 import { router } from 'expo-router';
 import React, {
   createContext,
@@ -66,7 +67,8 @@ export interface TowingBookingContextType extends TowingBookingState {
   startTowingBooking: () => Promise<void>;
   cancelTowingBooking: () => Promise<void>;
   resetTowingBookingFlow: () => void;
-  confirmPayment: () => Promise<void>;
+  confirmPayment: (options: { paymentMethodId: string }) => Promise<void>; // Modified
+  confirmCashBooking: () => Promise<void>; // Added
   setSearchError: (error: string | null) => void;
   setConfirmedProvider: (provider: TowingProviderInfo | null) => void;
   setBookingId: (id: string | null) => void;
@@ -346,7 +348,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
           try {
             const token = await getToken();
             if (!token) { Alert.alert('Error', 'Authentication required to cancel.'); return; }
-            const response = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/cancel-by-user`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/cancel-by-user`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } });
             const data = await response.json();
             if (!response.ok) { throw new Error(data.error || 'Failed to cancel the booking.'); }
             Alert.alert('Success', 'Your towing request has been cancelled.');
@@ -360,47 +362,105 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     ]);
   }, [currentBookingId, resetTowingBookingFlow, router]);
 
-  const confirmPayment = useCallback(async () => {
+  const { confirmPayment: confirmStripePayment } = useConfirmPayment(); // Added
+
+  const confirmPayment = useCallback(async ({ paymentMethodId }: { paymentMethodId: string }) => { // Modified signature
     if (!currentBookingId || !selectedProvider) {
       Alert.alert('Error', 'No active booking or provider to confirm payment.');
       return;
     }
     setIsConfirmingPayment(true);
+
     try {
-        const token = await getToken();
-        if (!token) throw new Error("Authentication failed.");
+      // 1. Create Payment Intent on the server
+      const token = await getToken();
+      const intentResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/create-payment-intent`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const { clientSecret, error: intentError } = await intentResponse.json();
 
-        const intentResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/create-payment-intent`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
+      if (intentError || !clientSecret) {
+        throw new Error(intentError || 'Failed to create payment intent.');
+      }
 
-        const intentData = await intentResponse.json();
-        if (!intentResponse.ok) {
-            throw new Error(intentData.error || "Failed to create payment intent.");
-        }
+      // 2. Confirm the payment on the client
+      const { paymentIntent, error: paymentError } = await confirmStripePayment(clientSecret, {
+        paymentMethodType: 'Card',
+        paymentMethodData: {
+          paymentMethodId: paymentMethodId,
+        },
+      });
 
-        console.log("Simulating payment sheet completion for client secret:", intentData.clientSecret);
+      if (paymentError) {
+        throw new Error(paymentError.message);
+      }
 
+      // 3. If payment is successful, confirm on the backend
+      if (paymentIntent && (paymentIntent.status === 'Succeeded' || paymentIntent.status === 'RequiresCapture')) {
         const confirmResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/confirm-payment`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` }
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
         });
-        
         const confirmData = await confirmResponse.json();
         if (!confirmResponse.ok) {
-            throw new Error(confirmData.error || "Failed to confirm payment.");
+          throw new Error(confirmData.error || 'Failed to confirm booking after payment.');
         }
 
-        setConfirmedProvider(prev => ({ ...prev, otp: confirmData.booking.otp }));
+        // Update UI to CONFIRMED stage
+        setConfirmedProvider(prev => {
+          if (!prev) return null; // Handle the case where prev is null
+          return { 
+            ...prev, 
+            otp: confirmData.booking.otp 
+          };
+        });
         setCurrentStage(TowingBookingStage.CONFIRMED);
+      } else {
+        throw new Error('Payment was not successful.');
+      }
 
     } catch (error: any) {
-        Alert.alert('Payment Failed', error.message);
+      Alert.alert('Payment Failed', error.message);
     } finally {
-        setIsConfirmingPayment(false);
+      setIsConfirmingPayment(false);
     }
-  }, [currentBookingId, selectedProvider, getToken]);
+  }, [currentBookingId, selectedProvider,confirmStripePayment]); // Added confirmStripePayment to dependencies
+
+  const confirmCashBooking = useCallback(async () => { // Added confirmCashBooking
+    if (!currentBookingId || !selectedProvider) {
+      Alert.alert('Error', 'No active booking or provider to confirm.');
+      return;
+    }
+    setIsConfirmingPayment(true);
+
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/confirm-cash`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to confirm cash booking.');
+      }
+
+      setConfirmedProvider(prev => {
+        if (!prev) return null; // Handle the case where prev is null
+        return { 
+          ...prev, 
+          otp: data.booking.otp 
+        };
+      });
+      setCurrentStage(TowingBookingStage.CONFIRMED);
+
+    } catch (error: any) {
+      Alert.alert('Confirmation Failed', error.message);
+    } finally {
+      setIsConfirmingPayment(false);
+    }
+  }, [currentBookingId, selectedProvider]);
 
   const contextValue = {
     currentStage,
@@ -424,6 +484,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     cancelTowingBooking,
     resetTowingBookingFlow,
     confirmPayment,
+    confirmCashBooking, // Added
     setSearchError,
     setConfirmedProvider,
     setBookingId,

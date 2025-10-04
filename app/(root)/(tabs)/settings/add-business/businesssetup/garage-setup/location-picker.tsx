@@ -1,18 +1,19 @@
 // /app/settings/add-business/businesssetup/garage-setup/location-picker.tsx
 
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import MapView, { PROVIDER_GOOGLE, Region } from 'react-native-maps';
-import { Stack, useRouter } from 'expo-router';
-import * as Location from 'expo-location';
+import RotatingLoader from '@/components/RotatingLoader';
 import { useGarageStore } from '@/store/garageStore';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import RotatingLoader from '@/components/RotatingLoader';
-import { useLocalSearchParams } from 'expo-router';
+import * as Location from 'expo-location';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 const DUBAI_COORDS: Region = {
   latitude: 25.2048,
@@ -32,6 +33,7 @@ export default function LocationPickerScreen() {
   const [currentRegion, setCurrentRegion] = useState<Region | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [geocodedAddress, setGeocodedAddress] = useState<string>('Move the map to set location');
   const [currentGarageData, setCurrentGarageData] = useState<any>(null);
   const [isLoadingGarage, setIsLoadingGarage] = useState(false);
@@ -97,6 +99,21 @@ export default function LocationPickerScreen() {
         setGeocodedAddress('Address details unavailable');
     }
   }
+
+  const handleLocationSelect = (data: any, details: any = null) => {
+    if (details?.geometry?.location) {
+        const { lat, lng } = details.geometry.location;
+        const newRegion = {
+            latitude: lat,
+            longitude: lng,
+            latitudeDelta: 0.005,
+            longitudeDelta: 0.005,
+        };
+        mapRef.current?.animateToRegion(newRegion, 1000);
+    } else {
+        console.warn("No details found for selected location");
+    }
+  };
 
   const handleFinalSubmit = async () => {
     if (!currentRegion) {
@@ -180,6 +197,36 @@ export default function LocationPickerScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: 'Step 3: Pin Your Location' }} />
+      
+      {GOOGLE_API_KEY && GOOGLE_API_KEY.length > 20 && (
+          <GooglePlacesAutocomplete
+              placeholder="Search for a place"
+              fetchDetails={true}
+              onPress={handleLocationSelect}
+              query={{ key: GOOGLE_API_KEY, language: 'en', components: 'country:in' }}
+              styles={{
+                  container: styles.searchContainer,
+                  textInput: styles.searchInput,
+                  listView: styles.searchResults,
+                  row: styles.searchResultRow,
+                  description: styles.searchResultText,
+              }}
+              textInputProps={{
+                  placeholderTextColor: '#999',
+              }}
+              enablePoweredByContainer={false}
+          />
+      )}
+      
+      {searchError && (
+          <View style={styles.searchError}>
+              <Text style={styles.searchErrorText}>{searchError}</Text>
+              <TouchableOpacity onPress={() => setSearchError(null)} style={styles.dismissButton}>
+                  <Text style={styles.dismissButtonText}>Dismiss</Text>
+              </TouchableOpacity>
+          </View>
+      )}
+
       <MapView
         ref={mapRef}
         style={styles.map}
@@ -219,6 +266,78 @@ export default function LocationPickerScreen() {
 }
 
 const styles = StyleSheet.create({
+  searchContainer: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
+    zIndex: 1,
+  },
+  searchInput: {
+    height: 44,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    backgroundColor: 'white',
+    fontSize: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  searchResults: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    marginTop: 5,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    maxHeight: 200,
+  },
+  searchResultRow: {
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  searchResultText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  searchError: {
+    position: 'absolute',
+    top: 60,
+    left: 10,
+    right: 10,
+    backgroundColor: '#ffebee',
+    padding: 12,
+    borderRadius: 8,
+    zIndex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    elevation: 3,
+  },
+  searchErrorText: {
+    color: '#c62828',
+    flex: 1,
+    fontSize: 14,
+  },
+  dismissButton: {
+    backgroundColor: '#c62828',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+  },
+  dismissButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
   container: { flex: 1, backgroundColor: '#fff' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8f9fa' },
   loadingText: { marginTop: 15, fontSize: 16, color: '#555', fontWeight: '500' },

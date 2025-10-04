@@ -1,6 +1,7 @@
 // app/_layout.tsx
 import RotatingLoader from "@/components/RotatingLoader";
 import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-expo";
+import { StripeProvider } from '@stripe/stripe-react-native';
 import { Slot, SplashScreen, usePathname, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
@@ -8,7 +9,6 @@ import { StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BookingProvider } from '../context/BookingContext';
 import { TowingBookingProvider } from '../context/TowingBookingContext';
-import { StripeProvider } from '@stripe/stripe-react-native';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
@@ -33,11 +33,9 @@ export default function RootLayout() {
     return (
         <ClerkProvider tokenCache={tokenCache} publishableKey={CLERK_PUBLISHABLE_KEY as string}>
             <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY!}>
-                <TowingBookingProvider>
                     <GestureHandlerRootView style={{ flex: 1 }}>
                         <InitialLayout />
                     </GestureHandlerRootView>
-                </TowingBookingProvider>
             </StripeProvider>
         </ClerkProvider>
     );
@@ -135,7 +133,9 @@ function InitialLayout() {
 
     return (
         <BookingProvider>
+        <TowingBookingProvider>
             <Slot />
+        </TowingBookingProvider>
         </BookingProvider>
     );}
 

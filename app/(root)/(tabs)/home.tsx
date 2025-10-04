@@ -1,7 +1,6 @@
 import Coupons from "@/components/Coupons";
 import NavOptions from "@/components/NavOptions";
 import NavOptionSec from "@/components/NavOptionSec";
-import SearchBar from "@/components/SearchBar";
 import { useClerk } from "@clerk/clerk-expo";
 import { router } from "expo-router";
 import { FlatList, Image, Text, TouchableOpacity, View } from "react-native";
@@ -52,9 +51,9 @@ export default function Index() {
               </TouchableOpacity>
             </View>
             <View>
-              <SearchBar />
+              {/* <SearchBar />
               <View className="flex flex-row justify-start">
-              </View>
+              </View> */}
             </View>
             <View>
             <Text

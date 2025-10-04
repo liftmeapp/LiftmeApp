@@ -1,6 +1,6 @@
 // context/BookingContext.tsx
-import { io } from 'socket.io-client';
 import { useAuth, useUser } from '@clerk/clerk-expo';
+import { useConfirmPayment } from '@stripe/stripe-react-native';
 import { useRouter } from 'expo-router';
 import React, {
   createContext,
@@ -11,7 +11,7 @@ import React, {
   useState,
 } from 'react';
 import { Alert } from 'react-native';
-import { useConfirmPayment } from '@stripe/stripe-react-native';
+import { io } from 'socket.io-client';
 
 // --- Enums and Interfaces ---
 
@@ -28,7 +28,7 @@ export enum BookingStage {
   ERROR = 'ERROR',
 }
 
-export type ServiceType = 'ROADSIDE_ASSISTANCE' | 'TOWING' | 'ELECTRIC_VEHICLE' | 'LUXURY' | 'BIKE_ASSISTANCE';
+export type ServiceType = 'ROADSIDE_ASSISTANCE' | 'TOWING' | 'ELECTRIC_VEHICLE' | 'LUXURY' | 'BIKE_ASSISTANCE' | 'HOME_SERVICE';
 
 export interface BookingPayload {
   serviceType: ServiceType;
@@ -75,6 +75,7 @@ export interface BookingContextType extends BookingState {
   cancelBooking: () => Promise<void>;
   resetBookingFlow: () => void;
   confirmPayment: (options: { paymentMethodId: string }) => Promise<void>;
+  confirmCashBooking: () => Promise<void>;
   // Potentially setters for stages if needed by components
   setStage: (stage: BookingStage) => void;
   setSelectedService: (service: any) => void;
@@ -217,6 +218,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
         case 'ELECTRIC_VEHICLE':
         case 'LUXURY':
         case 'BIKE_ASSISTANCE':
+        case 'HOME_SERVICE':
           endpoint = `${API_BASE_URL}/api/bookings/request-service`;
           requestBody = {
             serviceId: payload.serviceId,
@@ -302,10 +304,15 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
                   text: 'Yes, Cancel',
                   style: 'destructive',
                   onPress: async () => {
+                    if (!currentBookingId) {
+                        console.error("Attempted to cancel with a null booking ID.");
+                        Alert.alert("Error", "Booking is still being created. Please wait a moment before cancelling.");
+                        return;
+                    }
                     try {
                       const token = await getToken();
                       const response = await fetch(
-                        `${API_BASE_URL}/bookings/${currentBookingId}/cancel`,
+                        `${API_BASE_URL}/api/bookings/${currentBookingId}/cancel-by-user`,
                         {
                           method: 'POST',
                           headers: {
@@ -399,8 +406,13 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         // Update UI to CONFIRMED stage
-        setSelectedProvider(prev => ({ ...prev, otp: confirmData.booking.otp }));
-        setCurrentStage(BookingStage.CONFIRMED);
+        setSelectedProvider(prev => {
+          if (!prev) return null; // Handle the case where prev is null
+          return { 
+            ...prev, 
+            otp: confirmData.booking.otp 
+          };
+        });        setCurrentStage(BookingStage.CONFIRMED);
       } else {
         throw new Error('Payment was not successful.');
       }
@@ -411,6 +423,40 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsConfirmingPayment(false);
     }
   }, [currentBookingId, selectedProvider, getToken, confirmStripePayment]);
+
+  const confirmCashBooking = useCallback(async () => {
+    if (!currentBookingId || !selectedProvider) {
+      Alert.alert('Error', 'No active booking or provider to confirm.');
+      return;
+    }
+    setIsConfirmingPayment(true);
+
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/confirm-cash`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to confirm cash booking.');
+      }
+
+      setSelectedProvider(prev => {
+        if (!prev) return null; // Handle the case where prev is null
+        return { 
+          ...prev, 
+          otp: data.booking.otp 
+        };
+      });      setCurrentStage(BookingStage.CONFIRMED);
+
+    } catch (error: any) {
+      Alert.alert('Confirmation Failed', error.message);
+    } finally {
+      setIsConfirmingPayment(false);
+    }
+  }, [currentBookingId, selectedProvider, getToken]);
 
   const contextValue = {
     currentStage,
@@ -428,6 +474,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
     cancelBooking,
     resetBookingFlow,
     confirmPayment,
+    confirmCashBooking,
     setStage,
     setSelectedService,
     setSelectedVehicle,

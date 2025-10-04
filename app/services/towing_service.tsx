@@ -1,11 +1,12 @@
-// /app/services/towing_service.tsx
+
 import RotatingLoader from '@/components/RotatingLoader';
 import TowMap, { PinnedLocationData } from "@/components/TowMap";
 import { TowingBookingProvider, TowingBookingStage, useTowingBooking } from '@/context/TowingBookingContext';
+import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator, Alert,
     FlatList,
@@ -39,12 +40,17 @@ const color = {
 // --- MAIN COMPONENT ---
 const TowingServiceMapContent = () => {
     const router = useRouter();
-    // const { getToken } = useAuth(); // getToken is now used within the context
+    const { getToken } = useAuth(); // Added getToken
     const bottomSheetRef = useRef<BottomSheet>(null);
-    const snapPoints = useMemo(() => ['30%', '65%'], []);
+    const snapPoints = useMemo(() => ['45%', '80%'], []);
 
     // --- STATE MANAGEMENT ---
     const [showPlaceSearch, setShowPlaceSearch] = useState(false); // New state for place search visibility
+
+    const [savedCards, setSavedCards] = useState<any[]>([]);
+    const [selectedCard, setSelectedCard] = useState<string | null>(null);
+    const [isFetchingCards, setIsFetchingCards] = useState(false);
+    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CARD');
 
     const {
         currentStage, setCurrentStage,
@@ -57,18 +63,41 @@ const TowingServiceMapContent = () => {
         selectedProvider, setConfirmedProvider,
         isInitialLoading,
         isBroadcasting, setIsBroadcasting,
-        isConfirmingPayment, confirmPayment, // Added for payment stage
+        isConfirmingPayment, confirmPayment, confirmCashBooking, // Added for payment stage
         startTowingBooking, cancelTowingBooking, resetTowingBookingFlow,
-        searchCountdown, eligibleTruckCount
+                searchCountdown, eligibleTruckCount
     } = useTowingBooking();
-
-    // --- EFFECTS ---
-
+            
+    const fetchSavedCards = useCallback(async () => {
+            setIsFetchingCards(true);
+            try {
+                const token = await getToken();
+                if (!token) throw new Error("Authentication failed.");
+                const res = await fetch(`${API_BASE_URL}/api/stripe/payment-methods`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!res.ok) throw new Error("Could not load your saved cards.");
+                const cards = await res.json();
+                setSavedCards(cards);
+                if (cards.length > 0) {
+                    setSelectedCard(cards[0].id);
+                }
+            } catch (error: any) {
+                Alert.alert("Error loading cards", error.message);
+            } finally {
+                setIsFetchingCards(false);
+            }
+        }, []);
+        
+            // --- EFFECTS ---
     // Adjust bottom sheet position based on the current stage
     useEffect(() => {
         if (!bottomSheetRef.current) return;
         const snap = (index: number) => { try { bottomSheetRef.current?.snapToIndex(index); } catch (e) {} };
         
+        if (currentStage === TowingBookingStage.CONFIRMED) {
+            router.replace('/(root)/(tabs)/orders');
+            return;
+        }
+
         switch(currentStage) {
             case TowingBookingStage.PICKUP_SELECTION:
             case TowingBookingStage.DESTINATION_SELECTION:
@@ -77,16 +106,15 @@ const TowingServiceMapContent = () => {
                 break;
             case TowingBookingStage.PAYMENT:
                 snap(1); // Higher sheet for payment
+                fetchSavedCards(); // Fetch cards when entering payment stage
                 break;
             case TowingBookingStage.SEARCHING_FOR_PROVIDER:
-            case TowingBookingStage.CONFIRMED:
                 snap(0); // Lower sheet to show map
                 break;
         }
-    }, [currentStage]);
+    }, [currentStage, fetchSavedCards, router]); // Added router to dependencies
 
-
-
+    
     // --- ACTION HANDLERS ---
 
     // Update location state when map pin moves
@@ -438,35 +466,79 @@ const TowingServiceMapContent = () => {
                         </View>
                         
                         <View style={styles.contentArea}>
-                            <View style={styles.tripDetailsContainer}>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.tripDetailsLabel}>Tow Truck:</Text>
-                                    <Text style={styles.tripDetailsValue}>{selectedProvider?.name || 'N/A'}</Text>
+                            <Text style={styles.paymentMethodHeader}>Select Payment Method</Text>
+                            {isFetchingCards ? (
+                                <ActivityIndicator style={{ marginVertical: 20 }} size="small" color={color.primary} />
+                            ) : (
+                                <View>
+                                    {/* CASH OPTION */}
+                                    <TouchableOpacity
+                                        style={[styles.cardItem, paymentMethod === 'CASH' && styles.selectedCardItem]}
+                                        onPress={() => {
+                                            setPaymentMethod('CASH');
+                                            setSelectedCard(null);
+                                        }}
+                                    >
+                                        <Ionicons name={paymentMethod === 'CASH' ? "radio-button-on" : "radio-button-off"} size={24} color={color.primary} />
+                                        <Ionicons name="cash-outline" size={24} color="#555" style={{marginHorizontal: 15}} />
+                                        <Text style={styles.cardText}>Pay with Cash</Text>
+                                    </TouchableOpacity>
+
+                                    {/* CARD OPTIONS */}
+                                    <FlatList
+                                        data={savedCards}
+                                        renderItem={({ item }) => (
+                                            <TouchableOpacity 
+                                                style={[styles.cardItem, selectedCard === item.id && styles.selectedCardItem]}
+                                                onPress={() => {
+                                                    setPaymentMethod('CARD');
+                                                    setSelectedCard(item.id);
+                                                }}
+                                            >
+                                                <Ionicons name={selectedCard === item.id ? "radio-button-on" : "radio-button-off"} size={24} color={color.primary} />
+                                                <Ionicons name="card" size={24} color="#555" style={{marginHorizontal: 15}} />
+                                                <Text style={styles.cardText}>{item.brand.toUpperCase()} ending in {item.last4}</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                        keyExtractor={item => item.id}
+                                        ListEmptyComponent={
+                                            <View style={styles.centeredMessageContainer}>
+                                                <Text style={styles.subHeaderText}>No saved cards found.</Text>
+                                            </View>
+                                        }
+                                    />
                                 </View>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.tripDetailsLabel}>Est. Arrival:</Text>
-                                    <Text style={styles.tripDetailsValue}>
-                                        {selectedProvider?.eta ? `${selectedProvider.eta} min` : 'N/A'}
-                                    </Text>
-                                </View>
-    
-                                <View style={styles.priceSummary}>
-                                    <Text style={styles.priceLabel}>Total Price:</Text>
-                                    <Text style={styles.priceValue}>AED {finalPrice.toFixed(2)}</Text>
-                                </View>
+                            )}
+                            <TouchableOpacity style={styles.addCardButton} onPress={() => router.push('/(root)/(tabs)/settings/payments')}> {/* Assuming this route exists */}
+                                <Ionicons name="add-circle-outline" size={20} color={color.primary} />
+                                <Text style={styles.addCardButtonText}>Add New Card</Text>
+                            </TouchableOpacity>
+                            <View style={styles.priceSummary}>
+                                <Text style={styles.priceLabel}>Total (Service + Distance):</Text>
+                                <Text style={styles.priceValue}>AED {finalPrice.toFixed(2)}</Text>
                             </View>
                         </View>
     
                         <TouchableOpacity 
-                            style={[styles.confirmButton, isConfirmingPayment && {backgroundColor: color.darkGray}]} 
-                            onPress={confirmPayment} 
-                            disabled={isConfirmingPayment}
+                            style={[styles.confirmButton, (isConfirmingPayment || (paymentMethod === 'CARD' && !selectedCard)) && {backgroundColor: color.darkGray}]} 
+                            onPress={() => {
+                                if (paymentMethod === 'CARD') {
+                                    if (!selectedCard) {
+                                        Alert.alert("Payment Method", "Please select a payment method to continue.");
+                                        return;
+                                    }
+                                    confirmPayment({ paymentMethodId: selectedCard });
+                                } else {
+                                    confirmCashBooking();
+                                }
+                            }} 
+                            disabled={isConfirmingPayment || (paymentMethod === 'CARD' && !selectedCard)}
                         >
                             {isConfirmingPayment ? (
                                 <ActivityIndicator color={color.white}/>
                             ) : (
                                 <Text style={styles.confirmButtonText}>
-                                    Pay AED {finalPrice.toFixed(2)} & Confirm
+                                    {paymentMethod === 'CASH' ? 'Confirm Booking' : `Pay AED ${finalPrice.toFixed(2)} & Confirm`}
                                 </Text>
                             )}
                         </TouchableOpacity>
@@ -751,5 +823,76 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: color.primary,
         letterSpacing: 8,
+    },
+    // Payment Method Styles
+    contentArea: {
+        flex: 1,
+        marginBottom: 20,
+    },
+    paymentMethodHeader: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: color.darkGray,
+        marginBottom: 15,
+    },
+    cardItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: color.white,
+        padding: 15,
+        borderRadius: 10,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: color.border,
+    },
+    selectedCardItem: {
+        borderColor: color.primary,
+        backgroundColor: '#f8f9ff',
+        borderWidth: 1.5,
+    },
+    cardText: {
+        fontSize: 15,
+        color: color.darkGray,
+        flex: 1,
+    },
+    centeredMessageContainer: {
+        padding: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    addCardButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 12,
+        borderWidth: 1,
+        borderColor: color.primary,
+        borderRadius: 10,
+        marginVertical: 10,
+        borderStyle: 'dashed',
+    },
+    addCardButtonText: {
+        color: color.primary,
+        fontSize: 15,
+        fontWeight: '500',
+        marginLeft: 8,
+    },
+    countdownBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f8f9ff',
+        padding: 12,
+        borderRadius: 8,
+        marginVertical: 15,
+        borderWidth: 1,
+        borderColor: '#e0e5ff',
+    },
+    countdownText: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: color.primary,
+        marginLeft: 8,
+        fontVariant: ['tabular-nums'], // Ensures consistent number width
     },
 });

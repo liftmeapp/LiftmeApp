@@ -76,7 +76,11 @@
     PERCENTAGE
     FIXED_AMOUNT
   }
-
+  
+  enum PaymentMethod {
+    CARD
+    CASH
+  }
   // ===================================================================
   //  CORE USER & VEHICLE MODELS
   // ===================================================================
@@ -289,6 +293,7 @@
     finalAmount     Float
     paymentStatus   String        @default("pending")
     paymentIntentId String?
+    paymentMethod   PaymentMethod @default(CARD)
     userRating      Int?
     userReview      String?
     providerRating  Int?
