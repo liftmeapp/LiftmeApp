@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { debounce } from 'lodash';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import RotatingLoader from './RotatingLoader';
@@ -91,15 +91,18 @@ const fetchNearbyEVStations = async (lat: number, lon: number) => {
 
 
 // --- CHILD COMPONENTS ---
-// A custom map marker to prevent re-renders and show consistent styling
 const CustomMapMarker = React.memo(
-    ({ coordinate, name, type }: { coordinate: {latitude: number, longitude: number},
-         name: string, type: 'garage' | 'truck' | 'ev' }) => {
+    ({ coordinate, name, type, onPress }: { 
+        coordinate: {latitude: number, longitude: number},
+        name: string, 
+        type: 'garage' | 'truck' | 'ev',
+        onPress: () => void
+    }) => {
     const iconName = type === 'garage' ? 'build' : type === 'truck' ? 'car' : 'flash';
     const markerColor = type === 'garage' ? '#b95528' : type === 'truck' ? '#2980b9' : '#27ae60';
 
     return (
-        <Marker coordinate={coordinate}>
+        <Marker coordinate={coordinate} title={name} onPress={onPress}>
             <View style={styles.markerContainer}>
                 <View style={[styles.markerPin, { backgroundColor: markerColor }]}><Ionicons name={iconName} size={16} color="white" /></View>
             </View>
@@ -112,7 +115,6 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
     const { getToken, isSignedIn } = useAuth();
     const mapRef = useRef<MapView>(null);
     
-    // State for map region and nearby providers
     const [region, setRegion] = useState<Region | null>(null);
     const [isFetchingProviders, setIsFetchingProviders] = useState(true);
     const [garages, setGarages] = useState<any[]>([]);
@@ -120,19 +122,29 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
     const [chargingStations, setChargingStations] = useState<any[]>([]);
     const [searchError, setSearchError] = useState<string | null>(null);
 
-    // State for pinning mode
     const [pinAddress, setPinAddress] = useState<string>('Move the map to set location...');
     const [isGeocoding, setIsGeocoding] = useState(false);
     const [pinnedLocation, setPinnedLocation] = useState<PinnedLocationData | null>(null);
 
-    // Debounced function to prevent excessive API calls
+    const [selectedMarker, setSelectedMarker] = useState<{name: string, latitude: number, longitude: number} | null>(null);
+    const [isModalVisible, setIsModalVisible] = useState(false);
+
+    const handleGetDirections = (latitude: number, longitude: number) => {
+        const url = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+        Linking.openURL(url).catch(err => console.error('An error occurred opening maps', err));
+    };
+
+    const handleMarkerPress = (markerData: {name: string, latitude: number, longitude: number}) => {
+        setSelectedMarker(markerData);
+        setIsModalVisible(true);
+    };
+
     const debouncedGetAddress = useCallback(debounce(async (lat: number, lon: number) => {
         console.log("[Map.tsx] Debounced geocode triggered.");
         const address = await getAddressFromCoords(lat, lon);
         onPinLocationChange({ latitude: lat, longitude: lon, description: address });
     }, 500), [onPinLocationChange]);
 
-    // --- MAIN DATA FETCHING LOGIC ---
     const fetchProvidersForRegion = useCallback(debounce(async (currentRegion: Region) => {
         if (!isSignedIn || !currentRegion) return;
         setIsFetchingProviders(true);
@@ -170,7 +182,6 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                 promises.push(Promise.resolve([]));
             }
 
-            // Always fetch EV stations from Google Places API
             promises.push(fetchNearbyEVStations(lat, lon));
 
             const [garagesData, towTrucksData, evStationsData] = await Promise.all(promises);
@@ -183,10 +194,8 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
         } finally {
             setIsFetchingProviders(false);
         }
-    }, 1000), [isSignedIn, providerType, filters]); // Debounce to avoid calls on every small map move
+    }, 1000), [isSignedIn, providerType, filters]);
 
-    // --- EFFECTS ---
-    // Initialize map on mount
     useEffect(() => {
         console.log("[Map.tsx] Initial useEffect is running...");
         const initializeMap = async () => {
@@ -220,14 +229,11 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
         initializeMap();
     }, []);
 
-    // --- HANDLERS ---
     const [isProgrammaticChange, setIsProgrammaticChange] = useState(false);
 
-    // Modified handleRegionChangeComplete to avoid conflicts
     const handleRegionChangeComplete = (newRegion: Region) => {
         console.log("[Map.tsx] Region change complete.", { isProgrammaticChange });
         
-        // Skip processing if this was a programmatic change
         if (isProgrammaticChange) {
             setIsProgrammaticChange(false);
             setRegion(newRegion);
@@ -264,7 +270,6 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
         }
     };
 
-    // Fixed search location handler
     const handleLocationSelect = (data: any, details: any = null) => {
         console.log('🔍 [Map.tsx] Google Places Autocomplete - Location selected');
         console.log('Data:', data);
@@ -272,20 +277,16 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
         
         setSearchError(null);
         
-        // Clear any existing errors
         if (searchError) {
             setSearchError(null);
         }
 
-        // Check if we have location details
         if (details?.geometry?.location) {
             const { lat, lng } = details.geometry.location;
             console.log(`📍 [Map.tsx] Animating to coordinates: ${lat}, ${lng}`);
             
-            // Set programmatic change flag to prevent conflicts
             setIsProgrammaticChange(true);
             
-            // Create the new region
             const newRegion = {
                 latitude: lat,
                 longitude: lng,
@@ -293,22 +294,17 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                 longitudeDelta: 0.01,
             };
             
-            // Update region state immediately
             setRegion(newRegion);
             
-            // Animate map to the selected location
             mapRef.current?.animateToRegion(newRegion, 1000);
             
-            // If in pinning mode, update the pin location
             if (isPinningLocation) {
                 debouncedGetAddress(lat, lng);
             } else {
-                // If in discovery mode, fetch providers for new location
                 fetchProvidersForRegion(newRegion);
             }
             
         } else if (data?.description) {
-            // Fallback: try to geocode the description
             console.log(`🔄 [Map.tsx] No coordinates found, attempting to geocode: ${data.description}`);
             geocodeAndNavigate(data.description);
         } else {
@@ -317,7 +313,6 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
         }
     };
 
-    // Fallback geocoding function
     const geocodeAndNavigate = async (address: string) => {
         try {
             const response = await fetch(
@@ -355,7 +350,6 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
         }
     };
 
-    // --- RENDER LOGIC ---
     if (!region) {
         return (
             <View style={styles.centered}>
@@ -366,7 +360,6 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
     }
     return (
         <View style={styles.container}>
-            {/* Only render GooglePlacesAutocomplete if API key is available and valid */}
             {GOOGLE_API_KEY && GOOGLE_API_KEY.length > 20 && (
                 <GooglePlacesAutocomplete
                     placeholder="Search for a place"
@@ -376,10 +369,8 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                     debounce={300}
                     timeout={20000}
                     enableHighAccuracyLocation={true}                    
-                    // Main search handler
                     onPress={handleLocationSelect}
                     
-                    // Error handlers
                     onFail={(error) => {
                         console.error('🔴 [Map.tsx] Google Places Autocomplete error:', error);
                         setSearchError('Search temporarily unavailable');
@@ -393,16 +384,14 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                         setSearchError('No results found');
                     }}
                     
-                    // Search configuration
                     query={{
                         key: GOOGLE_API_KEY,
                         language: 'en',
                         components: 'country:in',
-                        types: '(cities)', // Focus on cities, establishments, and geocoding
+                        types: '(cities)', 
                         fields: 'formatted_address,geometry,name,place_id'
                     }}
                     
-                    // Enhanced request configuration
                     requestUrl={{
                         url: 'https://maps.googleapis.com/maps/api/place/autocomplete/json',
                         useOnPlatform: 'web'
@@ -424,7 +413,6 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                         autoCorrect: false
                     }}
                     
-                    // Enhanced search options
                     predefinedPlaces={[]}
                     currentLocation={false}
                     nearbyPlacesAPI="GooglePlacesSearch"
@@ -435,7 +423,6 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                         fields: 'formatted_address,geometry,name,place_id'
                     }}
                     
-                    // Additional props for better functionality
                     suppressDefaultStyles={false}
                     keyboardShouldPersistTaps="handled"
                     listEmptyComponent={() => (
@@ -446,7 +433,6 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                 />
             )}
             
-            {/* Show error message if search is not working */}
             {searchError && (
                 <View style={styles.searchError}>
                     <Text style={styles.searchErrorText}>{searchError}</Text>
@@ -459,7 +445,6 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                 </View>
             )}
 
-            {/* Show message if Google API key is missing or invalid */}
             {(!GOOGLE_API_KEY || GOOGLE_API_KEY.length <= 20) && (
                 <View style={styles.searchError}>
                     <Text style={styles.searchErrorText}>Search unavailable - API key needed</Text>
@@ -490,6 +475,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                             }} 
                             name={g.name} 
                             type="garage" 
+                            onPress={() => handleMarkerPress({name: g.name, latitude: g.location.coordinates[1], longitude: g.location.coordinates[0]})}
                         />
                     )}
                     {towTrucks.filter(t => t.location?.coordinates).map((t, index) => 
@@ -501,6 +487,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                             }} 
                             name={t.name} 
                             type="truck" 
+                            onPress={() => handleMarkerPress({name: t.name, latitude: t.location.coordinates[1], longitude: t.location.coordinates[0]})}
                         />
                     )}
                     {chargingStations.map((station, index) => 
@@ -512,6 +499,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                             }} 
                             name={station.name} 
                             type="ev" 
+                            onPress={() => handleMarkerPress({name: station.name, latitude: station.geometry.location.lat, longitude: station.geometry.location.lng})}
                         />
                     )}
                 </>
@@ -537,6 +525,37 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                     </TouchableOpacity>
                 </>
             )}
+
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={isModalVisible}
+                onRequestClose={() => setIsModalVisible(false)}
+            >
+                <View style={styles.modalContainer}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>{selectedMarker?.name}</Text>
+                        <Text style={styles.modalSubtitle}>Would you like to get directions to this location?</Text>
+                        <TouchableOpacity 
+                            style={styles.directionsButton} 
+                            onPress={() => {
+                                if (selectedMarker) {
+                                    handleGetDirections(selectedMarker.latitude, selectedMarker.longitude);
+                                }
+                                setIsModalVisible(false);
+                            }}
+                        >
+                            <Text style={styles.directionsButtonText}>Get Directions</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={styles.cancelButton} 
+                            onPress={() => setIsModalVisible(false)}
+                        >
+                            <Text style={styles.cancelButtonText}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -546,7 +565,7 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     searchContainer: {
         position: 'absolute',
-        top: 60,
+        top: 40,
         left: 10,
         right: 10,
         zIndex: 1,
@@ -704,4 +723,55 @@ const styles = StyleSheet.create({
         elevation: 5 
     },
     refreshText: { marginLeft: 8, fontWeight: '500' },
+
+    // Modal Styles
+    modalContainer: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        backgroundColor: 'rgba(0,0,0,0.4)',
+    },
+    modalContent: {
+        backgroundColor: 'white',
+        padding: 20,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -3 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 20,
+    },
+    modalTitle: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        marginBottom: 8,
+    },
+    modalSubtitle: {
+        fontSize: 16,
+        color: '#666',
+        marginBottom: 20,
+    },
+    directionsButton: {
+        backgroundColor: '#27ae60',
+        padding: 15,
+        borderRadius: 10,
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    directionsButtonText: {
+        color: 'white',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    cancelButton: {
+        backgroundColor: '#f1f1f1',
+        padding: 15,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    cancelButtonText: {
+        color: '#333',
+        fontSize: 18,
+        fontWeight: '500',
+    },
 });
