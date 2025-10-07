@@ -658,6 +658,13 @@ export default function MainMap() {
                                 </Text>
                             )}
                         </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.cancelBookingButton, isConfirmingPayment && styles.disabledButton]} 
+                            onPress={cancelBooking} 
+                            disabled={isConfirmingPayment}
+                        >
+                            <Text style={styles.cancelBookingButtonText}>Cancel Booking</Text>
+                        </TouchableOpacity>
                     </BottomSheetView>
                 );
     
@@ -693,9 +700,7 @@ export default function MainMap() {
         </GestureHandlerRootView>
     );
 };
-    
 // --- Styles ---
-
 const styles = StyleSheet.create({
     container: { 
         flex: 1, 
@@ -794,6 +799,20 @@ const styles = StyleSheet.create({
         color: color.white, 
         fontSize: 16, 
         fontWeight: '600' 
+    },
+    cancelBookingButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: color.danger,
+        paddingVertical: 15,
+        borderRadius: 8,
+        marginTop: 10,
+        marginBottom: 10,
+    },
+    cancelBookingButtonText: {
+        color: color.white,
+        fontSize: 16, 
+        fontWeight: '600'
     },
     subHeaderText: { 
         textAlign: 'center', 

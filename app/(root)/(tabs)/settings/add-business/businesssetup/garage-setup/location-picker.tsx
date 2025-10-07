@@ -9,15 +9,15 @@ import * as Location from 'expo-location';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+import MapView, { PROVIDER_GOOGLE, Region } from 'react-native-maps';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-const DUBAI_COORDS: Region = {
-  latitude: 25.2048,
-  longitude: 55.2708,
+const BANGALORE_COORDS: Region = {
+  latitude: 12.9716,
+  longitude: 77.5946,
   latitudeDelta: 0.5,
   longitudeDelta: 0.5,
 };
@@ -27,14 +27,14 @@ export default function LocationPickerScreen() {
   const { garageId } = useLocalSearchParams<{ garageId?: string }>();
 
   const { getToken, isSignedIn, isLoaded } = useAuth();
-  const { details, services, setLocation, reset } = useGarageStore();
+  const { details, services, location: storedLocation, supportedVehicleTypes, setLocation, reset } = useGarageStore();
   const mapRef = useRef<MapView>(null);
 
   const [currentRegion, setCurrentRegion] = useState<Region | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [geocodedAddress, setGeocodedAddress] = useState<string>('Move the map to set location');
+  const [geocodedAddress, setGeocodedAddress] = useState<string>('Move the map to set location...');
   const [currentGarageData, setCurrentGarageData] = useState<any>(null);
   const [isLoadingGarage, setIsLoadingGarage] = useState(false);
 
@@ -42,45 +42,70 @@ export default function LocationPickerScreen() {
     (async () => {
       if (!isLoaded || !isSignedIn) return;
 
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setLocationError('Permission denied. Please enable location services to find your position.');
-        setCurrentRegion(DUBAI_COORDS);
-        reverseGeocode(DUBAI_COORDS);
-        return;
-      }
-      
-      console.log(`[LocationPicker] --- Am I in Edit Mode? garageId = ${garageId}`);
-      try {
-        let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        const region = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        };
-        setCurrentRegion(region);
-        reverseGeocode(region);
-      } catch (error) {
-          setLocationError("Could not fetch your current location. Please move the map manually.");
-          setCurrentRegion(DUBAI_COORDS);
-          reverseGeocode(DUBAI_COORDS);
+      let shouldSetLoadingFalse = false;
+      if (garageId) {
+        setIsLoadingGarage(true); // Set to true at the very beginning if garageId exists
+        shouldSetLoadingFalse = true;
       }
 
-      if (garageId) {
-        setIsLoadingGarage(true);
-        try {
-          const token = await getToken();
-          const response = await fetch(`${API_BASE_URL}/api/garages/${garageId}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          if (!response.ok) throw new Error("Failed to fetch garage details.");
-          const data = await response.json();
-          setCurrentGarageData(data);
-        } catch (error) {
-          console.error("Error fetching garage details:", error);
-          Alert.alert("Error", "Could not load existing garage details.");
-        } finally {
+      try {
+        let initialMapRegion: Region = BANGALORE_COORDS; // Default to Bangalore
+
+        // 1. Prioritize stored location if available
+        if (storedLocation?.latitude && storedLocation?.longitude) {
+            initialMapRegion = {
+                latitude: storedLocation.latitude,
+                longitude: storedLocation.longitude,
+                latitudeDelta: 0.002,
+                longitudeDelta: 0.002,
+            };
+            setCurrentRegion(initialMapRegion);
+            reverseGeocode(initialMapRegion);
+        } else { // 2. Try to get user's GPS location
+            let { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+              setLocationError('Permission denied. Please enable location services to find your position.');
+              setCurrentRegion(BANGALORE_COORDS);
+              reverseGeocode(BANGALORE_COORDS); // Still call reverseGeocode for fallback region
+              // Do not return here, let the finally block execute
+            } else { // Only try to get current position if permission is granted
+              console.log(`[LocationPicker] --- Am I in Edit Mode? garageId = ${garageId}`);
+              try {
+                let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                const region = {
+                  latitude: location.coords.latitude,
+                  longitude: location.coords.longitude,
+                  latitudeDelta: 0.002,
+                  longitudeDelta: 0.002,
+                };
+                initialMapRegion = region;
+                setCurrentRegion(region);
+                reverseGeocode(region); // Only call reverseGeocode if location is successfully obtained
+              } catch (error) {
+                  setLocationError("Could not fetch your current location. Please move the map manually.");
+                  setCurrentRegion(BANGALORE_COORDS);
+                  reverseGeocode(BANGALORE_COORDS); // Still call reverseGeocode for fallback region
+              }
+            }
+        }
+
+        if (garageId) {
+          // This inner try/catch is for fetching garage data
+          try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/garages/${garageId}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) throw new Error("Failed to fetch garage details.");
+            const data = await response.json();
+            setCurrentGarageData(data);
+          } catch (error) {
+            console.error("Error fetching garage details:", error);
+            Alert.alert("Error", "Could not load existing garage details.");
+          }
+        }
+      } finally {
+        if (shouldSetLoadingFalse) { // Only set to false if it was set to true
           setIsLoadingGarage(false);
         }
       }
@@ -130,7 +155,9 @@ export default function LocationPickerScreen() {
             type: 'Point',
             coordinates: [currentRegion.longitude, currentRegion.latitude],
         },
+        supportedVehicleTypes: supportedVehicleTypes, // <--- ADDED THIS LINE
     };
+
 
     if (currentGarageData && currentGarageData.status === 'REJECTED') {
         payload.details.status = 'PENDING';
@@ -202,8 +229,35 @@ export default function LocationPickerScreen() {
           <GooglePlacesAutocomplete
               placeholder="Search for a place"
               fetchDetails={true}
+              enablePoweredByContainer={false}
+              minLength={2}
+              debounce={300}
+              timeout={20000}
+              enableHighAccuracyLocation={true}
               onPress={handleLocationSelect}
-              query={{ key: GOOGLE_API_KEY, language: 'en', components: 'country:in' }}
+              onFail={(error) => {
+                  console.error('GooglePlacesAutocomplete onFail:', error);
+                  setSearchError('Location search failed. Please try again.');
+              }}
+              onTimeout={() => {
+                  console.log('Google Places request timed out');
+                  setSearchError('Search timed out, please try again');
+              }}
+              onNotFound={() => {
+                  console.log('No results found');
+                  setSearchError('No results found for your search.');
+              }}
+              query={{
+                  key: GOOGLE_API_KEY,
+                  language: 'en',
+                  components: 'country:in',
+                  types: '(cities)',
+                  fields: 'formatted_address,geometry,name,place_id'
+              }}
+              requestUrl={{
+                  url: 'https://maps.googleapis.com/maps/api/place/autocomplete/json',
+                  useOnPlatform: 'web'
+              }}
               styles={{
                   container: styles.searchContainer,
                   textInput: styles.searchInput,
@@ -213,8 +267,27 @@ export default function LocationPickerScreen() {
               }}
               textInputProps={{
                   placeholderTextColor: '#999',
+                  returnKeyType: 'search',
+                  clearButtonMode: 'while-editing',
+                  autoCapitalize: 'words',
+                  autoCorrect: false
               }}
-              enablePoweredByContainer={false}
+              predefinedPlaces={[]}
+              currentLocation={false}
+              nearbyPlacesAPI="GooglePlacesSearch"
+              GooglePlacesSearchQuery={{
+                  rankby: 'distance',
+              }}
+              GooglePlacesDetailsQuery={{
+                  fields: 'formatted_address,geometry,name,place_id'
+              }}
+              suppressDefaultStyles={false}
+              keyboardShouldPersistTaps="handled"
+              listEmptyComponent={() => (
+                  <View style={styles.noResults}>
+                      <Text style={styles.noResultsText}>No results found</Text>
+                  </View>
+              )}
           />
       )}
       
@@ -268,7 +341,7 @@ export default function LocationPickerScreen() {
 const styles = StyleSheet.create({
   searchContainer: {
     position: 'absolute',
-    top: 10,
+    top: 50,
     left: 10,
     right: 10,
     zIndex: 1,
@@ -307,6 +380,15 @@ const styles = StyleSheet.create({
   searchResultText: {
     fontSize: 16,
     color: '#333',
+  },
+  noResults: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  noResultsText: {
+    fontSize: 16,
+    color: '#999',
+    fontStyle: 'italic',
   },
   searchError: {
     position: 'absolute',

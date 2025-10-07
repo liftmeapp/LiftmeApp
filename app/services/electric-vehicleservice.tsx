@@ -536,7 +536,7 @@ export default function MainMap() {
                                 <RotatingLoader size={40} color={color.primary} />
                                 <Text style={[styles.headerText, {marginTop: 20}]}>Contacting Garages</Text>
                                 <Text style={styles.subHeaderText}>
-                                    We have sent your request to all nearby garages. Please wait for one to accept.
+                                    Finding Garages for you. Please wait while we search.
                                 </Text>
                                 <View style={styles.countdownBox}>
                                     <Ionicons name="timer-outline" size={24} color={color.primary} />
@@ -657,6 +657,13 @@ export default function MainMap() {
                                     {paymentMethod === 'CASH' ? 'Confirm Booking' : `Pay ₹${finalPrice.toFixed(2)} & Confirm`}
                                 </Text>
                             )}
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.cancelBookingButton, isConfirmingPayment && styles.disabledButton]} 
+                            onPress={cancelBooking} 
+                            disabled={isConfirmingPayment}
+                        >
+                            <Text style={styles.cancelBookingButtonText}>Cancel Booking</Text>
                         </TouchableOpacity>
                     </BottomSheetView>
                 );
@@ -794,6 +801,20 @@ const styles = StyleSheet.create({
         color: color.white, 
         fontSize: 16, 
         fontWeight: '600' 
+    },
+    cancelBookingButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: color.danger,
+        paddingVertical: 15,
+        borderRadius: 8,
+        marginTop: 10,
+        marginBottom: 10,
+    },
+    cancelBookingButtonText: {
+        color: color.white,
+        fontSize: 16, 
+        fontWeight: '600'
     },
     subHeaderText: { 
         textAlign: 'center', 

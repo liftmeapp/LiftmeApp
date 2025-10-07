@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { io } from 'socket.io-client';
 
 // --- CONFIGURATION ---
@@ -24,6 +24,9 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
 
 const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, isAccepting, isDeclining }: { booking: any, onAccept: (id: string) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, isAccepting: boolean, isDeclining: boolean }) => (
     <TouchableOpacity style={styles.bookingCard} onPress={() => onPress(booking)}>
+        <View style={{ position: 'absolute', top: 0, left: 0, backgroundColor: 'rgba(255, 255, 0, 0.7)', padding: 4, borderRadius: 4, zIndex: 10 }}>
+            <Text style={{fontSize: 10, color: 'black', fontWeight: 'bold'}}>{booking.status} / {booking.subStatus || 'N/A'}</Text>
+        </View>
         <View style={styles.bookingHeader}>
             <Text style={styles.bookingDate}>{new Date(booking.bookedAt).toLocaleDateString()}</Text>
             <Text style={styles.bookingPrice}>INR {booking.finalAmount.toFixed(2)}</Text>
@@ -44,6 +47,24 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
             <Ionicons name="flag-outline" size={20} color="#e74c3c" />
             <Text style={styles.bookingText}>To: {booking.destinationLocation?.description || 'N/A'}</Text>
         </View>
+        {booking.destinationLocation?.description && (
+            <TouchableOpacity 
+                style={styles.checkMapButton}
+                onPress={() => {
+                    const pickup = booking.pickupLocation;
+                    const destination = booking.destinationLocation;
+                    if (pickup?.coordinates && destination?.coordinates) {
+                        const url = `https://www.google.com/maps/dir/?api=1&origin=${pickup.coordinates[1]},${pickup.coordinates[0]}&destination=${destination.coordinates[1]},${destination.coordinates[0]}`;
+                        Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
+                    } else {
+                        Alert.alert("Map Error", "Could not open map because location data is incomplete.");
+                    }
+                }}
+            >
+                <Ionicons name="map-outline" size={18} color="#fff" />
+                <Text style={styles.checkMapButtonText}>Check Route</Text>
+            </TouchableOpacity>
+        )}
         {booking.totalDistance != null && (
              <View style={styles.bookingDetails}>
                 <Ionicons name="map-outline" size={20} color="#16a085" />
@@ -69,7 +90,9 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                     style={[styles.bookingButton, styles.completeButton]} 
                     onPress={() => onComplete(booking.id)}
                 >
-                    <Text style={styles.bookingButtonText}>Complete Service</Text>
+                    <Text style={styles.bookingButtonText}>
+                        {booking.bookingType === 'TOW_TO_GARAGE' ? 'Confirm Delivery' : 'Complete Service'}
+                    </Text>
                 </TouchableOpacity>
             </View>
         )}
@@ -232,15 +255,13 @@ export default function TowTruckDashboard() {
             const token = await getToken();
             if (!token) throw new Error("Authentication failed.");
 
-            const status = jobsSubTab === 'Pending'
-                ? 'SEARCHING'
-                : jobsSubTab === 'Current'
-                ? 'CONFIRMED,IN_PROGRESS'
-                : 'AWAITING_PAYMENT,COMPLETED,CANCELLED,EXPIRED';
-            
+            const allStatuses = ['SEARCHING', 'AWAITING_PAYMENT', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
+            const bookingStatusQuery = new URLSearchParams({ status: allStatuses.join(',') }).toString();
+            const bookingsUrl = `${API_BASE_URL}/api/tow-truck/bookings?${bookingStatusQuery}`;
+
             const [truckRes, bookingsRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_BASE_URL}/api/tow-truck/bookings?status=${status}`, { headers: { 'Authorization': `Bearer ${token}` } })
+                fetch(bookingsUrl, { headers: { 'Authorization': `Bearer ${token}` } })
             ]);
 
             if (!truckRes.ok) {
@@ -286,15 +307,18 @@ export default function TowTruckDashboard() {
             socket.emit('register_provider', towTruckId);
         });
 
-        socket.on('new_booking', (newBooking: any) => {
-            console.log('🎉 [Socket.IO] Received new booking:', newBooking);
+        const handleNewBooking = (newBooking: any, type: string) => {
+            console.log(`🎉 [Socket.IO] Received ${type}:`, newBooking);
             setBookings(prevBookings => {
                 if (prevBookings.some(b => b.id === newBooking.id)) {
                     return prevBookings;
                 }
                 return [newBooking, ...prevBookings];
             });
-        });
+        };
+
+        socket.on('new_booking', (newBooking: any) => handleNewBooking(newBooking, 'new_booking'));
+        socket.on('new_tow_request_for_garage', (newBooking: any) => handleNewBooking(newBooking, 'new_tow_request_for_garage'));
 
         socket.on('disconnect', (reason) => {
             console.log(`--- [Socket.IO] Disconnected: ${reason} ---`);
@@ -441,14 +465,22 @@ export default function TowTruckDashboard() {
     };
 
     const filteredBookings = bookings.filter(b => {
+        const isTowToGarage = b.bookingType === 'TOW_TO_GARAGE';
+
         if (jobsSubTab === 'Pending') {
             return b.status === 'SEARCHING';
         }
         if (jobsSubTab === 'Current') {
-            return ['CONFIRMED', 'IN_PROGRESS'].includes(b.status);
+            // A tow-to-garage job is no longer "current" for the trucker once the vehicle is delivered (which sets status to IN_PROGRESS)
+            if (isTowToGarage && b.status === 'IN_PROGRESS') {
+                return false;
+            }
+            return ['AWAITING_PAYMENT', 'CONFIRMED', 'IN_PROGRESS'].includes(b.status);
         }
         if (jobsSubTab === 'History') {
-            return ['AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED', 'EXPIRED'].includes(b.status);
+            // A tow-to-garage job is "history" for the trucker once delivered (IN_PROGRESS), or if the whole booking is done.
+            const isDeliveredTowToGarage = isTowToGarage && b.status === 'IN_PROGRESS';
+            return ['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(b.status) || isDeliveredTowToGarage;
         }
         return false;
     });
@@ -694,5 +726,22 @@ const styles = StyleSheet.create({
     },
     activeMainTabText: {
         color: '#fff',
+    },
+    checkMapButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#3498db',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        marginTop: 10,
+        alignSelf: 'flex-start',
+    },
+    checkMapButtonText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        marginLeft: 8,
+        fontSize: 14,
     },
 });

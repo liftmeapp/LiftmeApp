@@ -82,7 +82,6 @@ function InitialLayout() {
         const isOnCompleteProfile = completeProfilePaths.some(path => pathname.includes(path));
 
         if (isSignedIn && user) {
-            console.log("InitialLayout: User is signed in. Pathname:", pathname);
             const hasVerifiedPhone = user.phoneNumbers?.some(pn => pn.verification?.status === 'verified');
             if (!hasVerifiedPhone) {
                 if (!isOnCompleteProfile) {
@@ -133,9 +132,9 @@ function InitialLayout() {
 
     return (
         <BookingProvider>
-        <TowingBookingProvider>
-            <Slot />
-        </TowingBookingProvider>
+           <TowingBookingProvider>
+                <Slot />
+            </TowingBookingProvider>
         </BookingProvider>
     );}
 

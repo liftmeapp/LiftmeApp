@@ -21,15 +21,42 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
     ) : null
 );
 
-const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, isAccepting, isDeclining = false }: { booking: any, onAccept: (id: string) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, isAccepting: boolean, isDeclining?: boolean }) => (
+const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onOpenQuoteModal, isAccepting, isDeclining = false }: { booking: any, onAccept: (booking: any) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onOpenQuoteModal: (booking: any) => void, isAccepting: boolean, isDeclining?: boolean }) => {
+    const getBadge = () => {
+        if (booking.bookingType === 'TOW_TO_GARAGE') {
+            if (booking.subStatus === 'AWAITING_TOW_TRUCK_ACCEPTANCE') {
+                return <View style={[styles.badge, styles.badgeWaiting]}><Text style={styles.badgeText}>VEHICLE INCOMING</Text></View>;
+            }
+            if (booking.subStatus === 'AWAITING_GARAGE_QUOTE') {
+                return <View style={[styles.badge, styles.badgeReceived]}><Text style={styles.badgeText}>VEHICLE RECEIVED</Text></View>;
+            }
+             if (booking.subStatus === 'AWAITING_QUOTE_APPROVAL') {
+                return <View style={[styles.badge, styles.badgeWaiting]}><Text style={styles.badgeText}>QUOTE PENDING</Text></View>;
+            }
+        }
+        return null;
+    };
+
+    const showCompleteButton =
+        (booking.status === 'CONFIRMED' && booking.bookingType !== 'TOW_TO_GARAGE') ||
+        (booking.status === 'IN_PROGRESS' && booking.subStatus === 'SERVICE_IN_PROGRESS');
+
+    const showSubmitQuoteButton =
+        booking.bookingType === 'TOW_TO_GARAGE' &&
+        booking.status === 'IN_PROGRESS' &&
+        booking.subStatus === 'AWAITING_GARAGE_QUOTE';
+
+
+    return (
     <TouchableOpacity style={styles.bookingCard} onPress={() => onPress(booking)}>
+        {getBadge()}
         <View style={styles.bookingHeader}>
             <Text style={styles.bookingDate}>{new Date(booking.bookedAt).toLocaleDateString()}</Text>
             <Text style={styles.bookingPrice}>INR {booking.finalAmount.toFixed(2)}</Text>
         </View>
         <View style={styles.bookingDetails}>
             <Ionicons name="build" size={20} color="#3498db" />
-            <Text style={styles.bookingText}>{booking.service.name}</Text>
+            <Text style={styles.bookingText}>{booking.service?.name || 'Tow-to-Garage Service'}</Text>
         </View>
         <View style={styles.bookingDetails}>
             <Ionicons name="person-circle" size={20} color="#9b55b6" />
@@ -40,6 +67,13 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
             <Text style={styles.bookingText}>{booking.vehicle.brand} {booking.vehicle.name} ({booking.vehicle.plateNumber})</Text>
         </View>
 
+        {booking.bookingType === 'TOW_TO_GARAGE' && booking.pickupLocation?.description && (
+            <View style={[styles.bookingDetails, { backgroundColor: '#fff0f0', padding: 5, borderRadius: 5, marginTop: 5 }]}>
+                <Ionicons name="navigate-circle-outline" size={20} color="#c0392b" />
+                <Text style={[styles.bookingText, {color: '#c0392b', fontWeight: 'bold', flexShrink: 1}]}>TOW-IN FROM: {booking.pickupLocation.description}</Text>
+            </View>
+        )}
+
         {booking.distance != null && (
              <View style={styles.bookingDetails}>
                 <Ionicons name="map-outline" size={20} color="#16a085" />
@@ -47,7 +81,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
             </View>
         )}
 
-        {(booking.status === 'CONFIRMED' || booking.status === 'IN_PROGRESS') && (
+        {showCompleteButton && (
             <View style={styles.bookingActions}>
                 <TouchableOpacity 
                     style={[styles.bookingButton, styles.cancelButton]} 
@@ -60,6 +94,17 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                     onPress={() => onComplete(booking.id)}
                 >
                     <Text style={styles.bookingButtonText}>Complete Service</Text>
+                </TouchableOpacity>
+            </View>
+        )}
+
+        {showSubmitQuoteButton && (
+            <View style={styles.bookingActions}>
+                <TouchableOpacity
+                    style={[styles.bookingButton, styles.acceptButton]} // Using acceptButton style for green color
+                    onPress={() => onOpenQuoteModal(booking)}
+                >
+                    <Text style={styles.bookingButtonText}>Submit Quote</Text>
                 </TouchableOpacity>
             </View>
         )}
@@ -79,7 +124,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                 </TouchableOpacity>
                 <TouchableOpacity 
                     style={[styles.bookingButton, styles.acceptButton, isAccepting && styles.disabledButton]} 
-                    onPress={() => onAccept(booking.id)}
+                    onPress={() => onAccept(booking)}
                     disabled={isAccepting || isDeclining}
                 >
                     {isAccepting ? (
@@ -91,7 +136,8 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
             </View>
         )}
     </TouchableOpacity>
-);
+    );
+};
 
 const OtpVerificationModal = ({ visible, onClose, otp, setOtp, onVerify, isVerifying }: any) => (
     <Modal
@@ -129,6 +175,58 @@ const OtpVerificationModal = ({ visible, onClose, otp, setOtp, onVerify, isVerif
     </Modal>
 );
 
+const QuoteModal = ({ visible, onClose, amount, setAmount, days, setDays, notes, setNotes, onSubmit, isSubmitting }: any) => (
+    <Modal
+        animationType="slide"
+        transparent={true}
+        visible={visible}
+        onRequestClose={onClose}
+    >
+        <View style={modalStyles.modalOverlay}>
+            <View style={modalStyles.modalContent}>
+                <Text style={modalStyles.modalTitle}>Submit Service Quote</Text>
+                <Text style={modalStyles.modalSubtitle}>Enter the details for the required service. The customer will be notified to approve and pay.</Text>
+                
+                <TextInput
+                    style={modalStyles.quoteInput}
+                    placeholder="Total Service Amount (INR)"
+                    keyboardType="numeric"
+                    value={amount}
+                    onChangeText={setAmount}
+                />
+                <TextInput
+                    style={modalStyles.quoteInput}
+                    placeholder="Estimated Days to Complete"
+                    keyboardType="numeric"
+                    value={days}
+                    onChangeText={setDays}
+                />
+                <TextInput
+                    style={[modalStyles.quoteInput, { height: 100, textAlignVertical: 'top' }]}
+                    placeholder="Notes for the customer (e.g., parts to be replaced)"
+                    multiline
+                    value={notes}
+                    onChangeText={setNotes}
+                />
+
+                <TouchableOpacity 
+                    style={[styles.bookingButton, styles.acceptButton, isSubmitting && styles.disabledButton]} 
+                    onPress={onSubmit} 
+                    disabled={isSubmitting}
+                >
+                    {isSubmitting 
+                        ? <ActivityIndicator color="#fff" /> 
+                        : <Text style={styles.bookingButtonText}>Submit Quote to Customer</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity style={{marginTop: 10}} onPress={onClose}>
+                    <Text style={{textAlign: 'center', color: '#7f8c8d'}}>Cancel</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+    </Modal>
+);
+
+
 // --- Main Dashboard Component ---
 
 export default function GarageDashboard() {
@@ -154,6 +252,14 @@ export default function GarageDashboard() {
     const [bookingToComplete, setBookingToComplete] = useState<string | null>(null);
     const [otp, setOtp] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
+
+    // New state for the quote modal
+    const [quoteModalVisible, setQuoteModalVisible] = useState(false);
+    const [bookingToQuote, setBookingToQuote] = useState<any>(null);
+    const [quoteAmount, setQuoteAmount] = useState('');
+    const [quoteDays, setQuoteDays] = useState('');
+    const [quoteNotes, setQuoteNotes] = useState('');
+    const [isSubmittingQuote, setIsSubmittingQuote] = useState(false);
 
     const handleOpenOtpModal = (bookingId: string) => {
         setBookingToComplete(bookingId);
@@ -187,7 +293,43 @@ export default function GarageDashboard() {
         }
     };
 
+    const handleOpenQuoteModal = (booking: any) => {
+        setBookingToQuote(booking);
+        setQuoteAmount('');
+        setQuoteDays('');
+        setQuoteNotes('');
+        setQuoteModalVisible(true);
+    };
 
+    const handleSubmitQuote = async () => {
+        if (!bookingToQuote || !quoteAmount || !quoteDays) {
+            Alert.alert("Invalid Input", "Please provide an amount and estimated days.");
+            return;
+        }
+        setIsSubmittingQuote(true);
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingToQuote.id}/submit-quote`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    amount: parseFloat(quoteAmount),
+                    days: parseInt(quoteDays),
+                    notes: quoteNotes,
+                }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to submit quote.');
+
+            Alert.alert('Quote Submitted!', 'The customer has been notified and is awaiting to approve the payment.');
+            setQuoteModalVisible(false);
+            fetchData(); // Refresh dashboard
+        } catch (error: any) {
+            Alert.alert('Submission Error', error.message);
+        } finally {
+            setIsSubmittingQuote(false);
+        }
+    };
 
 
     const BookingDetailsModal = ({ booking, onClose }: { booking: any, onClose: () => void }) => {
@@ -202,7 +344,7 @@ export default function GarageDashboard() {
                     <InfoRow icon="person-circle-outline" label="Customer" value={`${booking.user.firstName} ${booking.user.lastName}`} />
                     <InfoRow icon="call-outline" label="Phone" value={booking.user.phone} />
                     <InfoRow icon="car-outline" label="Vehicle" value={`${booking.vehicle.brand} ${booking.vehicle.name} (${booking.vehicle.plateNumber})`} />
-                    <InfoRow icon="build-outline" label="Service" value={booking.service.name} />
+                    <InfoRow icon="build-outline" label="Service" value={booking.service?.name || 'Tow-to-Garage Service'} />
                     {booking.distance != null && <InfoRow icon="map-outline" label="Distance" value={`~${booking.distance.toFixed(1)} km`} />}
                     <InfoRow icon="cash-outline" label="Amount" value={`INR ${booking.finalAmount.toFixed(2)}`} />
                     <InfoRow icon="time-outline" label="Booked At" value={new Date(booking.bookedAt).toLocaleString()} />
@@ -223,15 +365,13 @@ export default function GarageDashboard() {
             const token = await getToken();
             if (!token) throw new Error("Authentication failed.");
 
-            const status = jobsSubTab === 'Pending'
-                ? 'SEARCHING'
-                : jobsSubTab === 'Current'
-                ? 'CONFIRMED,IN_PROGRESS'
-                : 'AWAITING_PAYMENT,COMPLETED,CANCELLED,EXPIRED';
-            
+            const allStatuses = ['SEARCHING', 'CONFIRMED', 'IN_PROGRESS', 'AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
+            const bookingStatusQuery = new URLSearchParams({ status: allStatuses.join(',') }).toString();
+            const bookingsUrl = `${API_BASE_URL}/api/garage/bookings?${bookingStatusQuery}`;
+
             const [garageRes, bookingsRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/api/garages/${garageId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_BASE_URL}/api/garage/bookings?status=${status}`, { headers: { 'Authorization': `Bearer ${token}` } })
+                fetch(bookingsUrl, { headers: { 'Authorization': `Bearer ${token}` } })
             ]);
 
             if (!garageRes.ok) {
@@ -276,14 +416,45 @@ export default function GarageDashboard() {
             socket.emit('register_provider', garageId);
         });
 
-        socket.on('new_booking', (newBooking: any) => {
-            console.log('🎉 [Socket.IO] Received new booking:', newBooking);
+        const handleNewBooking = (newBooking: any, type: string) => {
+            console.log(`🎉 [Socket.IO] Received ${type}:`, newBooking);
+            if (type === 'new_tow_in_request') {
+                Alert.alert('New Tow-In Request!', `A customer needs a ${newBooking.vehicle.name} towed to your garage for service.`);
+            }
             setBookings(prevBookings => {
                 if (prevBookings.some(b => b.id === newBooking.id)) {
                     return prevBookings;
                 }
                 return [newBooking, ...prevBookings];
             });
+        };
+
+        socket.on('new_booking', (newBooking: any) => handleNewBooking(newBooking, 'new_booking'));
+        socket.on('new_tow_in_request', (newBooking: any) => handleNewBooking(newBooking, 'new_tow_in_request'));
+
+
+        socket.on('tow_truck_assigned', (data: { bookingId: string; towTruck: any }) => {
+            console.log(`🚚 [Socket.IO] Tow truck assigned for booking ${data.bookingId}:`, data.towTruck);
+            Alert.alert(
+                "Tow Truck Assigned!",
+                `A tow truck is on the way for one of your accepted tow-in jobs. The job has been moved to your 'Current' list.`
+            );
+            fetchData(); // Refresh data to update the booking's status
+        });
+
+        socket.on('vehicle_delivered', (data: { bookingId: string }) => {
+            console.log(`📦 [Socket.IO] Vehicle delivered for booking ${data.bookingId}`);
+            Alert.alert(
+                "Vehicle Delivered!",
+                `A vehicle has been successfully delivered to your garage.`
+            );
+            fetchData(); // Refresh data to update the booking's status
+        });
+
+        socket.on('booking_cancelled_by_customer', (data: { bookingId: string; reason: string }) => {
+            console.log(`❌ [Socket.IO] Booking ${data.bookingId} cancelled by customer: ${data.reason}`);
+            Alert.alert("Booking Cancelled", `A booking has been cancelled by the customer.`);
+            fetchData(); // Refresh data to update the booking list
         });
 
         socket.on('disconnect', (reason) => {
@@ -294,7 +465,7 @@ export default function GarageDashboard() {
             console.log("--- [Socket.IO] Disconnecting socket... ---");
             socket.disconnect();
         };
-    }, [garageId]);
+    }, [garageId, fetchData]);
 
     useEffect(() => {
         fetchData(); // Fetch immediately on mount/tab change
@@ -350,37 +521,39 @@ export default function GarageDashboard() {
         }
     };
 
-    const handleAccept = async (bookingId: string) => {
-        console.log(`[handleAccept] Attempting to accept booking: ${bookingId}`);
+    const handleAccept = async (booking: any) => {
+        if (!booking || !booking.id) return;
+        const { id: bookingId, bookingType } = booking;
+
+        console.log(`[handleAccept] Attempting to accept booking: ${bookingId} of type ${bookingType}`);
         setAcceptingId(bookingId);
-        console.log(`[handleAccept] acceptingId set to: ${bookingId}`);
+        
+        const endpoint = bookingType === 'TOW_TO_GARAGE' 
+            ? `${API_BASE_URL}/api/bookings/${bookingId}/accept-tow-in`
+            : `${API_BASE_URL}/api/bookings/${bookingId}/accept`;
+
         try {
             const token = await getToken();
-            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/accept`, {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
             if (!response.ok) {
-                const errorText = await response.text();
-                console.error("--- ACCEPTANCE API ERROR ---", errorText);
-                try {
-                    const errorData = JSON.parse(errorText);
-                    throw new Error(errorData.error || 'Failed to accept request');
-                } catch (parseError) {
-                    throw new Error(errorText || 'Failed to accept request');
-                }
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to accept request');
             }
 
-            Alert.alert('Request accepted successfully!');
+            const result = await response.json();
+            const alertMessage = result.message || 'Request accepted successfully!';
+            Alert.alert('Success', alertMessage);
+
             fetchData();
         } catch (error: any) {
             console.error("Acceptance Error:", error);
             Alert.alert(`Error: ${error.message}`);
         } finally {
-            console.log(`[handleAccept] Clearing acceptingId. Was: ${bookingId}`);
             setAcceptingId(null);
-            console.log(`[handleAccept] acceptingId cleared.`);
         }
     };
     
@@ -433,10 +606,14 @@ export default function GarageDashboard() {
 
     const filteredBookings = bookings.filter(b => {
         if (jobsSubTab === 'Pending') {
-            return b.status === 'SEARCHING';
+            return b.status === 'SEARCHING' && b.subStatus === 'AWAITING_GARAGE_ACCEPTANCE';
         }
         if (jobsSubTab === 'Current') {
-            return ['CONFIRMED', 'IN_PROGRESS'].includes(b.status);
+            return (
+                (b.status === 'SEARCHING' && b.subStatus === 'AWAITING_TOW_TRUCK_ACCEPTANCE') ||
+                b.status === 'CONFIRMED' ||
+                (b.status === 'IN_PROGRESS' && (b.subStatus === 'AWAITING_GARAGE_QUOTE' || b.subStatus === 'AWAITING_QUOTE_APPROVAL' || b.subStatus === 'SERVICE_IN_PROGRESS'))
+            );
         }
         if (jobsSubTab === 'History') {
             return ['AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED', 'EXPIRED'].includes(b.status);
@@ -503,6 +680,7 @@ export default function GarageDashboard() {
                                 onDecline={handleDecline} 
                                 onCancel={handleCancel}
                                 onComplete={handleOpenOtpModal}
+                                onOpenQuoteModal={handleOpenQuoteModal}
                                 onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
                                 isAccepting={acceptingId === booking.id}
                             />)
@@ -561,6 +739,18 @@ export default function GarageDashboard() {
                 onVerify={handleVerifyOtp}
                 isVerifying={isVerifying}
             />
+            <QuoteModal
+                visible={quoteModalVisible}
+                onClose={() => setQuoteModalVisible(false)}
+                amount={quoteAmount}
+                setAmount={setQuoteAmount}
+                days={quoteDays}
+                setDays={setQuoteDays}
+                notes={quoteNotes}
+                setNotes={setQuoteNotes}
+                onSubmit={handleSubmitQuote}
+                isSubmitting={isSubmittingQuote}
+            />
         </View>
     );
 }
@@ -596,6 +786,15 @@ const modalStyles = StyleSheet.create({
         textAlign: 'center',
         letterSpacing: 10,
         marginBottom: 20,
+    },
+    quoteInput: {
+        borderWidth: 1,
+        borderColor: '#ccc',
+        borderRadius: 8,
+        padding: 15,
+        fontSize: 16,
+        marginBottom: 15,
+        backgroundColor: '#f9f9f9',
     },
 });
 
@@ -680,5 +879,26 @@ const styles = StyleSheet.create({
         padding: 40,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    badge: {
+        position: 'absolute',
+        top: -1,
+        right: 10,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 6,
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+    },
+    badgeWaiting: {
+        backgroundColor: '#f39c12', // Orange for waiting
+    },
+    badgeReceived: {
+        backgroundColor: '#27ae60', // Green for received
+    },
+    badgeText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: 'bold',
     },
 });

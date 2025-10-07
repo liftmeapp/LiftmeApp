@@ -4,7 +4,7 @@ import * as Linking from 'expo-linking'; // Import Linking
 import { Link, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import PhoneInput from 'react-native-phone-number-input';
 import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser'; // Ensure path is correct
 
@@ -253,54 +253,63 @@ export default function SignUpScreen() {
   // --- JSX for the OTP Verification Screen (when pendingVerification is true) ---
   if (pendingVerification) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.header}>Verify Your Phone Number</Text>
-        <Text style={styles.subHeader}>Enter the code sent to {formattedPhoneNumber}</Text>
-        <TextInput
-          style={styles.inputField}
-          value={code}
-          placeholder="Verification Code"
-          onChangeText={(text) => setCode(text)}
-          keyboardType="numeric"
-          placeholderTextColor="#999"
-          autoFocus={true}
-          maxLength={6} // Typical OTP length
-        />
-        <TouchableOpacity
-          style={[
-            styles.button,
-            // Disable button if:
-            // 1. isLoading is true (an action is in progress)
-            // 2. No code is entered OR code is too short (basic validation)
-            // 3. Clerk's useSignUp is not loaded yet
-            (isLoading || !code || code.length < 4 || !isLoaded) && styles.buttonDisabled
-          ]}
-          onPress={onVerifyPress}
-          disabled={isLoading || !code || code.length < 4 || !isLoaded}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Verify Phone</Text>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => {
-            setPendingVerification(false); // Go back to the previous form
-            setIsLoading(false);         // Ensure loading is reset
-            setCode('');                 // Clear the code input
-          }}
-          disabled={isLoading} // Disable "Go Back" while an operation is in progress
-          style={styles.linkButton}
-        >
-          <Text style={styles.linkText}>Edit Phone Number</Text>
-        </TouchableOpacity>
-      </View>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView contentContainerStyle={styles.container}>
+          <Text style={styles.header}>Verify Your Phone Number</Text>
+          <Text style={styles.subHeader}>Enter the code sent to {formattedPhoneNumber}</Text>
+          <TextInput
+            style={styles.inputField}
+            value={code}
+            placeholder="Verification Code"
+            onChangeText={(text) => setCode(text)}
+            keyboardType="numeric"
+            placeholderTextColor="#999"
+            autoFocus={true}
+            maxLength={6} // Typical OTP length
+          />
+          <TouchableOpacity
+            style={[
+              styles.button,
+              // Disable button if:
+              // 1. isLoading is true (an action is in progress)
+              // 2. No code is entered OR code is too short (basic validation)
+              // 3. Clerk's useSignUp is not loaded yet
+              (isLoading || !code || code.length < 4 || !isLoaded) && styles.buttonDisabled,
+            ]}
+            onPress={onVerifyPress}
+            disabled={isLoading || !code || code.length < 4 || !isLoaded}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Verify Phone</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setPendingVerification(false); // Go back to the previous form
+              setIsLoading(false); // Ensure loading is reset
+              setCode(''); // Clear the code input
+            }}
+            disabled={isLoading} // Disable "Go Back" while an operation is in progress
+            style={styles.linkButton}
+          >
+            <Text style={styles.linkText}>Edit Phone Number</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.imageContainer}><Image source={require('@/assets/images/liftm.png')} style={styles.logoImage} /></View>
       <Text style={styles.header}>Create Account</Text>
       
@@ -342,6 +351,7 @@ export default function SignUpScreen() {
       
       <View style={styles.footer}><Text style={styles.footerText}>Already have an account? </Text><Link href="/(auth)/signin" asChild><TouchableOpacity><Text style={[styles.footerText, styles.linkText]}>Sign In</Text></TouchableOpacity></Link></View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

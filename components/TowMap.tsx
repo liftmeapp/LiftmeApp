@@ -4,9 +4,11 @@ import * as Location from 'expo-location';
 import { debounce } from 'lodash';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps'; // Import Polyline
 import { TowingBookingStage } from '../context/TowingBookingContext';
 import RotatingLoader from './RotatingLoader';
+
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 const FALLBACK_REGION: Region = { latitude: 11.2588, longitude: 75.7804, latitudeDelta: 0.5, longitudeDelta: 0.5 };
@@ -101,6 +103,8 @@ const MAP_STYLE = [
         const [isFetchingProviders, setIsFetchingProviders] = useState(true);
         const [garages, setGarages] = useState<any[]>([]);
         const [towTrucks, setTowTrucks] = useState<any[]>([]);
+        const [searchError, setSearchError] = useState<string | null>(null);
+        const [isProgrammaticChange, setIsProgrammaticChange] = useState(false);
 
         const debouncedGetAddress = useCallback(debounce(async (lat: number, lon: number) => {
             const address = await getAddressFromCoords(lat, lon);
@@ -130,6 +134,95 @@ const MAP_STYLE = [
                 setIsFetchingProviders(false);
             }
         }, 1000), [isSignedIn]);
+
+        const handleLocationSelect = (data: any, details: any = null) => {
+            console.log('🔍 [Map.tsx] Google Places Autocomplete - Location selected');
+            console.log('Data:', data);
+            console.log('Details:', details);
+            
+            setSearchError(null);
+            
+            // Clear any existing errors
+            if (searchError) {
+                setSearchError(null);
+            }
+    
+            // Check if we have location details
+            if (details?.geometry?.location) {
+                const { lat, lng } = details.geometry.location;
+                console.log(`📍 [Map.tsx] Animating to coordinates: ${lat}, ${lng}`);
+                
+                // Set programmatic change flag to prevent conflicts
+                setIsProgrammaticChange(true);
+                
+                // Create the new region
+                const newRegion = {
+                    latitude: lat,
+                    longitude: lng,
+                    latitudeDelta: 0.02,
+                    longitudeDelta: 0.01,
+                };
+                
+                // Update region state immediately
+                setRegion(newRegion);
+                
+                // Animate map to the selected location
+                mapRef.current?.animateToRegion(newRegion, 1000);
+                
+                // If in pinning mode, update the pin location
+                if (isPinningLocation) {
+                    debouncedGetAddress(lat, lng);
+                } else {
+                    // If in discovery mode, fetch providers for new location
+                    fetchProvidersForRegion(newRegion);
+                }
+                
+            } else if (data?.description) {
+                // Fallback: try to geocode the description
+                console.log(`🔄 [Map.tsx] No coordinates found, attempting to geocode: ${data.description}`);
+                geocodeAndNavigate(data.description);
+            } else {
+                console.warn('⚠️ [Map.tsx] No location data found in search result');
+                setSearchError('Location not found');
+            }
+        };
+
+        const geocodeAndNavigate = async (address: string) => {
+            try {
+                const response = await fetch(
+                    `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`
+                );
+                const json = await response.json();
+                
+                if (json.results && json.results.length > 0) {
+                    const { lat, lng } = json.results[0].geometry.location;
+                    console.log(`📍 [Map.tsx] Geocoded coordinates: ${lat}, ${lng}`);
+                    
+                    setIsProgrammaticChange(true);
+                    
+                    const newRegion = {
+                        latitude: lat,
+                        longitude: lng,
+                        latitudeDelta: 0.02,
+                        longitudeDelta: 0.01,
+                    };
+                    
+                    setRegion(newRegion);
+                    mapRef.current?.animateToRegion(newRegion, 1000);
+                    
+                    if (isPinningLocation) {
+                        debouncedGetAddress(lat, lng);
+                    } else {
+                        fetchProvidersForRegion(newRegion);
+                    }
+                } else {
+                    setSearchError('Location not found');
+                }
+            } catch (error) {
+                console.error('Geocoding failed:', error);
+                setSearchError('Failed to find location');
+            }
+        };
 
         useEffect(() => {
             const initializeMap = async () => {
@@ -177,6 +270,84 @@ const MAP_STYLE = [
 
         return (
             <View style={styles.container}>
+                {GOOGLE_API_KEY && GOOGLE_API_KEY.length > 20 && (
+                                <GooglePlacesAutocomplete
+                                    placeholder="Search for a place"
+                                    fetchDetails={true}
+                                    enablePoweredByContainer={false}
+                                    minLength={2}
+                                    debounce={300}
+                                    timeout={20000}
+                                    enableHighAccuracyLocation={true}                    
+                                    // Main search handler
+                                    onPress={handleLocationSelect}
+                                    
+                                    // Error handlers
+                                    onFail={(error) => {
+                                        console.error('🔴 [Map.tsx] Google Places Autocomplete error:', error);
+                                        setSearchError('Search temporarily unavailable');
+                                    }}
+                                    onTimeout={() => {
+                                        console.log('⏰ [Map.tsx] Google Places request timed out');
+                                        setSearchError('Search timed out, please try again');
+                                    }}
+                                    onNotFound={() => {
+                                        console.log('🔍 [Map.tsx] No results found');
+                                        setSearchError('No results found');
+                                    }}
+                                    
+                                    // Search configuration
+                                    query={{
+                                        key: GOOGLE_API_KEY,
+                                        language: 'en',
+                                        components: 'country:in',
+                                        types: '(cities)', // Focus on cities, establishments, and geocoding
+                                        fields: 'formatted_address,geometry,name,place_id'
+                                    }}
+                                    
+                                    // Enhanced request configuration
+                                    requestUrl={{
+                                        url: 'https://maps.googleapis.com/maps/api/place/autocomplete/json',
+                                        useOnPlatform: 'web'
+                                    }}
+                                    
+                                    styles={{
+                                        container: styles.searchContainer,
+                                        textInput: styles.searchInput,
+                                        listView: styles.searchResults,
+                                        row: styles.searchResultRow,
+                                        description: styles.searchResultText,
+                                    }}
+                                    
+                                    textInputProps={{
+                                        placeholderTextColor: '#999',
+                                        returnKeyType: 'search',
+                                        clearButtonMode: 'while-editing',
+                                        autoCapitalize: 'words',
+                                        autoCorrect: false
+                                    }}
+                                    
+                                    // Enhanced search options
+                                    predefinedPlaces={[]}
+                                    currentLocation={false}
+                                    nearbyPlacesAPI="GooglePlacesSearch"
+                                    GooglePlacesSearchQuery={{
+                                        rankby: 'distance',
+                                    }}
+                                    GooglePlacesDetailsQuery={{
+                                        fields: 'formatted_address,geometry,name,place_id'
+                                    }}
+                                    
+                                    // Additional props for better functionality
+                                    suppressDefaultStyles={false}
+                                    keyboardShouldPersistTaps="handled"
+                                    listEmptyComponent={() => (
+                                        <View style={styles.noResults}>
+                                            <Text style={styles.noResultsText}>No results found</Text>
+                                        </View>
+                                    )}
+                                />
+                            )}
             <MapView
                 ref={mapRef}
                 provider={PROVIDER_GOOGLE}
@@ -276,4 +447,78 @@ const MAP_STYLE = [
             alignItems: 'center', elevation: 5 
         },
         refreshText: { marginLeft: 8, fontWeight: '500' },
+        searchContainer: {
+            position: 'absolute',
+            top: 40,
+            left: 10,
+            right: 10,
+            zIndex: 1,
+        },
+        searchInput: {
+            height: 44,
+            borderWidth: 1,
+            borderColor: '#ddd',
+            borderRadius: 8,
+            paddingHorizontal: 15,
+            backgroundColor: 'white',
+            fontSize: 16,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3,
+        },
+        searchResults: {
+            backgroundColor: 'white',
+            borderRadius: 8,
+            marginTop: 5,
+            elevation: 3,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.2,
+            shadowRadius: 4,
+            maxHeight: 200,
+        },
+        searchResultRow: {
+            paddingHorizontal: 15,
+            paddingVertical: 12,
+            borderBottomWidth: 1,
+            borderBottomColor: '#f0f0f0',
+        },
+        searchResultText: {
+            fontSize: 16,
+            color: '#333',
+        },
+        noResults: {
+            padding: 20,
+            alignItems: 'center',
+        },
+        noResultsText: {
+            fontSize: 16,
+            color: '#999',
+            fontStyle: 'italic',
+        },
+        searchError: {
+            position: 'absolute',
+            top: 90,
+            left: 10,
+            right: 10,
+            backgroundColor: '#ffebee',
+            padding: 12,
+            borderRadius: 8,
+            zIndex: 1,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            elevation: 3,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+        },
+        searchErrorText: {
+            color: '#c62828',
+            flex: 1,
+            fontSize: 14,
+        },
     });

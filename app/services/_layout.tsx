@@ -1,6 +1,6 @@
 
 import { Stack } from "expo-router";
-import "../../global.css"
+import "../../global.css";
 
 export default function RootLayout() {
 
@@ -11,6 +11,8 @@ export default function RootLayout() {
       <Stack.Screen name="homeservice" options={{ headerShown: false }}/>
       <Stack.Screen name="service-map" options={{ headerShown: false }}/>
       <Stack.Screen name="garages" options={{ headerShown: false }}/>
+      <Stack.Screen name="towing_service" options={{ headerShown: false }}/>
+      <Stack.Screen name="luxury-service" options={{ headerShown: false }}/>
     </Stack>
   );
 };

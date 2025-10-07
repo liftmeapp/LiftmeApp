@@ -1,16 +1,158 @@
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import { StripeProvider, useStripe } from '@stripe/stripe-react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Linking, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Linking, Modal, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { io } from 'socket.io-client';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+const STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 
-const OrderCard = ({ booking, onCancel }: { booking: any, onCancel: (bookingId: string) => void }) => {
-    const provider = booking.garage || booking.towTruck;
+
+const QuoteDetailsModal = ({ booking, visible, onClose, onPaymentSuccess }: { booking: any, visible: boolean, onClose: () => void, onPaymentSuccess: () => void }) => {
+    if (!visible || !booking) return null;
+
+    const { initPaymentSheet, presentPaymentSheet } = useStripe();
+    const { getToken } = useAuth();
+    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CARD');
+    const [isPaying, setIsPaying] = useState(false);
+
+    const handleCardPayment = async () => {
+        setIsPaying(true);
+        try {
+            const token = await getToken();
+            // 1. Create a payment intent on the server
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${booking.id}/create-garage-payment-intent`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const { clientSecret, error: intentError } = await response.json();
+            if (intentError) throw new Error(intentError);
+
+            // 2. Initialize the payment sheet
+            const { error: initError } = await initPaymentSheet({ 
+                paymentIntentClientSecret: clientSecret,
+                merchantDisplayName: 'Afthuliftme Inc.',
+             });
+            if (initError) throw new Error(initError.message);
+
+            // 3. Present the payment sheet
+            const { error: presentError } = await presentPaymentSheet();
+            if (presentError) {
+                if (presentError.code !== 'Canceled') {
+                    throw new Error(presentError.message);
+                }
+                setIsPaying(false);
+                return; // User cancelled
+            }
+
+            // 4. Confirm payment on the server
+            const confirmRes = await fetch(`${API_BASE_URL}/api/bookings/${booking.id}/confirm-garage-payment`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (!confirmRes.ok) throw new Error('Failed to confirm payment on server.');
+
+            Alert.alert("Payment Successful", "The garage has been notified to start the service.");
+            onPaymentSuccess();
+
+        } catch (error: any) {
+            Alert.alert("Payment Failed", error.message);
+        } finally {
+            setIsPaying(false);
+        }
+    };
+
+    const handleCashPayment = async () => {
+        setIsPaying(true);
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${booking.id}/confirm-garage-cash`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (!response.ok) throw new Error('Failed to confirm cash payment.');
+
+            Alert.alert("Booking Confirmed", "The garage has been notified to start the service. Please pay the amount in cash.");
+            onPaymentSuccess();
+        } catch (error: any) {
+            Alert.alert("Confirmation Failed", error.message);
+        } finally {
+            setIsPaying(false);
+        }
+    };
+
+    return (
+        <Modal visible={visible} transparent={true} animationType="slide" onRequestClose={onClose}>
+            <View style={modalStyles.modalOverlay}>
+                <View style={modalStyles.modalContent}>
+                    <TouchableOpacity onPress={onClose} style={modalStyles.closeButton}>
+                        <Ionicons name="close-circle" size={30} color="#e74c3c" />
+                    </TouchableOpacity>
+                    <Text style={modalStyles.modalTitle}>Service Quote</Text>
+                    
+                    <View style={modalStyles.quoteDetailRow}>
+                        <Text style={modalStyles.quoteLabel}>Amount:</Text>
+                        <Text style={modalStyles.quoteValue}>INR {booking.garageQuoteAmount?.toFixed(2)}</Text>
+                    </View>
+                    <View style={modalStyles.quoteDetailRow}>
+                        <Text style={modalStyles.quoteLabel}>Est. Time:</Text>
+                        <Text style={modalStyles.quoteValue}>{booking.garageQuoteDays} Day(s)</Text>
+                    </View>
+                    <View style={modalStyles.notesContainer}>
+                        <Text style={modalStyles.quoteLabel}>Garage Notes:</Text>
+                        <Text style={modalStyles.notesText}>{booking.garageQuoteNotes || 'No notes provided.'}</Text>
+                    </View>
+
+                    <Text style={modalStyles.paymentHeader}>Select Payment Method</Text>
+                    <TouchableOpacity style={[modalStyles.paymentOption, paymentMethod === 'CASH' && modalStyles.selectedPaymentOption]} onPress={() => setPaymentMethod('CASH')}>
+                        <Ionicons name="cash-outline" size={24} color="#27ae60" />
+                        <Text style={modalStyles.paymentText}>Pay with Cash</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[modalStyles.paymentOption, paymentMethod === 'CARD' && modalStyles.selectedPaymentOption]} onPress={() => setPaymentMethod('CARD')}>
+                        <Ionicons name="card-outline" size={24} color="#2980b9" />
+                        <Text style={modalStyles.paymentText}>Pay with Card</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                        style={[modalStyles.confirmButton, isPaying && { backgroundColor: '#95a5a6' }]} 
+                        onPress={paymentMethod === 'CARD' ? handleCardPayment : handleCashPayment}
+                        disabled={isPaying}
+                    >
+                        {isPaying ? <ActivityIndicator color="#fff" /> : <Text style={modalStyles.confirmButtonText}>Confirm & Proceed</Text>}
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+const OrderCard = ({ booking, onCancel, onViewQuote }: { booking: any, onCancel: (bookingId: string) => void, onViewQuote: (booking: any) => void }) => {
+    let provider;
+    let serviceName;
+    let isTowingPhase = false;
+
+    if (booking.bookingType === 'TOW_TO_GARAGE') {
+        if (booking.subStatus !== 'VEHICLE_DELIVERED' && booking.subStatus !== 'AWAITING_GARAGE_QUOTE' && booking.subStatus !== 'AWAITING_QUOTE_APPROVAL' && booking.subStatus !== 'SERVICE_IN_PROGRESS' && booking.subStatus !== 'SERVICE_COMPLETED') {
+            // Phase 1: Towing to the garage
+            provider = booking.towTruck;
+            serviceName = `Towing to ${booking.garage?.name || 'Garage'}`;
+            isTowingPhase = true;
+        } else {
+            // Phase 2: At the garage
+            provider = booking.garage;
+            serviceName = 'Garage Service';
+            isTowingPhase = false;
+        }
+    } else {
+        provider = booking.garage || booking.towTruck;
+        serviceName = booking.service?.name || 'Towing Service';
+        isTowingPhase = true; 
+    }
+
     const travelEta = booking.providerEta || 0;
-    const serviceEta = travelEta + 30; // 30 minutes for the service itself
+    const serviceEta = travelEta + 30;
 
     const [canCancel, setCanCancel] = useState(false);
     const [timeLeft, setTimeLeft] = useState(0);
@@ -62,16 +204,18 @@ const OrderCard = ({ booking, onCancel }: { booking: any, onCancel: (bookingId: 
     return (
         <View style={styles.card}>
             <View style={styles.cardHeader}>
-                <Text style={styles.serviceName}>{booking.service?.name || 'Towing Service'}</Text>
-                <Text style={[styles.status, styles[`status_${booking.status}`]]}>{booking.status.replace('_', ' ')}</Text>
+                <Text style={styles.serviceName}>{serviceName}</Text>
+                <Text style={[styles.status, styles[`status_${booking.status}` as keyof typeof styles]]}>
+                    {booking.status.replace('_', ' ')}
+                </Text>
             </View>
 
             <View style={styles.providerInfo}>
-                <Ionicons name="business-outline" size={20} color="#555" />
+                <Ionicons name={isTowingPhase ? "car-sport-outline" : "business-outline"} size={20} color="#555" />
                 <Text style={styles.providerName}>{provider?.name || 'Provider details unavailable'}</Text>
             </View>
 
-            {booking.status === 'CONFIRMED' && (
+            {booking.status === 'CONFIRMED' && isTowingPhase && (
                 <>
                     <View style={styles.etaContainer}>
                         <View style={styles.etaBox}>
@@ -84,16 +228,36 @@ const OrderCard = ({ booking, onCancel }: { booking: any, onCancel: (bookingId: 
                         </View>
                     </View>
                     <View style={styles.otpContainer}>
-                        <Text style={styles.otpLabel}>Share this OTP with provider on arrival:</Text>
+                        <Text style={styles.otpLabel}>Share this OTP with tow truck on arrival:</Text>
                         <Text style={styles.otpCode}>{booking.otp}</Text>
                     </View>
                 </>
             )}
 
-            {booking.status === 'IN_PROGRESS' && (
+            {booking.subStatus === 'AWAITING_GARAGE_QUOTE' && (
                  <View style={styles.inProgressContainer}>
-                    <ActivityIndicator color="#3498db" />
-                    <Text style={styles.inProgressText}>Service is currently in progress...</Text>
+                    <Ionicons name="build-outline" size={20} color="#2980b9" />
+                    <Text style={styles.inProgressText}>Your vehicle is at the garage. Awaiting service quote.</Text>
+                </View>
+            )}
+
+            {booking.subStatus === 'AWAITING_QUOTE_APPROVAL' && (
+                <View style={[styles.quoteContainer, { backgroundColor: '#fff8e1', borderColor: '#ffecb3' }]}>
+                    <Ionicons name="document-text-outline" size={24} color="#f57f17" />
+                    <View style={{flex: 1, marginLeft: 10}}>
+                        <Text style={[styles.quoteText, { color: '#f57f17' }]}>Quote Received!</Text>
+                        <Text style={styles.quoteAmount}>INR {booking.garageQuoteAmount?.toFixed(2)} for {booking.garageQuoteDays} day(s)</Text>
+                    </View>
+                    <TouchableOpacity style={styles.viewQuoteButton} onPress={() => onViewQuote(booking)}>
+                        <Text style={styles.viewQuoteButtonText}>View & Pay</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {booking.subStatus === 'SERVICE_IN_PROGRESS' && booking.otp && (
+                <View style={[styles.otpContainer, { backgroundColor: '#e9f5ff', borderColor: '#d0e7ff' }]}>
+                    <Text style={[styles.otpLabel, { color: '#1a5f99' }]}>Share this code with the garage to complete the service:</Text>
+                    <Text style={[styles.otpCode, { color: '#0d47a1' }]}>{booking.otp}</Text>
                 </View>
             )}
 
@@ -120,6 +284,8 @@ export default function OrdersScreen() {
     const [bookings, setBookings] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [quoteModalVisible, setQuoteModalVisible] = useState(false);
+    const [selectedBooking, setSelectedBooking] = useState(null);
 
     const fetchActiveBookings = useCallback(async () => {
         try {
@@ -157,20 +323,29 @@ export default function OrdersScreen() {
             socket.emit('register_customer', clerkId);
         });
 
-        socket.on('service_completed', (data:any) => {
-            console.log('🎉 [OrdersScreen] Service completed event received:', data);
-            Alert.alert("Service Completed", "Your service is complete. Thank you for using our app!");
-            fetchActiveBookings();
-        });
+        const handleEvent = (eventName: string, data: any) => {
+            console.log(`🎉 [OrdersScreen] ${eventName} event received:`, data);
+            let alertTitle = 'Booking Update';
+            let alertMessage = 'Your booking has been updated.';
 
-        socket.on('booking_cancelled_by_provider', (data:any) => {
-            console.log('😢 [OrdersScreen] Booking cancelled by provider event received:', data);
-            Alert.alert(
-                "Booking Cancelled", 
-                `Your booking was cancelled by the provider. Reason: ${data.reason || 'No reason provided.'}`
-            );
+            if (eventName === 'service_completed') {
+                alertTitle = "Service Completed";
+                alertMessage = "Your service is complete. Thank you for using our app!";
+            } else if (eventName === 'booking_cancelled_by_provider') {
+                alertTitle = "Booking Cancelled";
+                alertMessage = `Your booking was cancelled by the provider. Reason: ${data.reason || 'No reason provided.'}`;
+            } else if (eventName === 'garage_quote_ready') {
+                alertTitle = "Quote Ready";
+                alertMessage = "A garage has submitted a quote for your vehicle service.";
+            }
+
+            Alert.alert(alertTitle, alertMessage);
             fetchActiveBookings();
-        });
+        };
+
+        socket.on('service_completed', (data:any) => handleEvent('service_completed', data));
+        socket.on('booking_cancelled_by_provider', (data:any) => handleEvent('booking_cancelled_by_provider', data));
+        socket.on('garage_quote_ready', (data:any) => handleEvent('garage_quote_ready', data));
 
         return () => {
             console.log('[OrdersScreen] Socket disconnecting');
@@ -209,43 +384,79 @@ export default function OrdersScreen() {
         );
     };
 
+    const handleViewQuote = (booking: any) => {
+        setSelectedBooking(booking);
+        setQuoteModalVisible(true);
+    };
+
+    const handlePaymentSuccess = () => {
+        setQuoteModalVisible(false);
+        fetchActiveBookings();
+    };
+
     const onRefresh = () => {
         setRefreshing(true);
         fetchActiveBookings();
     };
 
     return (
-        <View style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color="#333" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>My Active Orders</Text>
-                <View style={styles.backButtonPlaceholder} />
-            </View>
-            {loading ? (
-                <View style={styles.centered}>
-                    <ActivityIndicator size="large" color="#b95528" />
+        <StripeProvider publishableKey={STRIPE_KEY!}>
+            <View style={styles.container}>
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                        <Ionicons name="arrow-back" size={24} color="#333" />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>My Active Orders</Text>
+                    <View style={styles.backButtonPlaceholder} />
                 </View>
-            ) : (
-                <FlatList
-                    data={bookings}
-                    keyExtractor={(item) => item.id}
-                    renderItem={({ item }) => <OrderCard booking={item} onCancel={handleCancelBooking} />}
-                    contentContainerStyle={styles.listContent}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-                    ListEmptyComponent={
-                        <View style={styles.centered}>
-                            <Ionicons name="file-tray-outline" size={60} color="#ccc" />
-                            <Text style={styles.emptyText}>You have no active orders.</Text>
-                            <Text style={styles.emptySubText}>Book a service to see it here.</Text>
-                        </View>
-                    }
+                {loading ? (
+                    <View style={styles.centered}>
+                        <ActivityIndicator size="large" color="#b95528" />
+                    </View>
+                ) : (
+                    <FlatList
+                        data={bookings}
+                        keyExtractor={(item) => item.id}
+                        renderItem={({ item }) => <OrderCard booking={item} onCancel={handleCancelBooking} onViewQuote={handleViewQuote} />}
+                        contentContainerStyle={styles.listContent}
+                        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+                        ListEmptyComponent={
+                            <View style={styles.centered}>
+                                <Ionicons name="file-tray-outline" size={60} color="#ccc" />
+                                <Text style={styles.emptyText}>You have no active orders.</Text>
+                                <Text style={styles.emptySubText}>Book a service to see it here.</Text>
+                            </View>
+                        }
+                    />
+                )}
+                 <QuoteDetailsModal 
+                    booking={selectedBooking}
+                    visible={quoteModalVisible}
+                    onClose={() => setQuoteModalVisible(false)}
+                    onPaymentSuccess={handlePaymentSuccess}
                 />
-            )}
-        </View>
+            </View>
+        </StripeProvider>
     );
 }
+
+const modalStyles = StyleSheet.create({
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+    modalContent: { backgroundColor: '#fff', padding: 20, borderRadius: 15, width: '90%', shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 },
+    modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#34495e' },
+    closeButton: { position: 'absolute', top: 10, right: 10, zIndex: 1 },
+    quoteDetailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+    quoteLabel: { fontSize: 16, color: '#555' },
+    quoteValue: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+    notesContainer: { marginTop: 15, padding: 10, backgroundColor: '#f9f9f9', borderRadius: 8 },
+    notesText: { fontSize: 15, color: '#555', fontStyle: 'italic' },
+    paymentHeader: { fontSize: 18, fontWeight: 'bold', color: '#34495e', marginTop: 20, marginBottom: 10, textAlign: 'center' },
+    paymentOption: { flexDirection: 'row', alignItems: 'center', padding: 15, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, marginBottom: 10 },
+    selectedPaymentOption: { borderColor: '#b95528', backgroundColor: '#fff8f2', borderWidth: 2 },
+    paymentText: { fontSize: 16, marginLeft: 15, color: '#333' },
+    confirmButton: { backgroundColor: '#27ae60', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+    confirmButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+});
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f4f8' },
@@ -340,4 +551,9 @@ const styles = StyleSheet.create({
         backgroundColor: '#e74c3c',
         marginLeft: 10,
     },
+    quoteContainer: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 8, borderWidth: 1, marginVertical: 10 },
+    quoteText: { fontSize: 16, fontWeight: 'bold' },
+    quoteAmount: { fontSize: 14, color: '#555' },
+    viewQuoteButton: { backgroundColor: '#f57f17', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, marginLeft: 10 },
+    viewQuoteButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
 });

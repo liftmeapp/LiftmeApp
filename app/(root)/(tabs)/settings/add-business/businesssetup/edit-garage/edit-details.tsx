@@ -31,7 +31,7 @@ const IconInput = ({ icon, ...props }: { icon: keyof typeof Ionicons.glyphMap } 
 export default function EditGarageDetailsScreen() {
     const router = useRouter();
     const { garageId } = useLocalSearchParams<{ garageId: string }>();
-    const { details, setDetails, setStripeAccountId, setServices } = useGarageStore();
+    const { details, setDetails, setStripeAccountId, setServices, setSupportedVehicleTypes } = useGarageStore();
     const { getToken } = useAuth();
     
     const [isLoading, setIsLoading] = useState(true);
@@ -60,6 +60,7 @@ export default function EditGarageDetailsScreen() {
                 }
                 
                 const data = await response.json();
+                console.log("EditGarageDetailsScreen: Full garage data fetched from API:", data);
                 console.log("EditGarageDetailsScreen: Data fetched, populating store.");
 
                 // Populate the store with all the fetched details
@@ -76,8 +77,23 @@ export default function EditGarageDetailsScreen() {
                 
                 // Also populate the services in the store so the next screen is pre-filled
                 if (data.services && Array.isArray(data.services)) {
+                    console.log("EditGarageDetailsScreen: Populating services with:", data.services);
                     setServices(data.services.map((s: any) => ({ serviceId: s.serviceId, price: s.price })));
+                } else {
+                    console.log("EditGarageDetailsScreen: data.services is empty or not an array:", data.services);
+                    setServices([]); // Ensure it's always an array
                 }
+                console.log("EditGarageDetailsScreen: Services in store after population:", useGarageStore.getState().services);
+
+                // Populate supportedVehicleTypes in the store
+                if (data.supportedVehicleTypes && Array.isArray(data.supportedVehicleTypes)) {
+                    console.log("EditGarageDetailsScreen: Populating supportedVehicleTypes with:", data.supportedVehicleTypes);
+                    setSupportedVehicleTypes(data.supportedVehicleTypes);
+                } else {
+                    console.log("EditGarageDetailsScreen: data.supportedVehicleTypes is empty or not an array:", data.supportedVehicleTypes);
+                    setSupportedVehicleTypes([]); // Ensure it's always an array
+                }
+                console.log("EditGarageDetailsScreen: supportedVehicleTypes in store after population:", useGarageStore.getState().supportedVehicleTypes);
 
             } catch (error: any) {
                 Alert.alert("Error Loading Data", error.message || "Could not load your existing garage data.");

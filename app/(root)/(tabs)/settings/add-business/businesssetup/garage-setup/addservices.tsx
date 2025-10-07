@@ -8,13 +8,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   LayoutAnimation,
   Platform,
+  Pressable,
   SafeAreaView,
   ScrollView, StyleSheet,
   Switch,
-  Text, TextInput, TouchableOpacity,
+  Text, TextInput,
   UIManager,
   View
 } from 'react-native';
@@ -22,6 +24,14 @@ import {
 
 // --- CONFIGURATION ---
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+
+const MAIN_VEHICLE_CATEGORIES = [
+  { key: 'ROADSIDE_CAR', label: 'Car Services' },
+  { key: 'ROADSIDE_BIKE', label: 'Bike Services' },
+  { key: 'ELECTRIC_VEHICLE', label: 'Electric Vehicle Services' },
+  { key: 'HOME_SERVICE', label: 'Home Services' },
+  { key: 'LUXURY', label: 'Luxury Services' },
+];
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -48,11 +58,13 @@ interface ServiceSelectionState {
 export default function AddServicesScreen() {
   const router = useRouter();
   const { getToken, isSignedIn } = useAuth();
-  const { setServices: saveServicesToStore } = useGarageStore();
-  
+  const { setServices: saveServicesToStore, setSupportedVehicleTypes } = useGarageStore();
+  const [isNavigating, setIsNavigating] = useState(false);
   // REFACTORED STATE: Two separate, clean states
   const [masterServices, setMasterServices] = useState<ApiService[]>([]); // Original data from API
   const [selections, setSelections] = useState<ServiceSelectionState>({}); // User's interactions
+  const [categorySelections, setCategorySelections] = useState<{[key: string]: boolean}>({}); // New state for category selection
+  const [selectedVehicleCategories, setSelectedVehicleCategories] = useState<string[]>([]); // New state for top-level vehicle categories
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -98,10 +110,21 @@ export default function AddServicesScreen() {
             setMasterServices(data);
 
             const initialSelections: ServiceSelectionState = {};
+            const initialCategorySelections: { [key: string]: boolean } = {};
+            
+            const categories = new Set<string>();
             data.forEach(service => {
                 initialSelections[service.id] = { selected: false, price: '' };
+                categories.add(service.category || 'GENERAL_LISTING');
             });
+
+            categories.forEach(category => {
+                initialCategorySelections[category] = false;
+            });
+
             setSelections(initialSelections);
+            setCategorySelections(initialCategorySelections);
+            setSelectedVehicleCategories([]); // Initialize as empty
             console.log("6. State initialized.");
 
         } catch (e: any) {
@@ -118,20 +141,46 @@ export default function AddServicesScreen() {
   // 4. The dependency array now includes `isSignedIn`. The ref handles the "run once" logic.
   }, [isSignedIn]);
 
+  useEffect(() => {
+    // This effect ensures that when main vehicle categories are toggled,
+    // the individual category sections are shown or hidden.
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCategorySelections(prevCategorySelections => {
+        const newCategorySelections: { [key: string]: boolean } = { ...prevCategorySelections };
+        MAIN_VEHICLE_CATEGORIES.forEach(mainCat => {
+            const isMainCatSelected = selectedVehicleCategories.includes(mainCat.key);
+            newCategorySelections[mainCat.key] = isMainCatSelected;
+        });
+        return newCategorySelections;
+    });
+  }, [selectedVehicleCategories]);
+
   const toggleService = (serviceId: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelections(prev => {
         const currentSelection = prev[serviceId];
         const isNowSelected = !currentSelection.selected;
-        return {
+        const updatedSelections = {
             ...prev,
             [serviceId]: {
                 ...currentSelection,
                 selected: isNowSelected,
-                // If de-selecting, clear the price. Otherwise, keep it.
                 price: isNowSelected ? currentSelection.price : '',
             },
         };
+
+        return updatedSelections;
+    });
+  };
+
+  const toggleMainVehicleCategory = (mainCategoryKey: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSelectedVehicleCategories(prev => {
+        const isNowSelected = !prev.includes(mainCategoryKey);
+        const updatedMainCategories = isNowSelected
+            ? [...prev, mainCategoryKey]
+            : prev.filter(cat => cat !== mainCategoryKey);
+        return updatedMainCategories;
     });
   };
 
@@ -163,13 +212,15 @@ export default function AddServicesScreen() {
     }
 
     saveServicesToStore(selectedServices);
+    console.log("AddServicesScreen: Saving selectedVehicleCategories to store:", selectedVehicleCategories);
+    setSupportedVehicleTypes(selectedVehicleCategories);
     router.push('/settings/add-business/businesssetup/garage-setup/location-picker');
   };
 
   const categorizedServices = useMemo(() => {
     if (!masterServices.length) return [];
     
-    const garageServices = masterServices.filter(service => service.category !== 'TOWING');
+    let garageServices = masterServices.filter(service => service.category !== 'TOWING');
 
     const groups = garageServices.reduce((acc, service) => {
         const key = service.category || 'GENERAL_LISTING';
@@ -178,8 +229,9 @@ export default function AddServicesScreen() {
         return acc;
     }, {} as Record<string, ApiService[]>);
 
-    return Object.entries(groups).map(([category, servicesList]) => ({
-        title: category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+    return Object.entries(groups).map(([categoryKey, servicesList]) => ({
+        title: MAIN_VEHICLE_CATEGORIES.find(cat => cat.key === categoryKey)?.label || categoryKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        key: categoryKey,
         services: servicesList,
     }));
   }, [masterServices]);
@@ -209,12 +261,28 @@ export default function AddServicesScreen() {
             <Text style={styles.headerTitle}>Select Your Services</Text>
             <Text style={styles.headerSubtitle}>Choose what you offer and set your prices.</Text>
         </View>
+
+        <View style={styles.mainCategoryContainer}>
+            <Text style={styles.mainCategoryTitle}>Vehicle Types Serviced</Text>
+            {MAIN_VEHICLE_CATEGORIES.map(mainCat => (
+                <View key={mainCat.key} style={styles.mainCategoryItem}>
+                    <Text style={styles.mainCategoryItemText}>{mainCat.label}</Text>
+                    <Switch
+                        trackColor={{ false: "#ccc", true: "#b95528" }}
+                        thumbColor={"#fff"}
+                        onValueChange={() => toggleMainVehicleCategory(mainCat.key)}
+                        value={selectedVehicleCategories.includes(mainCat.key)}
+                    />
+                </View>
+            ))}
+        </View>
         
         {categorizedServices.map((category) => (
-            <View key={category.title} style={styles.categoryCard}>
-                <Text style={styles.categoryTitle}>{category.title}</Text>
-                {category.services.map((service, index) => {
-                    const selectionState = selections[service.id];
+                            <View key={category.title} style={styles.categoryCard}>
+                                <View style={styles.categoryHeader}>
+                                    <Text style={styles.categoryTitle}>{category.title}</Text>
+                                </View>
+                                {categorySelections[category.key] && category.services.map((service, index) => {                    const selectionState = selections[service.id];
                     if (!selectionState) return null; // Should not happen, but a safe guard
 
                     return (
@@ -247,21 +315,57 @@ export default function AddServicesScreen() {
         ))}
       </ScrollView>
 
-      <TouchableOpacity onPress={handleNext} disabled={loading}>
-          <LinearGradient colors={['#c3683c', '#b95528']} style={styles.fab}>
-              <View style={styles.fabContent}>
-                <Text style={styles.fabText}>Next: Set Location</Text>
-                {selectedCount > 0 && <View style={styles.fabBadge}><Text style={styles.fabBadgeText}>{selectedCount}</Text></View>}
-              </View>
-              <Ionicons name="arrow-forward" size={22} color="#fff" />
-          </LinearGradient>
-      </TouchableOpacity>
+      <View style={styles.fabContainer}>
+              <Pressable 
+                onPress={handleNext} 
+                disabled={loading || isNavigating}
+                style={({ pressed }) => [
+                  styles.fab,
+                  (loading || isNavigating) && styles.disabledFab,
+                  pressed && !loading && !isNavigating && styles.pressedFab
+                ]}
+              >
+                <LinearGradient 
+                  colors={['#c3683c', '#b95528']} 
+                  style={styles.fabGradient}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                >
+                  {isNavigating ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <View style={styles.fabContent}>
+                      <Text style={styles.fabText}>
+                        {selectedCount > 0 
+                          ? 'Next: Update Location' 
+                          : 'Select Services to Continue'}
+                      </Text>
+                      {!isNavigating && selectedCount > 0 && (
+                        <Ionicons name="arrow-forward" size={20} color="#fff" style={styles.arrowIcon} />
+                      )}
+                    </View>
+                  )}
+                </LinearGradient>
+              </Pressable>
+            </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: '#f8f9fa' },
+    safeArea: { flex: 1, backgroundColor: '#f8f9fa',paddingTop: 20 },
+    fabContainer: {
+      position: 'absolute',
+      bottom: 20,
+      left: 20,
+      right: 20,
+      alignItems: 'center',
+      borderRadius: 30,
+      elevation: 8,
+    },
+    arrowIcon: {
+      marginLeft: 8,
+    },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
     loadingText: { marginTop: 15, fontSize: 16, color: '#555' },
     errorText: { marginTop: 15, textAlign: 'center', color: '#d9534f', fontSize: 16, fontWeight: '500' },
@@ -283,6 +387,15 @@ const styles = StyleSheet.create({
     categoryTitle: {
         fontSize: 18, fontWeight: '600', color: '#fff', 
         backgroundColor: '#7b381a', padding: 15,
+    },
+    categoryHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#7b381a',
+        padding: 15,
+        borderTopLeftRadius: 12,
+        borderTopRightRadius: 12,
     },
     serviceItemContainer: {
         paddingHorizontal: 15,
@@ -318,6 +431,22 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
     },
+    disabledFab: {
+      opacity: 0.6,
+    },
+    pressedFab: {
+      opacity: 0.8,
+      transform: [{ scale: 0.98 }],
+    },
+    fabGradient: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 16,
+      paddingHorizontal: 24,
+      width: '100%',
+      borderRadius: 30,
+    },
     fabText: {
         color: '#fff',
         fontSize: 18,
@@ -336,5 +465,35 @@ const styles = StyleSheet.create({
         color: '#b95528',
         fontWeight: 'bold',
         fontSize: 14
-    }
+    },
+    mainCategoryContainer: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        marginBottom: 15,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 3,
+        padding: 15,
+    },
+    mainCategoryTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 10,
+        paddingBottom: 5,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+    },
+    mainCategoryItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 8,
+    },
+    mainCategoryItemText: {
+        fontSize: 16,
+        color: '#444',
+    },
 });

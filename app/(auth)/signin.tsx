@@ -4,7 +4,7 @@ import * as Linking from 'expo-linking';
 import { Link, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import PhoneInput from 'react-native-phone-number-input';
 import 'react-phone-input-2/lib/style.css'; // If you're using web
 import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser';
@@ -143,7 +143,11 @@ export default function SigninScreen() {
   };
 
   return (
-    <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
       <Text style={styles.header}>Sign In</Text>
 
       {signInMethod === 'phone' ? (
@@ -235,6 +239,7 @@ export default function SigninScreen() {
         </Link>
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

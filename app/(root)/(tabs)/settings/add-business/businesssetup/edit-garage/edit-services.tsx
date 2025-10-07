@@ -1,6 +1,5 @@
 // /app/(root)/(tabs)/settings/add-business/businesssetup/edit-garage/edit-services.tsx
 
-import ModalLoader from '@/components/ModalLoader'; // Import the new modal loader
 import RotatingLoader from '@/components/RotatingLoader';
 import { useGarageStore } from '@/store/garageStore';
 import { useAuth } from '@clerk/clerk-expo';
@@ -14,7 +13,6 @@ import {
   LayoutAnimation,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView, StyleSheet,
   Switch,
   Text, TextInput,
@@ -23,6 +21,14 @@ import {
 } from 'react-native';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+
+const MAIN_VEHICLE_CATEGORIES = [
+  { key: 'ROADSIDE_CAR', label: 'Car Services' },
+  { key: 'ROADSIDE_BIKE', label: 'Bike Services' },
+  { key: 'ELECTRIC_VEHICLE', label: 'Electric Vehicle Services' },
+  { key: 'HOME_SERVICE', label: 'Home Services' },
+  { key: 'LUXURY', label: 'Luxury Services' },
+];
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -47,14 +53,15 @@ export default function EditServicesScreen() {
   const router = useRouter();
   const { garageId } = useLocalSearchParams<{ garageId: string }>();
   const { getToken, isSignedIn } = useAuth();
-  const { services: existingServices, setServices: saveServicesToStore } = useGarageStore();
-  
+  const { services: existingServices, setServices: saveServicesToStore, supportedVehicleTypes: existingSupportedVehicleTypes, setSupportedVehicleTypes } = useGarageStore();
+  console.log("EditServicesScreen: existingSupportedVehicleTypes from store:", existingSupportedVehicleTypes);
   const [masterServices, setMasterServices] = useState<ApiService[]>([]);
   const [selections, setSelections] = useState<ServiceSelectionState>({});
+  const [categorySelections, setCategorySelections] = useState<{[key: string]: boolean}>({}); // New state for category selection
+  const [selectedVehicleCategories, setSelectedVehicleCategories] = useState<string[]>([]); // New state for top-level vehicle categories
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
-
   const fetchInitiated = useRef(false);
 
   useEffect(() => {
@@ -64,6 +71,10 @@ export default function EditServicesScreen() {
       setError("Authentication required to load services.");
       return;
     }
+
+    // Only proceed if existingSupportedVehicleTypes has been loaded (or is an empty array, indicating no types were previously selected)
+    // This prevents the component from initializing with an empty array before edit-details.tsx has populated the store.
+    // Removed: if (existingSupportedVehicleTypes === undefined) { return; }
 
     const fetchAndInitialize = async () => {
       setLoading(true);
@@ -81,6 +92,9 @@ export default function EditServicesScreen() {
 
           const existingServicesMap = new Map(existingServices.map(s => [s.serviceId, s.price]));
           const initialSelections: ServiceSelectionState = {};
+          const initialCategorySelections: { [key: string]: boolean } = {};
+          
+          // Initialize individual service selections
           allServices.forEach(service => {
               const price = existingServicesMap.get(service.id);
               initialSelections[service.id] = {
@@ -88,8 +102,16 @@ export default function EditServicesScreen() {
                   price: price !== undefined ? String(price) : '',
               };
           });
-          
+
+          // Initialize category selections based on existingSupportedVehicleTypes
+          MAIN_VEHICLE_CATEGORIES.forEach(mainCat => {
+              initialCategorySelections[mainCat.key] = existingSupportedVehicleTypes.includes(mainCat.key);
+          });
+
           setSelections(initialSelections);
+          setCategorySelections(initialCategorySelections);
+          setSelectedVehicleCategories(existingSupportedVehicleTypes); // Set initial main categories
+
       } catch (e: any) {
           console.error("💥 ERROR during initialization:", e);
           setError(e.message || 'An unknown error occurred.');
@@ -99,14 +121,28 @@ export default function EditServicesScreen() {
     };
 
     fetchAndInitialize();
-  }, []);
+  }, [isSignedIn, existingServices, existingSupportedVehicleTypes]);
+
+  useEffect(() => {
+    // This effect ensures that when main vehicle categories are toggled,
+    // the individual category sections are shown or hidden.
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCategorySelections(prevCategorySelections => {
+        const newCategorySelections: { [key: string]: boolean } = { ...prevCategorySelections };
+        MAIN_VEHICLE_CATEGORIES.forEach(mainCat => {
+            const isMainCatSelected = selectedVehicleCategories.includes(mainCat.key);
+            newCategorySelections[mainCat.key] = isMainCatSelected;
+        });
+        return newCategorySelections;
+    });
+  }, [selectedVehicleCategories]);
 
   const toggleService = (serviceId: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelections(prev => {
         const currentSelection = prev[serviceId];
         const isNowSelected = !currentSelection.selected;
-        return {
+        const updatedSelections = {
             ...prev,
             [serviceId]: {
                 ...currentSelection,
@@ -114,6 +150,19 @@ export default function EditServicesScreen() {
                 price: isNowSelected ? currentSelection.price : '',
             },
         };
+
+        return updatedSelections;
+    });
+  };
+
+  const toggleMainVehicleCategory = (mainCategoryKey: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSelectedVehicleCategories(prev => {
+        const isNowSelected = !prev.includes(mainCategoryKey);
+        const updatedMainCategories = isNowSelected
+            ? [...prev, mainCategoryKey]
+            : prev.filter(cat => cat !== mainCategoryKey);
+        return updatedMainCategories;
     });
   };
 
@@ -157,6 +206,8 @@ export default function EditServicesScreen() {
       
       // Save services to store
       saveServicesToStore(selectedServices);
+      console.log("EditServicesScreen: Saving selectedVehicleCategories to store:", selectedVehicleCategories);
+      setSupportedVehicleTypes(selectedVehicleCategories);
       
       // Navigate to the next screen
       router.push({
@@ -173,15 +224,19 @@ export default function EditServicesScreen() {
 
   const categorizedServices = useMemo(() => {
     if (!masterServices.length) return [];
-    const garageServices = masterServices.filter(service => service.category !== 'TOWING');
+    
+    let garageServices = masterServices.filter(service => service.category !== 'TOWING');
+
     const groups = garageServices.reduce((acc, service) => {
         const key = service.category || 'GENERAL_LISTING';
         if (!acc[key]) { acc[key] = []; }
         acc[key].push(service);
         return acc;
     }, {} as Record<string, ApiService[]>);
-    return Object.entries(groups).map(([category, servicesList]) => ({
-        title: category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+
+    return Object.entries(groups).map(([categoryKey, servicesList]) => ({
+        title: MAIN_VEHICLE_CATEGORIES.find(cat => cat.key === categoryKey)?.label || categoryKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        key: categoryKey,
         services: servicesList,
     }));
   }, [masterServices]);
@@ -197,19 +252,35 @@ export default function EditServicesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ModalLoader visible={isNavigating} message="Preparing Location Setup..." />
+    <View style={styles.safeArea}>
       <Stack.Screen options={{ title: 'Step 2: Update Services' }} />
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.headerContainer}>
             <Text style={styles.headerTitle}>Update Your Services</Text>
             <Text style={styles.headerSubtitle}>Add or remove offerings and adjust your prices.</Text>
         </View>
+
+        <View style={styles.mainCategoryContainer}>
+            <Text style={styles.mainCategoryTitle}>Vehicle Types Serviced</Text>
+            {MAIN_VEHICLE_CATEGORIES.map(mainCat => (
+                <View key={mainCat.key} style={styles.mainCategoryItem}>
+                    <Text style={styles.mainCategoryItemText}>{mainCat.label}</Text>
+                    <Switch
+                        trackColor={{ false: "#ccc", true: "#b95528" }}
+                        thumbColor={"#fff"}
+                        onValueChange={() => toggleMainVehicleCategory(mainCat.key)}
+                        value={selectedVehicleCategories.includes(mainCat.key)}
+                    />
+                </View>
+            ))}
+        </View>
         
         {categorizedServices.map((category) => (
             <View key={category.title} style={styles.categoryCard}>
-                <Text style={styles.categoryTitle}>{category.title}</Text>
-                {category.services.map((service, index) => {
+                <View style={styles.categoryHeader}>
+                    <Text style={styles.categoryTitle}>{category.title}</Text>
+                </View>
+                {categorySelections[category.key] && category.services.map((service, index) => {
                     const selectionState = selections[service.id];
                     if (!selectionState) return null;
 
@@ -259,26 +330,24 @@ export default function EditServicesScreen() {
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
           >
-            <View style={styles.fabContent}>
-              {isNavigating ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <>
-                  <Text style={styles.fabText}>
-                    {selectedCount > 0 
-                      ? 'Next: Update Location' 
-                      : 'Select Services to Continue'}
-                  </Text>
-                </>
-              )}
-            </View>
-            {!isNavigating && selectedCount > 0 && (
-              <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 8 }} />
+            {isNavigating ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <View style={styles.fabContent}>
+                <Text style={styles.fabText}>
+                  {selectedCount > 0 
+                    ? 'Next: Update Location' 
+                    : 'Select Services to Continue'}
+                </Text>
+                {!isNavigating && selectedCount > 0 && (
+                  <Ionicons name="arrow-forward" size={20} color="#fff" style={styles.arrowIcon} />
+                )}
+              </View>
             )}
           </LinearGradient>
         </Pressable>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -290,8 +359,9 @@ const styles = StyleSheet.create({
       right: 20,
       alignItems: 'center',
       borderRadius: 30,
+      elevation: 8,
     },
-    safeArea: { flex: 1, backgroundColor: '#f8f9fa' },
+    safeArea: { flex: 1, backgroundColor: '#f8f9fa',paddingTop: 28 },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
     errorText: { marginTop: 15, textAlign: 'center', color: '#d9534f', fontSize: 16, fontWeight: '500' },
     scrollContainer: { paddingHorizontal: 10, paddingBottom: 100 },
@@ -328,6 +398,7 @@ const styles = StyleSheet.create({
       paddingVertical: 16,
       paddingHorizontal: 24,
       width: '100%',
+      borderRadius: 30,
     },
     disabledFab: {
       opacity: 0.6,
@@ -336,10 +407,63 @@ const styles = StyleSheet.create({
       opacity: 0.8,
       transform: [{ scale: 0.98 }],
     },
-    fabContent: { flexDirection: 'row', alignItems: 'center' },
-    fabText: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginRight: 10 },
+    fabContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%',
+      position: 'relative',
+    },
+    fabText: { 
+      color: '#fff', 
+      fontSize: 18, 
+      fontWeight: 'bold', 
+      textAlign: 'center',
+    },
+    arrowIcon: {
+      marginLeft: 8,
+    },
     fabBadge: {
         backgroundColor: '#fff', borderRadius: 12, width: 24, height: 24,
     },
-    fabBadgeText: { color: '#b95528', fontWeight: 'bold', fontSize: 14 }
+    fabBadgeText: { color: '#b95528', fontWeight: 'bold', fontSize: 14 },
+    mainCategoryContainer: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        marginBottom: 15,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 3,
+        padding: 15,
+    },
+    mainCategoryTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 10,
+        paddingBottom: 5,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+    },
+    mainCategoryItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 8,
+    },
+    mainCategoryItemText: {
+        fontSize: 16,
+        color: '#444',
+    },
+    categoryHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#7b381a',
+        padding: 15,
+        borderTopLeftRadius: 12,
+        borderTopRightRadius: 12,
+    },
 });

@@ -48,6 +48,7 @@
   TOWING
   LUXURY
   GARAGE_LISTING
+  ELECTRIC_VEHICLE
 }
 
   enum ServiceType {
@@ -58,6 +59,7 @@
     LUXURY
     BIKE
     TRUCK
+    ELECTRIC_VEHICLE
   }
 
   enum BookingStatus {
@@ -81,6 +83,25 @@
     CARD
     CASH
   }
+
+  enum BookingType {
+    DIRECT_TOW
+    TOW_TO_GARAGE
+    ROADSIDE_ASSISTANCE
+  }
+
+  enum BookingSubStatus {
+    AWAITING_GARAGE_ACCEPTANCE
+    AWAITING_TOW_TRUCK_ACCEPTANCE
+    TOW_TRUCK_ASSIGNED
+    VEHICLE_IN_TRANSIT
+    VEHICLE_DELIVERED
+    AWAITING_GARAGE_QUOTE
+    AWAITING_QUOTE_APPROVAL
+    SERVICE_IN_PROGRESS
+    SERVICE_COMPLETED
+  }
+
   // ===================================================================
   //  CORE USER & VEHICLE MODELS
   // ===================================================================
@@ -165,6 +186,7 @@
     operatingHours    Json?
     stripeAccountId   String?
     location          Json
+    supportedVehicleTypes String[] // <--- ADD THIS LINE
     
     createdAt         DateTime @default(now())
     updatedAt         DateTime @updatedAt
@@ -274,7 +296,9 @@
 
   model Booking {
     id              String        @id @default(auto()) @map("_id") @db.ObjectId
+    bookingType     BookingType   @default(DIRECT_TOW)
     status          BookingStatus @default(SEARCHING) // --- MODIFIED --- Default to SEARCHING
+    subStatus       BookingSubStatus? 
     bookedAt        DateTime      @default(now())
     expiresAt       DateTime? 
     paymentExpiresAt DateTime?
@@ -294,6 +318,14 @@
     paymentStatus   String        @default("pending")
     paymentIntentId String?
     paymentMethod   PaymentMethod @default(CARD)
+
+    // Garage-specific quote and payment for Tow-to-Garage flow
+    garageQuoteAmount     Float?
+    garageQuoteDays       Int?
+    garageQuoteNotes      String?
+    garagePaymentStatus   String?   @default("pending")
+    garagePaymentIntentId String?
+
     userRating      Int?
     userReview      String?
     providerRating  Int?

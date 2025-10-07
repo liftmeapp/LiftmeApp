@@ -327,14 +327,17 @@ app.post(
         if (!ownerId) {
             return res.status(401).json({ error: 'Unauthorized: No user ID in token.' });
         }
-        const { details, services, location } = req.body;
+        const { details, services, location, supportedVehicleTypes } = req.body;
         const { name, licenseNumber, address, ownerName, numberOfEmployees, contactEmail, contactPhone, operatingHours, stripeAccountId } = details;
 
-        if (!name || !licenseNumber || !location || !services || !stripeAccountId) {
+        if (!name || !licenseNumber || !location || !services || !stripeAccountId || !supportedVehicleTypes) {
             return res.status(400).json({ error: 'Missing required fields.' });
         }
         if (!Array.isArray(services) || services.length === 0) {
             return res.status(400).json({ error: 'At least one service must be provided.'});
+        }
+        if (!Array.isArray(supportedVehicleTypes) || supportedVehicleTypes.length === 0) {
+            return res.status(400).json({ error: 'At least one supported vehicle type must be provided.'});
         }
         try {
             const user = await prisma.user.findUnique({ where: { clerkId: ownerId } });
@@ -342,7 +345,7 @@ app.post(
                 return res.status(404).json({ error: 'Your user profile could not be found.' });
             }
             const garageData = {
-                name, licenseNumber, address, ownerName, stripeAccountId, location,
+                name, licenseNumber, address, ownerName, stripeAccountId, location, supportedVehicleTypes,
                 contactEmail: contactEmail || null,
                 contactPhone: contactPhone || null,
                 operatingHours: operatingHours && typeof operatingHours === 'object' ? operatingHours : {},
@@ -400,6 +403,7 @@ app.get(
                     stripeAccountId: true,
                     status: true,
                     location: true, // Keep location for editing purposes
+                    supportedVehicleTypes: true, // Include new field
                     services: {
                         include: {
                             service: true // Include service details for each garage service
@@ -422,14 +426,14 @@ app.put(
     async (req: Request, res: Response) => {
         const ownerId = req.auth.userId;
         const { garageId } = req.params;
-        const { details, services, location } = req.body;
+        const { details, services, location, supportedVehicleTypes } = req.body;
 
         if (!ownerId) {
             return res.status(401).json({ error: 'User not authenticated' });
         }
 
-        if (!details || !services || !location) {
-            return res.status(400).json({ error: 'Missing details, services, or location in request body.' });
+        if (!details || !services || !location || !supportedVehicleTypes) {
+            return res.status(400).json({ error: 'Missing details, services, location, or supportedVehicleTypes in request body.' });
         }
 
         try {
@@ -457,6 +461,7 @@ app.put(
                     contactPhone: details.contactPhone,
                     operatingHours: details.operatingHours && typeof details.operatingHours === 'object' ? details.operatingHours : {},
                     location: location,
+                    supportedVehicleTypes: supportedVehicleTypes, // Add this line
                     services: {
                         create: services.map((service: { serviceId: string; price: number }) => ({
                             price: service.price,

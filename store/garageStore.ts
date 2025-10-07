@@ -39,10 +39,12 @@ interface GarageState {
     details: Partial<GarageDetails>;
     services: GarageService[];
     location: Partial<GarageLocation>;
+    supportedVehicleTypes: string[]; // New field
     setDetails: (details: Partial<GarageDetails>) => void;
     setServices: (services: GarageService[]) => void;
     setLocation: (location: GarageLocation) => void;
     setStripeAccountId: (id: string) => void;
+    setSupportedVehicleTypes: (types: string[]) => void; // New action
     reset: () => void;
 }
 
@@ -50,6 +52,7 @@ const initialState = {
     details: {},
     services: [],
     location: {},
+    supportedVehicleTypes: [], // Initialize new field
 };
 
 export const useGarageStore = create<GarageState>()(
@@ -60,6 +63,7 @@ export const useGarageStore = create<GarageState>()(
             setServices: (services) => set({ services }),
             setLocation: (location) => set({ location }),
             setStripeAccountId: (id) => set((state) => ({ details: { ...state.details, stripeAccountId: id } })),
+            setSupportedVehicleTypes: (types) => set({ supportedVehicleTypes: types }), // New action implementation
             reset: () => set(initialState),
         }),
         {

@@ -48,6 +48,17 @@ const servicesToSeed = [
     { name: "Luxury-Certified Tech Service", icon: "luxury-tech.png", type: "GARAGE", category: ServiceCategory.LUXURY, description: "Service by manufacturer-certified technicians for luxury brands." },
     { name: "Luxury-Concierge Detailing", icon: "luxury-detailing.png", type: "GARAGE", category: ServiceCategory.LUXURY, description: "High-end, meticulous vehicle detailing service." },
 
+    //===========================
+    //ELectruc
+    //============================
+    
+    { name: "Electric-Flat Tire", icon: "car-tire.png", type: "GARAGE", category: ServiceCategory.ELECTRIC_VEHICLE, description: "On-site tire repair and replacement for cars." },
+    { name: "Electric-Battery Service", icon: "car-battery.png", type: "GARAGE", category: ServiceCategory.ELECTRIC_VEHICLE, description: "Jump-starting a dead car battery." },
+    { name: "Electric-Breakdown", icon: "car-wrench.png", type: "GARAGE", category: ServiceCategory.ELECTRIC_VEHICLE, description: "Minor on-site mechanical repairs for cars." },
+    { name: "Electric-Drivability Concerns", icon: "car-fuel.png", type: "GARAGE", category: ServiceCategory.ELECTRIC_VEHICLE, description: "Emergency fuel delivery." },
+    { name: "Electric-Lockout", icon: "car-key.png", type: "GARAGE", category: ServiceCategory.ELECTRIC_VEHICLE, description: "Assistance with car lockouts." },
+
+
 ];
 
 async function main() {

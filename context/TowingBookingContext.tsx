@@ -16,9 +16,9 @@ import { io } from 'socket.io-client';
 // --- Enums and Interfaces ---
 
 export enum TowingBookingStage {
+  VEHICLE_SELECTION = 'vehicle',
   PICKUP_SELECTION = 'pickup',
   DESTINATION_SELECTION = 'destination',
-  VEHICLE_SELECTION = 'vehicle',
   SEARCHING_FOR_PROVIDER = 'searching',
   PAYMENT = 'payment',
   CONFIRMED = 'confirmed',
@@ -49,6 +49,7 @@ export interface TowingBookingState {
   searchCountdown: number; // New state
   eligibleTruckCount: number; // New state
   selectedProvider: TowingProviderInfo | null;
+  garageForTow: any | null; // Holds details of the garage that accepted the tow-in request
   selectedVehicle: any | null; // Vehicle object from API
   pickupLocation: TowingLocationState | null;
   destinationLocation: TowingLocationState | null;
@@ -65,11 +66,13 @@ export interface TowingBookingContextType extends TowingBookingState {
   setPickupLocation: (location: TowingLocationState | null) => void;
   setDestinationLocation: (location: TowingLocationState | null) => void;
   startTowingBooking: () => Promise<void>;
+  startTowToGarageBooking: () => Promise<void>; // New action for tow-to-garage
   cancelTowingBooking: () => Promise<void>;
   resetTowingBookingFlow: () => void;
   confirmPayment: (options: { paymentMethodId: string }) => Promise<void>; // Modified
   confirmCashBooking: () => Promise<void>; // Added
   setSearchError: (error: string | null) => void;
+  setGarageForTow: (garage: any | null) => void; // Setter for the assigned garage
   setConfirmedProvider: (provider: TowingProviderInfo | null) => void;
   setBookingId: (id: string | null) => void;
   setIsBroadcasting: (isBroadcasting: boolean) => void;
@@ -95,12 +98,13 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
   const { user } = useUser();
 
   const [currentStage, setCurrentStage] = useState<TowingBookingStage>(
-    TowingBookingStage.PICKUP_SELECTION
+    TowingBookingStage.VEHICLE_SELECTION
   );
   const [currentBookingId, setBookingId] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchCountdown, setSearchCountdown] = useState(SEARCH_DURATION_SECONDS); // New state
   const [eligibleTruckCount, setEligibleTruckCount] = useState(0); // New state
+  const [garageForTow, setGarageForTow] = useState<any | null>(null); // New state for tow-to-garage
   const [selectedProvider, setConfirmedProvider] = useState<TowingProviderInfo | null>(
     null
   );
@@ -174,6 +178,14 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
             clearPolling(); // Stop polling since we have a definitive answer
             setConfirmedProvider(data.provider);
             setCurrentStage(TowingBookingStage.PAYMENT);
+        }
+    });
+
+    socket.on('garage_found_for_tow', (data) => {
+        console.log('🏠 [Socket.IO] Received garage_found_for_tow:', data);
+        if (data.bookingId === currentBookingId) {
+            setGarageForTow(data.garage);
+            // The stage remains SEARCHING_FOR_PROVIDER, but the UI will now update
         }
     });
 
@@ -290,9 +302,10 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
   // --- Action Implementations ---
 
   const resetTowingBookingFlow = useCallback(() => {
-    setCurrentStage(TowingBookingStage.PICKUP_SELECTION);
+    setCurrentStage(TowingBookingStage.VEHICLE_SELECTION);
     setBookingId(null);
     setSearchError(null);
+    setGarageForTow(null); // Reset the garage for tow
     setConfirmedProvider(null);
     setSelectedVehicle(null);
     setPickupLocation(null);
@@ -335,6 +348,47 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [isBroadcasting, selectedVehicle, pickupLocation, destinationLocation, getToken]);
 
+  const startTowToGarageBooking = useCallback(async () => {
+    if (isBroadcasting) return;
+    if (!selectedVehicle || !pickupLocation) {
+      Alert.alert('Incomplete Details', 'Please select a vehicle and pickup location.');
+      return;
+    }
+    setIsBroadcasting(true);
+    setSearchError(null);
+    setCurrentStage(TowingBookingStage.SEARCHING_FOR_PROVIDER); // This stage now represents searching for EITHER garage or tow truck
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Authentication token not found.');
+      
+      const payload = { 
+        vehicleId: selectedVehicle.id, 
+        pickup: pickupLocation 
+      };
+
+      const response = await fetch(`${API_BASE_URL}/api/bookings/request-tow-to-garage`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, 
+        body: JSON.stringify(payload) 
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.reason || data.error || 'Failed to start the tow-to-garage request.');
+      }
+      
+      setBookingId(data.bookingId);
+      // We can use eligibleTruckCount to show the number of garages found
+      setEligibleTruckCount(data.eligibleGarageCount || 0); 
+
+    } catch (error: any) {
+      setSearchError(error.message || 'An error occurred while finding a garage.');
+      setCurrentStage(TowingBookingStage.ERROR);
+    } finally {
+      setIsBroadcasting(false);
+    }
+  }, [isBroadcasting, selectedVehicle, pickupLocation, getToken]);
+
   const cancelTowingBooking = useCallback(async () => {
     if (!currentBookingId) {
       resetTowingBookingFlow();
@@ -360,7 +414,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
         },
       },
     ]);
-  }, [currentBookingId, resetTowingBookingFlow, router]);
+  }, [currentBookingId, resetTowingBookingFlow, router, getToken]);
 
   const { confirmPayment: confirmStripePayment } = useConfirmPayment(); // Added
 
@@ -468,6 +522,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     searchError,
     searchCountdown, // Exposed
     eligibleTruckCount, // Exposed
+    garageForTow, // Exposed
     selectedProvider,
     selectedVehicle,
     pickupLocation,
@@ -481,11 +536,13 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     setPickupLocation,
     setDestinationLocation,
     startTowingBooking,
+    startTowToGarageBooking,
     cancelTowingBooking,
     resetTowingBookingFlow,
     confirmPayment,
     confirmCashBooking, // Added
     setSearchError,
+    setGarageForTow, // Exposed
     setConfirmedProvider,
     setBookingId,
     setIsBroadcasting,

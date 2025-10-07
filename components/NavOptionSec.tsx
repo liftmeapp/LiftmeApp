@@ -1,16 +1,16 @@
 import { router } from "expo-router";
-import { View, Text, TouchableOpacity, Image } from "react-native";
+import { Image, Text, TouchableOpacity, View } from "react-native";
 
 const opts = [
   {
     id: 5,
-    name: "Motorcycle",
+    name: "Bike Assistance",
     icon: require("@/assets/icons/bikefix.jpeg"),
     link: "/services/roadsidebike-service",
   },
   {
     id: 7,
-    name: "Luxury",
+    name: "Cars/SUV",
     icon: require("@/assets/icons/luxurycar.jpeg"),
     link: "/services/luxury-service",
   },

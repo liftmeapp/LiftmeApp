@@ -75,14 +75,21 @@ bookingsRouter.get('/garage/bookings', async (req: Request, res: Response) => {
 
         let bookings: any[]; // Declare bookings here
 
-        const isSearching = statuses.includes(BookingStatus.SEARCHING);
-        const otherStatuses = statuses.filter(s => s !== BookingStatus.SEARCHING);
+        const statusesToFetch = ['SEARCHING', 'CONFIRMED', 'IN_PROGRESS', 'AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
 
         bookings = await prisma.booking.findMany({
             where: {
                 OR: [
-                    { garageId: garage.id, status: { in: statuses } },
-                    { status: BookingStatus.SEARCHING, eligibleProviderIds: { has: garage.id }, expiresAt: { gt: new Date() } }
+                    // Bookings explicitly assigned to this garage
+                    { garageId: garage.id, status: { in: statusesToFetch as BookingStatus[] } },
+                    // OR, bookings that are in the initial search phase for a tow-to-garage
+                    { 
+                        status: BookingStatus.SEARCHING, 
+                        bookingType: 'TOW_TO_GARAGE',
+                        subStatus: 'AWAITING_GARAGE_ACCEPTANCE',
+                        eligibleProviderIds: { has: garage.id }, 
+                        expiresAt: { gt: new Date() } 
+                    }
                 ]
             },
             include: { user: true, vehicle: true, service: true },
@@ -115,14 +122,19 @@ bookingsRouter.get('/tow-truck/bookings', async (req: Request, res: Response) =>
 
         let bookings: any[]; // Declare bookings here
 
-        const isSearching = statuses.includes(BookingStatus.SEARCHING);
-        const otherStatuses = statuses.filter(s => s !== BookingStatus.SEARCHING);
+        const statusesToFetch = ['AWAITING_PAYMENT', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
 
         bookings = await prisma.booking.findMany({
             where: {
                 OR: [
-                    { towTruckId: towTruck.id, status: { in: statuses } },
-                    { status: BookingStatus.SEARCHING, eligibleProviderIds: { has: towTruck.id }, expiresAt: { gt: new Date() } }
+                    // Bookings explicitly assigned to this tow truck
+                    { towTruckId: towTruck.id, status: { in: statusesToFetch as BookingStatus[] } },
+                    // OR, bookings that are in any searching phase where this truck is eligible
+                    { 
+                        status: BookingStatus.SEARCHING, 
+                        eligibleProviderIds: { has: towTruck.id }, 
+                        expiresAt: { gt: new Date() } 
+                    }
                 ]
             },
             include: { user: true, vehicle: true },
@@ -235,6 +247,137 @@ bookingsRouter.post('/bookings/:id/accept', async (req: Request, res: Response) 
     }
 });
 
+bookingsRouter.post('/bookings/:id/accept-tow-in', async (req: Request, res: Response) => {
+    const { id: bookingId } = req.params;
+    const garageOwnerId = req.auth.userId;
+    
+    try {
+        // 1. Fetch the accepting garage
+        const garage = await prisma.garage.findFirst({ 
+            where: { owner: {clerkId: garageOwnerId} }
+        });
+        if (!garage) return res.status(403).json({ error: "Garage profile not found."});
+
+        // 2. Fetch the booking and validate it
+        const bookingToAccept = await prisma.booking.findUnique({ 
+            where: { id: bookingId },
+            include: { vehicle: true }
+        });
+        if (!bookingToAccept) return res.status(404).json({ error: "Booking request not found." });
+        if (bookingToAccept.bookingType !== 'TOW_TO_GARAGE' || bookingToAccept.status !== BookingStatus.SEARCHING) {
+            return res.status(409).json({ error: "This request is not a valid tow-in request or has already been handled." });
+        }
+        if (bookingToAccept.expiresAt && new Date() > bookingToAccept.expiresAt) {
+            return res.status(410).json({ error: "This request has expired." });
+        }
+        if (!bookingToAccept.eligibleProviderIds.includes(garage.id)) {
+            return res.status(403).json({ error: "Your garage is not eligible for this request." });
+        }
+
+        // 3. Find eligible tow trucks near the user's pickup location
+        const pickup = bookingToAccept.pickupLocation as any;
+        const vehicleType = bookingToAccept.vehicle.type;
+
+        const nearbyTrucksRaw = await prisma.liveTruckLocation.aggregateRaw({
+            pipeline: [
+                {
+                    '$geoNear': {
+                        near: { type: "Point", coordinates: [pickup.longitude, pickup.latitude] },
+                        distanceField: "distance",
+                        maxDistance: 15000, // 15km in meters
+                        query: { isAvailable: true },
+                        spherical: true
+                    }
+                },
+                { '$limit': 20 }
+            ]
+        });
+
+        if (!Array.isArray(nearbyTrucksRaw) || nearbyTrucksRaw.length === 0) {
+            await prisma.booking.update({
+                where: { id: bookingId },
+                data: { status: BookingStatus.CANCELLED, cancellationReason: 'No tow trucks were available after garage acceptance.' }
+            });
+            return res.status(404).json({ error: `No tow trucks found nearby that can handle a ${vehicleType}. The booking has been cancelled.` });
+        }
+
+        const nearbyTruckIds = nearbyTrucksRaw.map((truck: any) => truck.towTruckId.$oid);
+        const eligibleTrucks = await prisma.towTruck.findMany({
+            where: {
+                id: { in: nearbyTruckIds },
+                status: 'APPROVED',
+                services: { some: { vehicleType: vehicleType } }
+            }
+        });
+
+        if (eligibleTrucks.length === 0) {
+            await prisma.booking.update({
+                where: { id: bookingId },
+                data: { status: BookingStatus.CANCELLED, cancellationReason: 'No tow trucks were available after garage acceptance.' }
+            });
+            return res.status(404).json({ error: `No tow trucks found nearby that can handle a ${vehicleType}. The booking has been cancelled.` });
+        }
+
+        const eligibleTowTruckIds = eligibleTrucks.map(truck => truck.id);
+        const TOW_TRUCK_SEARCH_TIMEOUT_MINUTES = 5;
+
+        // 4. Update the booking to lock in the garage and start the tow truck search
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                garage: { connect: { id: garage.id } },
+                destinationLocation: garage.location, // Set garage as the destination
+                expiresAt: new Date(Date.now() + TOW_TRUCK_SEARCH_TIMEOUT_MINUTES * 60 * 1000),
+                eligibleProviderIds: eligibleTowTruckIds, // Now eligible providers are tow trucks
+                subStatus: 'AWAITING_TOW_TRUCK_ACCEPTANCE',
+            },
+            include: { user: true, vehicle: true, garage: true }
+        });
+
+        // 5. Broadcast to eligible tow trucks
+        const userLocation = { lat: pickup.latitude, lon: pickup.longitude };
+        for (const providerId of eligibleTowTruckIds) {
+            try {
+                const truckLocation = await prisma.liveTruckLocation.findUnique({ where: { towTruckId: providerId } });
+                if (truckLocation && truckLocation.location && isGeoJSONPoint(truckLocation.location)) {
+                    const providerCoords = { lat: truckLocation.location.coordinates[1], lon: truckLocation.location.coordinates[0] };
+                    const { distanceKm } = await getEtaAndDistance(userLocation, providerCoords);
+
+                    const socketId = providerSockets[providerId];
+                    if (socketId) {
+                        io.to(socketId).emit('new_tow_request_for_garage', { ...updatedBooking, distance: distanceKm });
+                        console.log(`📬 Emitted 'new_tow_request_for_garage' to tow truck ${providerId} on socket ${socketId}`);
+                    }
+                }
+            } catch (e) {
+                console.error(`Failed to process and emit for tow truck ${providerId}`, e);
+            }
+        }
+        
+        // Notify the original garage that their acceptance was successful
+        const garageSocketId = providerSockets[garage.id];
+        if (garageSocketId) {
+            io.to(garageSocketId).emit('tow_in_accepted_by_you', { bookingId: updatedBooking.id });
+        }
+
+        // Also notify the customer that a garage has been found
+        const customerSocketId = customerSockets[updatedBooking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('garage_found_for_tow', { 
+                bookingId: updatedBooking.id, 
+                garage: updatedBooking.garage 
+            });
+            console.log(`📬 Emitted 'garage_found_for_tow' to customer ${updatedBooking.user.clerkId}`);
+        }
+
+        return res.status(200).json({ success: true, message: "Garage accepted. Now searching for tow truck." });
+
+    } catch (error: any) {
+        console.error("Failed to accept tow-in booking:", error);
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
+
 bookingsRouter.post('/bookings/:id/accept-tow', async (req: Request, res: Response) => {
     const { id: bookingId } = req.params;
     const towTruckOwnerId = req.auth.userId;
@@ -295,6 +438,7 @@ bookingsRouter.post('/bookings/:id/accept-tow', async (req: Request, res: Respon
             where: { id: bookingId },
             data: {
                 status: BookingStatus.AWAITING_PAYMENT,
+                subStatus: 'TOW_TRUCK_ASSIGNED',
                 towTruck: { connect: { id: towTruck.id } },
                 basePrice: servicePrice, // Update base price to the actual tow truck's price
                 finalAmount: finalAmount, // Set the calculated final amount
@@ -319,6 +463,15 @@ bookingsRouter.post('/bookings/:id/accept-tow', async (req: Request, res: Respon
                 provider: providerPayload
             });
             console.log(`📬 Emitted 'booking_accepted' to customer ${updatedBooking.user.clerkId} with final price ${finalAmount}`);
+        }
+
+        // --- If this is a tow-to-garage, notify the garage ---
+        if (updatedBooking.bookingType === 'TOW_TO_GARAGE' && updatedBooking.garageId) {
+            const garageSocketId = providerSockets[updatedBooking.garageId];
+            if (garageSocketId) {
+                io.to(garageSocketId).emit('tow_truck_assigned', { bookingId: updatedBooking.id, towTruck: updatedBooking.towTruck });
+                console.log(`📬 Emitted 'tow_truck_assigned' to garage ${updatedBooking.garageId}`);
+            }
         }
 
         return res.status(200).json({ success: true, booking: updatedBooking });
@@ -401,31 +554,53 @@ bookingsRouter.post('/bookings/:id/verify-otp', async (req: Request, res: Respon
     try {
         const booking = await prisma.booking.findFirst({
             where: { id: bookingId, garage: { owner: { clerkId: garageOwnerId } } },
-            include: { user: true } // Include user to get clerkId for socket event
+            include: { user: true } 
         });
 
         if (!booking) return res.status(404).json({ error: "Booking not found or not assigned to you." });
-        if (booking.status !== 'CONFIRMED') return res.status(409).json({ error: 'Booking is not in a verifiable state.' });
         if (booking.otp !== otp) return res.status(400).json({ error: 'Invalid OTP provided.' });
         if (booking.otpExpiresAt && new Date() > booking.otpExpiresAt) return res.status(410).json({ error: 'The OTP has expired.' });
 
-        // Only capture payment if it's a card payment
-        if (booking.paymentMethod === 'CARD') {
-            if (!booking.paymentIntentId) {
-                return res.status(400).json({ error: 'Cannot complete service: Payment Intent not found for a card payment.' });
+        const isTowToGarageService = booking.bookingType === 'TOW_TO_GARAGE' && booking.status === BookingStatus.IN_PROGRESS && booking.subStatus === 'SERVICE_IN_PROGRESS';
+        const isStandardService = booking.status === BookingStatus.CONFIRMED;
+
+        if (!isStandardService && !isTowToGarageService) {
+            return res.status(409).json({ error: 'Booking is not in a verifiable state.' });
+        }
+
+        // --- Payment & Status Update Logic ---
+        let updateData: any = {
+            status: BookingStatus.COMPLETED,
+            serviceEndedAt: new Date(),
+            otp: null,
+            otpExpiresAt: null,
+            subStatus: 'SERVICE_COMPLETED'
+        };
+
+        if (isTowToGarageService) {
+            // Capture garage payment if by card
+            if (booking.garagePaymentStatus === 'authorized' && booking.garagePaymentIntentId) {
+                await stripe.paymentIntents.capture(booking.garagePaymentIntentId);
+                updateData.garagePaymentStatus = 'paid';
+            } else if (booking.garagePaymentStatus === 'pending_cash') {
+                updateData.garagePaymentStatus = 'paid_in_cash';
             }
-            await stripe.paymentIntents.capture(booking.paymentIntentId);
+        } else { // isStandardService
+            // Capture standard payment if by card
+            if (booking.paymentMethod === 'CARD') {
+                if (!booking.paymentIntentId) {
+                    return res.status(400).json({ error: 'Cannot complete service: Payment Intent not found for a card payment.' });
+                }
+                await stripe.paymentIntents.capture(booking.paymentIntentId);
+                updateData.paymentStatus = 'paid';
+            } else {
+                updateData.paymentStatus = 'paid_in_cash';
+            }
         }
 
         const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
-            data: {
-                status: BookingStatus.COMPLETED,
-                paymentStatus: booking.paymentMethod === 'CARD' ? 'paid' : 'paid_in_cash',
-                serviceEndedAt: new Date(),
-                otp: null,
-                otpExpiresAt: null,
-            }
+            data: updateData
         });
 
         // --- Notify customer that service is complete ---
@@ -456,7 +631,7 @@ bookingsRouter.post('/bookings/:id/verify-otp-tow', async (req: Request, res: Re
     try {
         const booking = await prisma.booking.findFirst({
             where: { id: bookingId, towTruck: { owner: { clerkId: towTruckOwnerId } } },
-            include: { user: true } // Include user to get clerkId for socket event
+            include: { user: true, garage: true } // Include garage for tow-to-garage flow
         });
 
         if (!booking) return res.status(404).json({ error: "Booking not found or not assigned to you." });
@@ -464,29 +639,65 @@ bookingsRouter.post('/bookings/:id/verify-otp-tow', async (req: Request, res: Re
         if (booking.otp !== otp) return res.status(400).json({ error: 'Invalid OTP provided.' });
         if (booking.otpExpiresAt && new Date() > booking.otpExpiresAt) return res.status(410).json({ error: 'The OTP has expired.' });
 
-        // Only capture payment if it's a card payment
+        // Capture payment if it's a card payment
         if (booking.paymentMethod === 'CARD') {
             if (!booking.paymentIntentId) {
-                return res.status(400).json({ error: 'Cannot complete service: Payment Intent not found for a card payment.' });
+                return res.status(400).json({ error: 'Cannot complete service: Payment Intent not found.' });
             }
             await stripe.paymentIntents.capture(booking.paymentIntentId);
         }
 
-        const updatedBooking = await prisma.booking.update({
-            where: { id: bookingId },
-            data: {
-                status: BookingStatus.COMPLETED,
-                paymentStatus: booking.paymentMethod === 'CARD' ? 'paid' : 'paid_in_cash',
-                serviceEndedAt: new Date(),
-                otp: null,
-                otpExpiresAt: null,
-            }
-        });
+        let updatedBooking;
 
-        // --- Notify customer that service is complete ---
+        if (booking.bookingType === 'TOW_TO_GARAGE') {
+            // For tow-to-garage, the tow part is done, but the main service begins.
+            // A NEW OTP is generated for the garage to use upon completion.
+            const garageOtp = generateOtp();
+
+            updatedBooking = await prisma.booking.update({
+                where: { id: bookingId },
+                data: {
+                    status: BookingStatus.IN_PROGRESS, // The overall booking is now in progress at the garage.
+                    subStatus: 'AWAITING_GARAGE_QUOTE', // The next step is for the garage to submit a quote.
+                    paymentStatus: booking.paymentMethod === 'CARD' ? 'paid' : 'paid_in_cash', // Towing payment is settled.
+                    serviceStartedAt: new Date(), // This marks the start of the garage's involvement.
+                    otp: garageOtp, // The NEW OTP for the garage to use later.
+                    otpExpiresAt: null,
+                }
+            });
+
+            // Notify the garage that the vehicle has been delivered
+            if (booking.garage?.id) {
+                const garageSocketId = providerSockets[booking.garage.id];
+                if (garageSocketId) {
+                    io.to(garageSocketId).emit('vehicle_delivered', { bookingId: updatedBooking.id });
+                    console.log(`📬 Emitted 'vehicle_delivered' to garage ${booking.garage.id}`);
+                }
+            }
+
+        } else {
+            // For direct tows, the job is completely finished.
+            updatedBooking = await prisma.booking.update({
+                where: { id: bookingId },
+                data: {
+                    status: BookingStatus.COMPLETED,
+                    subStatus: 'SERVICE_COMPLETED',
+                    paymentStatus: booking.paymentMethod === 'CARD' ? 'paid' : 'paid_in_cash',
+                    serviceEndedAt: new Date(),
+                    otp: null,
+                    otpExpiresAt: null,
+                }
+            });
+        }
+
+        // Notify customer that the tow portion is complete
         const customerSocketId = customerSockets[booking.user.clerkId];
         if (customerSocketId) {
-            io.to(customerSocketId).emit('service_completed', { bookingId: updatedBooking.id });
+            io.to(customerSocketId).emit('service_completed', { 
+                bookingId: updatedBooking.id,
+                status: updatedBooking.status, // Send the new status
+                subStatus: updatedBooking.subStatus
+            });
             console.log(`✅ Emitted 'service_completed' to customer ${booking.user.clerkId}`);
         }
 
@@ -630,6 +841,7 @@ bookingsRouter.post('/bookings/request-service', async (req: Request, res: Respo
 
         const newBooking = await prisma.booking.create({
             data: {
+                bookingType: 'ROADSIDE_ASSISTANCE', // Explicitly set booking type
                 status: BookingStatus.SEARCHING,
                 user: { connect: { id: user.id } },
                 vehicle: { connect: { id: vehicleId } },
@@ -896,6 +1108,131 @@ bookingsRouter.post('/bookings/:bookingId/create-payment-intent', async (req: Re
     }
 });
 
+bookingsRouter.post('/bookings/request-tow-to-garage', async (req: Request, res: Response) => {
+    console.log("--- [API] Received /request-tow-to-garage ---");
+    const { vehicleId, pickup } = req.body;
+    const ownerId = req.auth.userId;
+
+    if (!vehicleId || !pickup?.latitude || !ownerId) {
+        return res.status(400).json({ reason: "Missing vehicleId, pickup location, or authentication." });
+    }
+
+    const SEARCH_TIMEOUT_MINUTES = 5;
+
+    try {
+        // 1. Get User and Vehicle details
+        const user = await prisma.user.findUnique({ where: { clerkId: ownerId } });
+        if (!user) return res.status(404).json({ reason: "User profile not found." });
+
+        const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
+        if (!vehicle) return res.status(404).json({ reason: "Vehicle not found." });
+
+        // 2. Map VehicleType to a supported category string
+        let requiredServiceCategory: string;
+        switch (vehicle.type) {
+            case 'SEDAN':
+            case 'HATCHBACK':
+            case 'SUV':
+                requiredServiceCategory = 'ROADSIDE_CAR';
+                break;
+            case 'BIKE':
+                requiredServiceCategory = 'ROADSIDE_BIKE';
+                break;
+            case 'LUXURY':
+                requiredServiceCategory = 'LUXURY';
+                break;
+            default:
+                return res.status(400).json({ reason: `The selected vehicle type (${vehicle.type}) is not supported for this service.` });
+        }
+        console.log(`[API] Vehicle type ${vehicle.type} requires garage category: ${requiredServiceCategory}`);
+
+        // 3. Find nearby, eligible garages
+        const nearbyGaragesRaw = await prisma.garage.aggregateRaw({
+            pipeline: [
+                {
+                    '$geoNear': {
+                        near: { type: "Point", coordinates: [pickup.longitude, pickup.latitude] },
+                        distanceField: "distance",
+                        maxDistance: 15000, // 15km in meters
+                        query: { 
+                            isOpen: true,
+                            status: 'APPROVED',
+                            supportedVehicleTypes: requiredServiceCategory 
+                        },
+                        spherical: true
+                    }
+                },
+                { '$limit': 25 } // Limit the number of garages to consider
+            ]
+        });
+
+        if (!Array.isArray(nearbyGaragesRaw) || nearbyGaragesRaw.length === 0) {
+            return res.status(404).json({ reason: `No approved garages supporting ${requiredServiceCategory} were found within 15km.` });
+        }
+
+        const eligibleGarageIds = nearbyGaragesRaw.map((g: any) => g._id.$oid);
+        console.log(`[API] Found ${eligibleGarageIds.length} eligible garages.`);
+
+        // 4. Create the new booking
+        const newBooking = await prisma.booking.create({
+            data: {
+                bookingType: 'TOW_TO_GARAGE',
+                status: BookingStatus.SEARCHING,
+                subStatus: 'AWAITING_GARAGE_ACCEPTANCE',
+                user: { connect: { id: user.id } },
+                vehicle: { connect: { id: vehicleId } },
+                basePrice: 0, // Price is determined by garage and tow truck later
+                finalAmount: 0,
+                expiresAt: new Date(Date.now() + SEARCH_TIMEOUT_MINUTES * 60 * 1000),
+                eligibleProviderIds: eligibleGarageIds,
+                pickupLocation: pickup,
+                // Destination is the garage, to be set upon acceptance
+            }
+        });
+        console.log(`[API] Created TOW_TO_GARAGE booking ${newBooking.id}`);
+
+        // 5. Broadcast to eligible garages
+        const detailedBooking = await prisma.booking.findUnique({
+            where: { id: newBooking.id },
+            include: {
+                user: { select: { firstName: true, lastName: true } },
+                vehicle: true,
+            }
+        });
+
+        if (detailedBooking) {
+            console.log(`[Socket.IO] Broadcasting tow-in request ${detailedBooking.id} to ${detailedBooking.eligibleProviderIds.length} garages.`);
+            const userLocation = { lat: pickup.latitude, lon: pickup.longitude };
+            for (const providerId of detailedBooking.eligibleProviderIds) {
+                try {
+                    const garage = await prisma.garage.findUnique({ where: { id: providerId } });
+                    if (garage && garage.location && isGeoJSONPoint(garage.location)) {
+                        const garageLocation = { lat: garage.location.coordinates[1], lon: garage.location.coordinates[0] };
+                        const { distanceKm } = await getEtaAndDistance(userLocation, garageLocation);
+
+                        const socketId = providerSockets[providerId];
+                        if (socketId) {
+                            // Use a new event name to distinguish on the client-side
+                            io.to(socketId).emit('new_tow_in_request', { ...detailedBooking, distance: distanceKm });
+                            console.log(`📬 Emitted 'new_tow_in_request' to garage ${providerId} on socket ${socketId}`);
+                        } else {
+                            console.log(`- Garage ${providerId} is not connected.`);
+                        }
+                    }
+                } catch (e) {
+                    console.error(`Failed to process and emit for garage ${providerId}`, e);
+                }
+            }
+        }
+
+        return res.status(202).json({ bookingId: newBooking.id, eligibleGarageCount: eligibleGarageIds.length });
+
+    } catch (error: any) {
+        console.error("🔴 [API] CRITICAL ERROR in /request-tow-to-garage:", error);
+        return res.status(500).json({ reason: 'An internal server error occurred.', details: error.message });
+    }
+});
+
 // ===================================================================
 //  CANCELLATION & REFUND ROUTES
 // ===================================================================
@@ -938,7 +1275,7 @@ bookingsRouter.post('/bookings/:bookingId/cancel-by-user', async (req: Request, 
             }
         }
 
-        await prisma.booking.update({
+        const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
                 status: BookingStatus.CANCELLED,
@@ -946,7 +1283,19 @@ bookingsRouter.post('/bookings/:bookingId/cancel-by-user', async (req: Request, 
             }
         });
 
-        // TODO: Notify garage of the cancellation.
+        // Notify garage/tow truck of the cancellation.
+        const providerId = booking.garageId || booking.towTruckId;
+        if (providerId) {
+            const providerSocketId = providerSockets[providerId];
+            if (providerSocketId) {
+                io.to(providerSocketId).emit('booking_cancelled_by_customer', {
+                    bookingId: updatedBooking.id,
+                    reason: 'Customer cancelled the booking.'
+                });
+                console.log(`📬 Emitted 'booking_cancelled_by_customer' to provider ${providerId}`);
+            }
+        }
+
         return res.status(200).json({ success: true, message: 'Booking cancelled.' });
 
     } catch (error: any) {
@@ -1082,6 +1431,7 @@ bookingsRouter.post(
 
             const newBooking = await prisma.booking.create({
                 data: {
+                    bookingType: 'DIRECT_TOW', // Explicitly set booking type
                     status: BookingStatus.SEARCHING,
                     user: { connect: { id: user.id } },
                     vehicle: { connect: { id: vehicleId } },
@@ -1334,3 +1684,193 @@ bookingsRouter.post('/stripe/create-connect-account', async (req: Request, res: 
 });
 
 export default bookingsRouter;
+
+bookingsRouter.post('/bookings/:id/submit-quote', async (req: Request, res: Response) => {
+    const { id: bookingId } = req.params;
+    const { amount, days, notes } = req.body;
+    const garageOwnerId = req.auth.userId;
+
+    if (!amount || !days) {
+        return res.status(400).json({ error: "Amount and days are required." });
+    }
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: {
+                id: bookingId,
+                garage: { owner: { clerkId: garageOwnerId } },
+            },
+            include: { user: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: "Booking not found or not assigned to you." });
+        if (booking.bookingType !== 'TOW_TO_GARAGE' || booking.subStatus !== 'AWAITING_GARAGE_QUOTE') {
+            return res.status(409).json({ error: 'This booking is not awaiting a quote.' });
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                garageQuoteAmount: amount,
+                garageQuoteDays: days,
+                garageQuoteNotes: notes,
+                subStatus: 'AWAITING_QUOTE_APPROVAL',
+            }
+        });
+
+        // --- Notify customer via WebSocket ---
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('garage_quote_ready', {
+                bookingId: updatedBooking.id,
+                quote: {
+                    amount: updatedBooking.garageQuoteAmount,
+                    days: updatedBooking.garageQuoteDays,
+                    notes: updatedBooking.garageQuoteNotes,
+                }
+            });
+            console.log(`📬 Emitted 'garage_quote_ready' to customer ${booking.user.clerkId}`);
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to submit quote:", error);
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
+
+bookingsRouter.post('/bookings/:bookingId/create-garage-payment-intent', async (req: Request, res: Response) => {
+    const { bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const booking = await prisma.booking.findUnique({
+            where: { id: bookingId },
+            include: { garage: true, user: true },
+        });
+
+        if (!booking || booking.user.clerkId !== customerClerkId) {
+            return res.status(404).json({ error: 'Booking not found or not owned by user.' });
+        }
+        if (!booking.garage || !booking.garage.stripeAccountId) {
+            return res.status(400).json({ error: 'Provider is not set up to receive payments.' });
+        }
+        if (!booking.garageQuoteAmount) {
+            return res.status(400).json({ error: 'No quote amount set for this booking.' });
+        }
+
+        const amountInCents = Math.round(booking.garageQuoteAmount * 100);
+        const applicationFee = Math.round(amountInCents * 0.10);
+
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amountInCents,
+            currency: 'inr',
+            customer: booking.user.stripeCustomerId!,
+            application_fee_amount: applicationFee,
+            transfer_data: {
+                destination: booking.garage.stripeAccountId,
+            },
+            capture_method: 'manual',
+            metadata: {
+                bookingId: booking.id,
+                userId: booking.user.id,
+                paymentType: 'garage_service'
+            }
+        });
+
+        await prisma.booking.update({ where: { id: bookingId }, data: { garagePaymentIntentId: paymentIntent.id }});
+
+        return res.status(200).json({ clientSecret: paymentIntent.client_secret });
+
+    } catch (error: any) {
+        console.error("Garage Payment Intent Error:", error);
+        return res.status(500).json({ error: 'An error occurred while processing your payment.' });
+    }
+});
+
+bookingsRouter.post('/bookings/:bookingId/confirm-garage-payment', async (req: Request, res: Response) => {
+    const { bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { garage: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+        if (booking.subStatus !== 'AWAITING_QUOTE_APPROVAL') return res.status(409).json({ error: 'This booking is not awaiting quote approval.' });
+        if (!booking.garagePaymentIntentId) return res.status(400).json({ error: 'Payment has not been initiated for this booking.' });
+
+        const intent = await stripe.paymentIntents.retrieve(booking.garagePaymentIntentId);
+        if (intent.status !== 'requires_capture') {
+            return res.status(400).json({ error: 'Payment could not be authorized. Please try again.' });
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                subStatus: 'SERVICE_IN_PROGRESS',
+                garagePaymentStatus: 'authorized',
+            }
+        });
+        
+        // Notify garage that service can begin
+        if (booking.garage) {
+            const garageSocketId = providerSockets[booking.garage.id];
+            if (garageSocketId) {
+                io.to(garageSocketId).emit('garage_service_approved', { bookingId: updatedBooking.id });
+            }
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to confirm garage payment:", error);
+        return res.status(500).json({ error: 'An internal server error occurred' });
+    }
+});
+
+bookingsRouter.post('/bookings/:bookingId/confirm-garage-cash', async (req: Request, res: Response) => {
+    const { bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { garage: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+        if (booking.subStatus !== 'AWAITING_QUOTE_APPROVAL') return res.status(409).json({ error: 'This booking is not awaiting quote approval.' });
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                subStatus: 'SERVICE_IN_PROGRESS',
+                garagePaymentStatus: 'pending_cash',
+            },
+        });
+
+        // Notify garage that service can begin
+        if (booking.garage) {
+            const garageSocketId = providerSockets[booking.garage.id];
+            if (garageSocketId) {
+                io.to(garageSocketId).emit('garage_service_approved', { bookingId: updatedBooking.id });
+            }
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to confirm garage cash payment:", error);
+        return res.status(500).json({ error: 'An internal server error occurred' });
+    }
+});
