@@ -30,7 +30,7 @@ const MAP_STYLE = [
         { featureType: "road.local", elementType: "labels", stylers: [{ visibility: "off" }] }, 
         { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#e5e5e5" }] }, 
         { featureType: "transit.station", elementType: "geometry", stylers: [{ color: "#eeeeee" }] }, 
-        { featureType: "water", elementType: "geometry", stylers: [{ color: "#c9c9c9" }] }, 
+        { featureType: "water", elementType: "geometry", stylers: [{ color: "#ADD8E6" }] }, 
         { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#9e9e9e" }] 
     }];
 
@@ -257,8 +257,29 @@ const MAP_STYLE = [
             }
         };
         
-        const recenterMap = async () => { /* ... implementation is correct ... */ };
+        const recenterMap = async () => {
+            try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status !== 'granted') {
+                    console.warn('Location permission not granted');
+                    return;
+                }
         
+                const location = await Location.getCurrentPositionAsync({});
+                const newRegion = {
+                    latitude: location.coords.latitude,
+                    longitude: location.coords.longitude,
+                    latitudeDelta: 0.05,
+                    longitudeDelta: 0.05,
+                };
+                
+                setRegion(newRegion);
+                mapRef.current?.animateToRegion(newRegion, 1000);
+            } catch (error) {
+                console.error('Error recentering map:', error);
+            }
+        };
+                
         if (!region) {
             return (
                 <View style={styles.centered}>
@@ -449,7 +470,7 @@ const MAP_STYLE = [
         refreshText: { marginLeft: 8, fontWeight: '500' },
         searchContainer: {
             position: 'absolute',
-            top: 40,
+            top: 60,
             left: 10,
             right: 10,
             zIndex: 1,

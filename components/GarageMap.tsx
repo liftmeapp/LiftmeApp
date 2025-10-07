@@ -23,15 +23,14 @@ const MAP_STYLE = [
     { featureType: "poi", elementType: "labels.text", stylers: [{ visibility: "off" }] },
     { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#e5e5e5" }] }, 
     { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] }, 
-    { featureType: "road.arterial", elementType: "labels.text.fill", stylers: [{ color: "#757575" }] }, 
     { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#dadada" }] }, 
     { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#616161" }] }, 
     { featureType: "road.local", elementType: "labels", stylers: [{ visibility: "off" }] }, 
     { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#e5e5e5" }] }, 
     { featureType: "transit.station", elementType: "geometry", stylers: [{ color: "#eeeeee" }] }, 
-    { featureType: "water", elementType: "geometry", stylers: [{ color: "#c9c9c9" }] }, 
-    { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#9e9e9e" }] 
-}];
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#ADD8E6" }] }, 
+    { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#a0c8ff" }] }
+];
 
 // --- INTERFACES ---
 export interface PinnedLocationData {
@@ -43,7 +42,12 @@ export interface PinnedLocationData {
 interface MapProps {
     isPinningLocation: boolean;
     onPinLocationChange: (location: PinnedLocationData) => void;
-    onMapReady?: (mapRef: React.RefObject<MapView | null>) => void
+    onMapReady?: (mapRef: React.RefObject<MapView | null>) => void;
+    providerType?: 'garage' | 'tow-truck' | 'ev' | 'all';
+    filters?: {
+        category?: string | null;
+        services?: string[];
+    };
 }
 
 // --- HELPER FUNCTIONS ---
@@ -61,13 +65,38 @@ const fetchNearbyData = async (url: string, token: string) => {
     return response.json();
 };
 
+const fetchNearbyEVStations = async (lat: number, lon: number) => {
+    try {
+        const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lon}&radius=25000&keyword=ev%20charging%20station&key=${GOOGLE_API_KEY}`;
+        console.log("[Map.tsx] Fetching EV Stations from URL:", url);
+        const response = await fetch(url);
+        if (!response.ok) {
+            const errorBody = await response.text();
+            console.error("[Map.tsx] Google Places API Error:", response.status, errorBody);
+            throw new Error('Failed to fetch EV stations from Google Places API');
+        }
+        const data = await response.json();
+        console.log(`[Map.tsx] Google Places API found ${data.results?.length || 0} EV stations with status: ${data.status}`);
+        if (data.status === 'ZERO_RESULTS') {
+            console.log('[Map.tsx] Note: Google Places returned ZERO_RESULTS. This means the search worked but found nothing in the area.');
+        } else if (data.status !== 'OK') {
+            console.warn(`[Map.tsx] Google Places API returned status: ${data.status}. This may indicate an issue with the API key or request.`);
+        }
+        return data.results || [];
+    } catch (error) {
+        console.error("Failed to fetch EV stations:", error);
+        return [];
+    }
+};
+
+
 // --- CHILD COMPONENTS ---
 // A custom map marker to prevent re-renders and show consistent styling
 const CustomMapMarker = React.memo(
     ({ coordinate, name, type }: { coordinate: {latitude: number, longitude: number},
-         name: string, type: 'garage' | 'truck' }) => {
-    const iconName = type === 'garage' ? 'build' : 'car';
-    const markerColor = type === 'garage' ? '#b95528' : '#2980b9';
+         name: string, type: 'garage' | 'truck' | 'ev' }) => {
+    const iconName = type === 'garage' ? 'build' : type === 'truck' ? 'car' : 'flash';
+    const markerColor = type === 'garage' ? '#b95528' : type === 'truck' ? '#2980b9' : '#27ae60';
 
     return (
         <Marker coordinate={coordinate}>
@@ -79,7 +108,7 @@ const CustomMapMarker = React.memo(
 });
 
 // --- MAIN COMPONENT ---
-export default function GarageMap({ isPinningLocation, onPinLocationChange, onMapReady }: MapProps) {
+export default function GarageMap({ isPinningLocation, onPinLocationChange, onMapReady, providerType = 'all', filters }: MapProps) {
     const { getToken, isSignedIn } = useAuth();
     const mapRef = useRef<MapView>(null);
     
@@ -88,6 +117,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
     const [isFetchingProviders, setIsFetchingProviders] = useState(true);
     const [garages, setGarages] = useState<any[]>([]);
     const [towTrucks, setTowTrucks] = useState<any[]>([]);
+    const [chargingStations, setChargingStations] = useState<any[]>([]);
     const [searchError, setSearchError] = useState<string | null>(null);
 
     // State for pinning mode
@@ -114,20 +144,46 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
             const lat = currentRegion.latitude;
             const lon = currentRegion.longitude;
 
-            // Fetch garages and tow trucks in parallel for performance
-            const [garagesData, towTrucksData] = await Promise.all([
-                fetchNearbyData(`${API_BASE_URL}/api/garages/nearby?lat=${lat}&lon=${lon}`, token),
-                fetchNearbyData(`${API_BASE_URL}/api/tow-trucks/nearby?lat=${lat}&lon=${lon}&vehicleType=BIKE`, token),
-            ]);
+            const queryParams = new URLSearchParams();
+            if (filters?.category) {
+                queryParams.append('category', filters.category);
+            }
+            if (filters?.services && filters.services.length > 0) {
+                filters.services.forEach(service => queryParams.append('services', service));
+            }
+            const queryString = queryParams.toString();
+
+            const fetchGarages = providerType === 'garage' || providerType === 'all';
+            const fetchTowTrucks = providerType === 'tow-truck' || providerType === 'all';
+
+            const promises = [];
+
+            if (fetchGarages) {
+                promises.push(fetchNearbyData(`${API_BASE_URL}/api/garages/nearby?lat=${lat}&lon=${lon}&${queryString}`, token));
+            } else {
+                promises.push(Promise.resolve([]));
+            }
+
+            if (fetchTowTrucks) {
+                promises.push(fetchNearbyData(`${API_BASE_URL}/api/tow-trucks/nearby?lat=${lat}&lon=${lon}&vehicleType=BIKE`, token));
+            } else {
+                promises.push(Promise.resolve([]));
+            }
+
+            // Always fetch EV stations from Google Places API
+            promises.push(fetchNearbyEVStations(lat, lon));
+
+            const [garagesData, towTrucksData, evStationsData] = await Promise.all(promises);
             
             setGarages(Array.isArray(garagesData) ? garagesData : []);
             setTowTrucks(Array.isArray(towTrucksData) ? towTrucksData : []);
+            setChargingStations(Array.isArray(evStationsData) ? evStationsData : []);
         } catch (error) {
             console.error("Failed to fetch nearby providers:", error);
         } finally {
             setIsFetchingProviders(false);
         }
-    }, 1000), [isSignedIn]); // Debounce to avoid calls on every small map move
+    }, 1000), [isSignedIn, providerType, filters]); // Debounce to avoid calls on every small map move
 
     // --- EFFECTS ---
     // Initialize map on mount
@@ -447,6 +503,17 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                             type="truck" 
                         />
                     )}
+                    {chargingStations.map((station, index) => 
+                        <CustomMapMarker 
+                            key={`ev-${station.place_id}-${index}`}
+                            coordinate={{
+                                latitude: station.geometry.location.lat, 
+                                longitude: station.geometry.location.lng
+                            }} 
+                            name={station.name} 
+                            type="ev" 
+                        />
+                    )}
                 </>
             </MapView>
 
@@ -479,7 +546,7 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     searchContainer: {
         position: 'absolute',
-        top: 40,
+        top: 60,
         left: 10,
         right: 10,
         zIndex: 1,

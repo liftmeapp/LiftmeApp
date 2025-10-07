@@ -29,7 +29,7 @@ const MAP_STYLE = [
     { featureType: "road.local", elementType: "labels", stylers: [{ visibility: "off" }] }, 
     { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#e5e5e5" }] }, 
     { featureType: "transit.station", elementType: "geometry", stylers: [{ color: "#eeeeee" }] }, 
-    { featureType: "water", elementType: "geometry", stylers: [{ color: "#c9c9c9" }] }, 
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#ADD8E6" }] }, 
     { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#9e9e9e" }] 
 }];
 
@@ -479,7 +479,7 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     searchContainer: {
         position: 'absolute',
-        top: 40,
+        top: 60,
         left: 10,
         right: 10,
         zIndex: 1,

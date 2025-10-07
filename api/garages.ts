@@ -17,7 +17,7 @@ app.get(
     '/api/garages/nearby',
     async (req: Request, res: Response) => {
         try {
-            const { lat, lon } = req.query;
+            const { lat, lon, category } = req.query;
             if (!lat || !lon) {
                 return res.status(400).json({ error: 'Latitude and longitude are required.' });
             }
@@ -26,7 +26,13 @@ app.get(
             if (isNaN(latitude) || isNaN(longitude)) {
                 return res.status(400).json({ error: 'Invalid coordinate values.' });
             }
-            console.log(`[Garages] Searching near: Lon=${longitude}, Lat=${latitude}`);
+
+            const geoQuery: any = { isOpen: true };
+            if (category && typeof category === 'string') {
+                geoQuery.supportedVehicleTypes = category;
+            }
+
+            console.log(`[Garages] Searching near: Lon=${longitude}, Lat=${latitude} with query:`, geoQuery);
             const nearbyGarages = await prisma.garage.aggregateRaw({
                 pipeline: [
                     {
@@ -34,11 +40,11 @@ app.get(
                             near: { type: "Point", coordinates: [longitude, latitude] },
                             distanceField: "distance",
                             maxDistance: 50000,
-                            query: { isOpen: true },
+                            query: geoQuery,
                             spherical: true
                         }
                     },
-                    { '$limit': 20 }
+                    { '$limit': 50 } // Increased limit for better coverage
                 ]
             });
             console.log(`[Garages] Found ${Array.isArray(nearbyGarages) ? nearbyGarages.length : 0} garages via geoNear.`);
