@@ -82,13 +82,11 @@ bookingsRouter.get('/garage/bookings', async (req: Request, res: Response) => {
                 OR: [
                     // Bookings explicitly assigned to this garage
                     { garageId: garage.id, status: { in: statusesToFetch as BookingStatus[] } },
-                    // OR, bookings that are in the initial search phase for a tow-to-garage
-                    { 
-                        status: BookingStatus.SEARCHING, 
-                        bookingType: 'TOW_TO_GARAGE',
-                        subStatus: 'AWAITING_GARAGE_ACCEPTANCE',
-                        eligibleProviderIds: { has: garage.id }, 
-                        expiresAt: { gt: new Date() } 
+                    // OR, any booking in the searching phase where this garage is eligible
+                    {
+                        status: BookingStatus.SEARCHING,
+                        eligibleProviderIds: { has: garage.id },
+                        expiresAt: { gt: new Date() }
                     }
                 ]
             },

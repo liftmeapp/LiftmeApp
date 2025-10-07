@@ -33,9 +33,13 @@ export default function RootLayout() {
     return (
         <ClerkProvider tokenCache={tokenCache} publishableKey={CLERK_PUBLISHABLE_KEY as string}>
             <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY!}>
-                    <GestureHandlerRootView style={{ flex: 1 }}>
-                        <InitialLayout />
-                    </GestureHandlerRootView>
+                <BookingProvider>
+                    <TowingBookingProvider>
+                        <GestureHandlerRootView style={{ flex: 1 }}>
+                            <InitialLayout />
+                        </GestureHandlerRootView>
+                    </TowingBookingProvider>
+                </BookingProvider>
             </StripeProvider>
         </ClerkProvider>
     );
@@ -130,13 +134,8 @@ function InitialLayout() {
         );
     }
 
-    return (
-        <BookingProvider>
-           <TowingBookingProvider>
-                <Slot />
-            </TowingBookingProvider>
-        </BookingProvider>
-    );}
+    return <Slot />;
+}
 
 const styles = StyleSheet.create({
     loadingContainer: {

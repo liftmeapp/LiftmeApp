@@ -109,7 +109,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
             </View>
         )}
 
-        {booking.status === 'SEARCHING' && (
+        {booking.status === 'SEARCHING' && (booking.subStatus === 'AWAITING_GARAGE_ACCEPTANCE' || !booking.subStatus) && (
             <View style={styles.bookingActions}>
                 <TouchableOpacity 
                     style={[styles.bookingButton, styles.declineButton, (isDeclining || isAccepting) && styles.disabledButton]} 
@@ -606,17 +606,18 @@ export default function GarageDashboard() {
 
     const filteredBookings = bookings.filter(b => {
         if (jobsSubTab === 'Pending') {
-            return b.status === 'SEARCHING' && b.subStatus === 'AWAITING_GARAGE_ACCEPTANCE';
+            return b.status === 'SEARCHING' && (b.subStatus === 'AWAITING_GARAGE_ACCEPTANCE' || !b.subStatus);
         }
         if (jobsSubTab === 'Current') {
             return (
                 (b.status === 'SEARCHING' && b.subStatus === 'AWAITING_TOW_TRUCK_ACCEPTANCE') ||
+                b.status === 'AWAITING_PAYMENT' ||
                 b.status === 'CONFIRMED' ||
                 (b.status === 'IN_PROGRESS' && (b.subStatus === 'AWAITING_GARAGE_QUOTE' || b.subStatus === 'AWAITING_QUOTE_APPROVAL' || b.subStatus === 'SERVICE_IN_PROGRESS'))
             );
         }
         if (jobsSubTab === 'History') {
-            return ['AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED', 'EXPIRED'].includes(b.status);
+            return ['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(b.status);
         }
         return false;
     });
