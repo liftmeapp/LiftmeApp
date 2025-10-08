@@ -3,7 +3,7 @@ import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { io } from "socket.io-client";
 
 // --- CONFIGURATION ---
@@ -21,7 +21,7 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
     ) : null
 );
 
-const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onOpenQuoteModal, isAccepting, isDeclining = false }: { booking: any, onAccept: (booking: any) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onOpenQuoteModal: (booking: any) => void, isAccepting: boolean, isDeclining?: boolean }) => {
+const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onOpenQuoteModal, isAccepting, isDeclining = false, garageLocation }: { booking: any, onAccept: (booking: any) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onOpenQuoteModal: (booking: any) => void, isAccepting: boolean, isDeclining?: boolean, garageLocation?: any }) => {
     const getBadge = () => {
         if (booking.bookingType === 'TOW_TO_GARAGE') {
             if (booking.subStatus === 'AWAITING_TOW_TRUCK_ACCEPTANCE') {
@@ -67,10 +67,15 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
             <Text style={styles.bookingText}>{booking.vehicle.brand} {booking.vehicle.name} ({booking.vehicle.plateNumber})</Text>
         </View>
 
-        {booking.bookingType === 'TOW_TO_GARAGE' && booking.pickupLocation?.description && (
+        {booking.bookingType === 'TOW_TO_GARAGE' && booking.pickupLocation?.description ? (
             <View style={[styles.bookingDetails, { backgroundColor: '#fff0f0', padding: 5, borderRadius: 5, marginTop: 5 }]}>
                 <Ionicons name="navigate-circle-outline" size={20} color="#c0392b" />
                 <Text style={[styles.bookingText, {color: '#c0392b', fontWeight: 'bold', flexShrink: 1}]}>TOW-IN FROM: {booking.pickupLocation.description}</Text>
+            </View>
+        ) : booking.pickupLocation?.description && (
+             <View style={[styles.bookingDetails, { backgroundColor: '#eaf5ff', padding: 5, borderRadius: 5, marginTop: 5 }]}>
+                <Ionicons name="location-outline" size={20} color="#3498db" />
+                <Text style={[styles.bookingText, {color: '#2980b9', fontWeight: 'bold', flexShrink: 1}]}>LOCATION: {booking.pickupLocation.description}</Text>
             </View>
         )}
 
@@ -79,6 +84,25 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                 <Ionicons name="map-outline" size={20} color="#16a085" />
                 <Text style={styles.bookingText}>~{booking.distance.toFixed(1)} km away</Text>
             </View>
+        )}
+
+        {booking.pickupLocation?.coordinates && garageLocation?.coordinates && (
+            <TouchableOpacity
+                style={styles.checkMapButton}
+                onPress={() => {
+                    const origin = garageLocation;
+                    const destination = booking.pickupLocation;
+                    if (origin?.coordinates && destination?.coordinates) {
+                        const url = `https://www.google.com/maps/dir/?api=1&origin=${origin.coordinates[1]},${origin.coordinates[0]}&destination=${destination.coordinates[1]},${destination.coordinates[0]}`;
+                        Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
+                    } else {
+                        Alert.alert("Map Error", "Could not open map because location data is incomplete.");
+                    }
+                }}
+            >
+                <Ionicons name="map-outline" size={18} color="#fff" />
+                <Text style={styles.checkMapButtonText}>Check Route</Text>
+            </TouchableOpacity>
         )}
 
         {showCompleteButton && (
@@ -420,13 +444,10 @@ export default function GarageDashboard() {
             console.log(`🎉 [Socket.IO] Received ${type}:`, newBooking);
             if (type === 'new_tow_in_request') {
                 Alert.alert('New Tow-In Request!', `A customer needs a ${newBooking.vehicle.name} towed to your garage for service.`);
+            } else {
+                Alert.alert('New Job Request!', `You have a new job request in your pending list.`);
             }
-            setBookings(prevBookings => {
-                if (prevBookings.some(b => b.id === newBooking.id)) {
-                    return prevBookings;
-                }
-                return [newBooking, ...prevBookings];
-            });
+            fetchData();
         };
 
         socket.on('new_booking', (newBooking: any) => handleNewBooking(newBooking, 'new_booking'));
@@ -684,6 +705,7 @@ export default function GarageDashboard() {
                                 onOpenQuoteModal={handleOpenQuoteModal}
                                 onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
                                 isAccepting={acceptingId === booking.id}
+                                garageLocation={garage?.location}
                             />)
                         ) : (
                             <View style={styles.tabContent}>
@@ -901,5 +923,22 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 10,
         fontWeight: 'bold',
+    },
+    checkMapButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#3498db',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        marginTop: 10,
+        alignSelf: 'flex-start',
+    },
+    checkMapButtonText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        marginLeft: 8,
+        fontSize: 14,
     },
 });

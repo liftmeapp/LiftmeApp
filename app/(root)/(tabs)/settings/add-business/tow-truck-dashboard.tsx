@@ -53,8 +53,22 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                 onPress={() => {
                     const pickup = booking.pickupLocation;
                     const destination = booking.destinationLocation;
-                    if (pickup?.coordinates && destination?.coordinates) {
-                        const url = `https://www.google.com/maps/dir/?api=1&origin=${pickup.coordinates[1]},${pickup.coordinates[0]}&destination=${destination.coordinates[1]},${destination.coordinates[0]}`;
+
+                    const getCoords = (loc: any) => {
+                        if (loc?.coordinates) return loc.coordinates;
+                        if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
+                            return [loc.longitude, loc.latitude];
+                        }
+                        return null;
+                    };
+
+                    const pickupCoords = getCoords(pickup);
+                    const destCoords = getCoords(destination);
+
+                    if (pickupCoords && destCoords) {
+                        const waypoints = `${pickupCoords[1]},${pickupCoords[0]}`;
+                        const dest = `${destCoords[1]},${destCoords[0]}`;
+                        const url = `https://www.google.com/maps/dir/?api=1&destination=${dest}&waypoints=${waypoints}`;
                         Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
                     } else {
                         Alert.alert("Map Error", "Could not open map because location data is incomplete.");
