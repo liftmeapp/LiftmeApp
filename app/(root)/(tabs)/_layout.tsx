@@ -61,15 +61,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="service"
-        options={{
-          title: "Services",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon source={icons.chat} focused={focused} />
-          ),
-        }}
-      />
+
       <Tabs.Screen
         name="profile"
         options={{
@@ -86,6 +78,16 @@ export default function TabLayout() {
           title: "Orders",
           tabBarIcon: ({ focused }) => (
             <TabIcon source={icons.list} focused={focused} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="chats"
+        options={{
+          title: "Chats",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon source={icons.chat} focused={focused} />
           ),
         }}
       />

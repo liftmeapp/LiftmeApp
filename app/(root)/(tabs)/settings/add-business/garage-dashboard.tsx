@@ -3,7 +3,7 @@ import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { io } from "socket.io-client";
 
 // --- CONFIGURATION ---
@@ -21,7 +21,7 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
     ) : null
 );
 
-const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onOpenQuoteModal, isAccepting, isDeclining = false, garageLocation }: { booking: any, onAccept: (booking: any) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onOpenQuoteModal: (booking: any) => void, isAccepting: boolean, isDeclining?: boolean, garageLocation?: any }) => {
+const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onOpenQuoteModal, onChat, isAccepting, isDeclining = false, garageLocation }: { booking: any, onAccept: (booking: any) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onOpenQuoteModal: (booking: any) => void, onChat: (bookingId: string) => void, isAccepting: boolean, isDeclining?: boolean, garageLocation?: any }) => {
     const getBadge = () => {
         if (booking.bookingType === 'TOW_TO_GARAGE') {
             if (booking.subStatus === 'AWAITING_TOW_TRUCK_ACCEPTANCE') {
@@ -46,9 +46,11 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
         booking.status === 'IN_PROGRESS' &&
         booking.subStatus === 'AWAITING_GARAGE_QUOTE';
 
+    const showChatButton = ['CONFIRMED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status);
+
 
     return (
-    <TouchableOpacity style={styles.bookingCard} onPress={() => onPress(booking)}>
+    <View style={styles.bookingCard}>
         {getBadge()}
         <View style={styles.bookingHeader}>
             <Text style={styles.bookingDate}>{new Date(booking.bookedAt).toLocaleDateString()}</Text>
@@ -105,22 +107,31 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
             </TouchableOpacity>
         )}
 
-        {showCompleteButton && (
-            <View style={styles.bookingActions}>
-                <TouchableOpacity 
-                    style={[styles.bookingButton, styles.cancelButton]} 
-                    onPress={() => onCancel(booking.id)}
-                >
-                    <Text style={styles.bookingButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                    style={[styles.bookingButton, styles.completeButton]} 
-                    onPress={() => onComplete(booking.id)}
-                >
-                    <Text style={styles.bookingButtonText}>Complete Service</Text>
-                </TouchableOpacity>
-            </View>
-        )}
+        <View style={styles.buttonRow}>
+            <TouchableOpacity 
+                style={[styles.actionButton, styles.cancelButton]}
+                onPress={() => onCancel(booking.id)}
+            >
+                <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                <Text style={styles.actionButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+                style={[styles.actionButton, styles.chatButton]}
+                onPress={() => onChat(booking.id)}
+            >
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color="#fff" />
+                <Text style={styles.actionButtonText}>Chat</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+                style={[styles.actionButton, styles.completeButton]}
+                onPress={() => onComplete(booking.id)}
+            >
+                <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                <Text style={styles.actionButtonText}>Complete</Text>
+            </TouchableOpacity>
+        </View>
 
         {showSubmitQuoteButton && (
             <View style={styles.bookingActions}>
@@ -159,7 +170,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                 </TouchableOpacity>
             </View>
         )}
-    </TouchableOpacity>
+    </View>
     );
 };
 
@@ -199,54 +210,78 @@ const OtpVerificationModal = ({ visible, onClose, otp, setOtp, onVerify, isVerif
     </Modal>
 );
 
-const QuoteModal = ({ visible, onClose, amount, setAmount, days, setDays, notes, setNotes, onSubmit, isSubmitting }: any) => (
+const QuoteModal = ({ visible, onClose, vehicleStatus, setVehicleStatus, servicesRequired, setServicesRequired, servicesEstimate, setServicesEstimate, jobEstimate, setJobEstimate, notes, setNotes, onSubmit, isSubmitting }: any) => (
     <Modal
         animationType="slide"
         transparent={true}
         visible={visible}
         onRequestClose={onClose}
     >
-        <View style={modalStyles.modalOverlay}>
-            <View style={modalStyles.modalContent}>
-                <Text style={modalStyles.modalTitle}>Submit Service Quote</Text>
-                <Text style={modalStyles.modalSubtitle}>Enter the details for the required service. The customer will be notified to approve and pay.</Text>
-                
-                <TextInput
-                    style={modalStyles.quoteInput}
-                    placeholder="Total Service Amount (INR)"
-                    keyboardType="numeric"
-                    value={amount}
-                    onChangeText={setAmount}
-                />
-                <TextInput
-                    style={modalStyles.quoteInput}
-                    placeholder="Estimated Days to Complete"
-                    keyboardType="numeric"
-                    value={days}
-                    onChangeText={setDays}
-                />
-                <TextInput
-                    style={[modalStyles.quoteInput, { height: 100, textAlignVertical: 'top' }]}
-                    placeholder="Notes for the customer (e.g., parts to be replaced)"
-                    multiline
-                    value={notes}
-                    onChangeText={setNotes}
-                />
+        <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+        >
+            <View style={modalStyles.modalOverlay}>
+                <View style={modalStyles.modalContent}>
+                    <ScrollView showsVerticalScrollIndicator={false}>
+                        <Text style={modalStyles.modalTitle}>Submit Service Quote</Text>
+                        <Text style={modalStyles.modalSubtitle}>Enter the details for the required service. The customer will be notified to approve and pay.</Text>
+                        
+                        <TextInput
+                            style={modalStyles.quoteInput}
+                            placeholder="Vehicle Status"
+                            value={vehicleStatus}
+                            onChangeText={setVehicleStatus}
+                            returnKeyType="next"
+                        />
+                        <TextInput
+                            style={[modalStyles.quoteInput, { height: 80, textAlignVertical: 'top' }]}
+                            placeholder="Service Required"
+                            multiline
+                            blurOnSubmit={true}
+                            value={servicesRequired}
+                            onChangeText={setServicesRequired}
+                        />
+                        <TextInput
+                            style={[modalStyles.quoteInput, { height: 80, textAlignVertical: 'top' }]}
+                            placeholder="Services Estimate(e.g., Parts: INR 5000, Labor: INR 3000)"
+                            multiline
+                            blurOnSubmit={true}
+                            value={servicesEstimate}
+                            onChangeText={setServicesEstimate}
+                        />
+                        <TextInput
+                            style={modalStyles.quoteInput}
+                            placeholder="Job Estimate(Total Amount in INR)"
+                            keyboardType="numeric"
+                            value={jobEstimate}
+                            onChangeText={setJobEstimate}
+                            returnKeyType="next"
+                        />
+                        <TextInput
+                            style={[modalStyles.quoteInput, { height: 80, textAlignVertical: 'top' }]}
+                            placeholder="Notes for customer (Est Days)"
+                            multiline
+                            value={notes}
+                            onChangeText={setNotes}
+                        />
 
-                <TouchableOpacity 
-                    style={[styles.bookingButton, styles.acceptButton, isSubmitting && styles.disabledButton]} 
-                    onPress={onSubmit} 
-                    disabled={isSubmitting}
-                >
-                    {isSubmitting 
-                        ? <ActivityIndicator color="#fff" /> 
-                        : <Text style={styles.bookingButtonText}>Submit Quote to Customer</Text>}
-                </TouchableOpacity>
-                <TouchableOpacity style={{marginTop: 10}} onPress={onClose}>
-                    <Text style={{textAlign: 'center', color: '#7f8c8d'}}>Cancel</Text>
-                </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.bookingButton, styles.acceptButton, isSubmitting && styles.disabledButton]} 
+                            onPress={onSubmit} 
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting 
+                                ? <ActivityIndicator color="#fff" /> 
+                                : <Text style={styles.bookingButtonText}>Submit Quote to Customer</Text>}
+                        </TouchableOpacity>
+                        <TouchableOpacity style={{marginTop: 10}} onPress={onClose}>
+                            <Text style={{textAlign: 'center', color: '#7f8c8d'}}>Cancel</Text>
+                        </TouchableOpacity>
+                    </ScrollView>
+                </View>
             </View>
-        </View>
+        </KeyboardAvoidingView>
     </Modal>
 );
 
@@ -280,10 +315,55 @@ export default function GarageDashboard() {
     // New state for the quote modal
     const [quoteModalVisible, setQuoteModalVisible] = useState(false);
     const [bookingToQuote, setBookingToQuote] = useState<any>(null);
-    const [quoteAmount, setQuoteAmount] = useState('');
-    const [quoteDays, setQuoteDays] = useState('');
-    const [quoteNotes, setQuoteNotes] = useState('');
+    const [quoteVehicleStatus, setQuoteVehicleStatus] = useState('');
+    const [quoteServicesRequired, setQuoteServicesRequired] = useState('');
+    const [quoteServicesEstimate, setQuoteServicesEstimate] = useState('');
+    const [quoteJobEstimate, setQuoteJobEstimate] = useState('');
+    const [quoteNotes, setQuoteNotes] = useState(''); // General notes
     const [isSubmittingQuote, setIsSubmittingQuote] = useState(false);
+
+    const handleChat = async (bookingId: string) => {
+        console.log(`[handleChat] Initiated for bookingId: ${bookingId}`);
+        try {
+            console.log('[handleChat] Getting auth token...');
+            const token = await getToken();
+            if (!token) {
+                console.error('[handleChat] Auth token is null or undefined.');
+                Alert.alert("Chat Error", "Authentication token not found. Please sign in again.");
+                return;
+            }
+            console.log('[handleChat] Token retrieved. Fetching chat room...');
+    
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/chat`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+    
+            console.log(`[handleChat] API response status: ${response.status}`);
+    
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response.' }));
+                console.error('[handleChat] API response not OK:', errorData);
+                throw new Error(errorData.error || "Failed to get or create chat.");
+            }
+    
+            const chat = await response.json();
+            console.log('[handleChat] Chat data received:', chat);
+    
+            if (!chat || !chat.id) {
+                console.error('[handleChat] Invalid chat data received from API:', chat);
+                throw new Error("Received invalid chat data from server.");
+            }
+    
+            console.log(`[handleChat] Navigating to /chat/${chat.id}`);
+            router.push(`/chat/${chat.id}`);
+            console.log('[handleChat] Navigation command issued.');
+    
+        } catch (error: any) {
+            console.error('[handleChat] CATCH block error:', error);
+            Alert.alert("Chat Error", error.message);
+        }
+    };
 
     const handleOpenOtpModal = (bookingId: string) => {
         setBookingToComplete(bookingId);
@@ -319,15 +399,18 @@ export default function GarageDashboard() {
 
     const handleOpenQuoteModal = (booking: any) => {
         setBookingToQuote(booking);
-        setQuoteAmount('');
-        setQuoteDays('');
-        setQuoteNotes('');
+        // Initialize new quote fields
+        setQuoteVehicleStatus(booking.vehicleStatus || '');
+        setQuoteServicesRequired(booking.servicesRequired || '');
+        setQuoteServicesEstimate(booking.servicesEstimate || '');
+        setQuoteJobEstimate(booking.jobEstimate ? booking.jobEstimate.toString() : '');
+        setQuoteNotes(booking.notes || '');
         setQuoteModalVisible(true);
     };
 
     const handleSubmitQuote = async () => {
-        if (!bookingToQuote || !quoteAmount || !quoteDays) {
-            Alert.alert("Invalid Input", "Please provide an amount and estimated days.");
+        if (!bookingToQuote || !quoteJobEstimate || !quoteServicesRequired) {
+            Alert.alert("Invalid Input", "Please provide Job Estimate and Services Required.");
             return;
         }
         setIsSubmittingQuote(true);
@@ -337,8 +420,10 @@ export default function GarageDashboard() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
-                    amount: parseFloat(quoteAmount),
-                    days: parseInt(quoteDays),
+                    vehicleStatus: quoteVehicleStatus,
+                    servicesRequired: quoteServicesRequired,
+                    servicesEstimate: quoteServicesEstimate,
+                    jobEstimate: parseFloat(quoteJobEstimate),
                     notes: quoteNotes,
                 }),
             });
@@ -354,7 +439,6 @@ export default function GarageDashboard() {
             setIsSubmittingQuote(false);
         }
     };
-
 
     const BookingDetailsModal = ({ booking, onClose }: { booking: any, onClose: () => void }) => {
         if (!booking) return null;
@@ -470,6 +554,12 @@ export default function GarageDashboard() {
                 `A vehicle has been successfully delivered to your garage.`
             );
             fetchData(); // Refresh data to update the booking's status
+        });
+
+        socket.on('quote_rejected_by_customer', (data: { bookingId: string; reason: string }) => {
+            console.log(`❌ [Socket.IO] Quote for booking ${data.bookingId} rejected by customer: ${data.reason}`);
+            Alert.alert("Quote Rejected", `A customer has rejected your quote. The booking has been cancelled.`);
+            fetchData();
         });
 
         socket.on('booking_cancelled_by_customer', (data: { bookingId: string; reason: string }) => {
@@ -703,6 +793,7 @@ export default function GarageDashboard() {
                                 onCancel={handleCancel}
                                 onComplete={handleOpenOtpModal}
                                 onOpenQuoteModal={handleOpenQuoteModal}
+                                onChat={handleChat}
                                 onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
                                 isAccepting={acceptingId === booking.id}
                                 garageLocation={garage?.location}
@@ -765,10 +856,14 @@ export default function GarageDashboard() {
             <QuoteModal
                 visible={quoteModalVisible}
                 onClose={() => setQuoteModalVisible(false)}
-                amount={quoteAmount}
-                setAmount={setQuoteAmount}
-                days={quoteDays}
-                setDays={setQuoteDays}
+                vehicleStatus={quoteVehicleStatus}
+                setVehicleStatus={setQuoteVehicleStatus}
+                servicesRequired={quoteServicesRequired}
+                setServicesRequired={setQuoteServicesRequired}
+                servicesEstimate={quoteServicesEstimate}
+                setServicesEstimate={setQuoteServicesEstimate}
+                jobEstimate={quoteJobEstimate}
+                setJobEstimate={setQuoteJobEstimate}
                 notes={quoteNotes}
                 setNotes={setQuoteNotes}
                 onSubmit={handleSubmitQuote}
@@ -790,7 +885,6 @@ const modalStyles = StyleSheet.create({
         padding: 20,
         borderRadius: 15,
         width: '90%',
-        maxHeight: '80%',
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.25,
@@ -809,6 +903,8 @@ const modalStyles = StyleSheet.create({
         textAlign: 'center',
         letterSpacing: 10,
         marginBottom: 20,
+        width: '100%',
+        height: 60,
     },
     quoteInput: {
         borderWidth: 1,
@@ -842,10 +938,8 @@ const styles = StyleSheet.create({
     servicePrice: { fontSize: 16, fontWeight: 'bold', color: '#2c3e50' },
     noServicesText: { fontSize: 16, color: '#95a5a6', fontStyle: 'italic', textAlign: 'center', paddingVertical: 10 },
     actionsRow: { flexDirection: 'row', justifyContent: 'space-around', margin: 15, marginTop: 25, marginBottom: 40 },
-    actionButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, },
     editButton: { backgroundColor: '#3498db' },
     deleteButton: { backgroundColor: '#e74c3c' },
-    actionButtonText: { color: 'white', fontWeight: 'bold', marginLeft: 8 },
     bookingsHeader: { fontSize: 22, fontWeight: 'bold', marginHorizontal: 15, marginTop: 20, textAlign: 'left', color: '#34495e' },
     tabContainer: { flexDirection: 'row', backgroundColor: '#e9ecef', marginHorizontal: 15, borderRadius: 10, padding: 4, marginTop: 15, marginBottom: 10 },
     tab: { flex: 1, padding: 10, borderRadius: 8, alignItems: 'center' },
@@ -861,12 +955,26 @@ const styles = StyleSheet.create({
     bookingDetails: { flexDirection: 'row', alignItems: 'center', marginVertical: 5 },
     bookingText: { fontSize: 15, color: '#34495e', marginLeft: 10 },
     bookingActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-    bookingButton: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 8, marginLeft: 10 },
+    bookingButton: { 
+        paddingVertical: 12, 
+        paddingHorizontal: 24, 
+        borderRadius: 8, 
+        marginLeft: 10,
+        minHeight: 50,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     acceptButton: { backgroundColor: '#27ae60' },
     declineButton: { backgroundColor: '#c0392b' },
     cancelButton: { backgroundColor: '#f39c12' },
     completeButton: { backgroundColor: '#2980b9' },
-    bookingButtonText: { color: 'white', fontWeight: 'bold' },
+    bookingButtonText: { 
+        color: 'white', 
+        fontWeight: 'bold',
+        textAlign: 'center',
+        fontSize: 16,
+        width: '100%',
+    },
     disabledButton: { backgroundColor: '#95a5a6' },
     mainTabContainer: {
         flexDirection: 'row',
@@ -940,5 +1048,33 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginLeft: 8,
         fontSize: 14,
+    },
+    chatButton: {
+        backgroundColor: '#3498db',
+    },
+    buttonRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 15,
+        paddingTop: 15,
+        borderTopWidth: 1,
+        borderTopColor: '#f0f0f0',
+        gap: 8,
+    },
+    actionButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 4,
+        borderRadius: 6,
+        minHeight: 36,
+    },
+    actionButtonText: {
+        color: 'white',
+        fontSize: 12,
+        fontWeight: '600',
+        marginLeft: 4,
     },
 });

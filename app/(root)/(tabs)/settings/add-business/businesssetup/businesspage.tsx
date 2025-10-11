@@ -257,7 +257,7 @@ export default function ServicesHome() {
             title="Spare Part Supply"
             description="List spare parts for sale to garages and customers."
             icon="build-outline"
-            onPress={() => Alert.alert("Coming Soon!")}
+            onPress={() => router.push('/settings/add-business/businesssetup/spare-part')}
             status='SETUP'
         />
     </ScrollView>

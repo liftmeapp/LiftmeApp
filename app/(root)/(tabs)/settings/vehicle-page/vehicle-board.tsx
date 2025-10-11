@@ -34,9 +34,7 @@ export default function VehicleDashboard() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    const vehicleLimit = 3;
-    const isPremium = user?.publicMetadata?.isPremium === true; // Check for premium status
-    const canAddVehicle = isPremium || vehicles.length < vehicleLimit;
+    const canAddVehicle = true;
 
     const fetchData = useCallback(async () => {
         try {

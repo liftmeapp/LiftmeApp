@@ -46,7 +46,7 @@ interface MapProps {
     providerType?: 'garage' | 'tow-truck' | 'ev' | 'all';
     filters?: {
         category?: string | null;
-        services?: string[];
+        serviceId?: string | null;
     };
 }
 
@@ -112,6 +112,7 @@ const CustomMapMarker = React.memo(
 
 // --- MAIN COMPONENT ---
 export default function GarageMap({ isPinningLocation, onPinLocationChange, onMapReady, providerType = 'all', filters }: MapProps) {
+    console.log('[GarageMap] Filters prop received:', filters);
     const { getToken, isSignedIn } = useAuth();
     const mapRef = useRef<MapView>(null);
     
@@ -160,10 +161,11 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
             if (filters?.category) {
                 queryParams.append('category', filters.category);
             }
-            if (filters?.services && filters.services.length > 0) {
-                filters.services.forEach(service => queryParams.append('services', service));
+            if (filters?.serviceId) {
+                queryParams.append('serviceId', filters.serviceId);
             }
             const queryString = queryParams.toString();
+            console.log('[GarageMap] Query string for API call:', queryString);
 
             const fetchGarages = providerType === 'garage' || providerType === 'all';
             const fetchTowTrucks = providerType === 'tow-truck' || providerType === 'all';
@@ -185,6 +187,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
             promises.push(fetchNearbyEVStations(lat, lon));
 
             const [garagesData, towTrucksData, evStationsData] = await Promise.all(promises);
+            console.log('[GarageMap] Garages data received:', garagesData);
             
             setGarages(Array.isArray(garagesData) ? garagesData : []);
             setTowTrucks(Array.isArray(towTrucksData) ? towTrucksData : []);
@@ -228,6 +231,12 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
         };
         initializeMap();
     }, []);
+
+    useEffect(() => {
+        if (region && !isPinningLocation) {
+            fetchProvidersForRegion(region);
+        }
+    }, [filters]);
 
     const [isProgrammaticChange, setIsProgrammaticChange] = useState(false);
 
@@ -504,14 +513,12 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                     )}
                 </>
             </MapView>
-
-            {isFetchingProviders && !isPinningLocation && (
-                <View style={styles.refreshIndicator}>
-                    <ActivityIndicator size={20} color="#000" />
-                    <Text style={styles.refreshText}>Finding providers...</Text>
+            {isFetchingProviders && (
+                <View style={styles.loadingOverlay}>
+                    <ActivityIndicator size="large" color="#b95528" />
+                    <Text style={styles.loadingText}>Updating Garages...</Text>
                 </View>
             )}
-
             {isPinningLocation && (
                 <>
                     <View style={styles.pinContainer} pointerEvents="none">
@@ -650,6 +657,17 @@ const styles = StyleSheet.create({
     },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' },
     loadingText: { marginTop: 10, fontSize: 16, color: '#666' },
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.75)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1,
+    },
     recenterButton: {
         position: 'absolute',
         top: 60,
@@ -709,22 +727,7 @@ const styles = StyleSheet.create({
         elevation: 4 
     },
     
-    // Refresh Indicator
-    refreshIndicator: { 
-        position: 'absolute', 
-        top: 50, 
-        alignSelf: 'center', 
-        backgroundColor: 'rgba(255,255,255,0.9)', 
-        paddingHorizontal: 15, 
-        paddingVertical: 8, 
-        borderRadius: 20, 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        elevation: 5 
-    },
-    refreshText: { marginLeft: 8, fontWeight: '500' },
-
-    // Modal Styles
+    // Custom Marker Styles
     modalContainer: {
         flex: 1,
         justifyContent: 'flex-end',

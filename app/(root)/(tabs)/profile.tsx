@@ -111,10 +111,7 @@ export default function ProfileScreen() {
 
       <TouchableOpacity
         style={styles.manageAccountButton}
-        onPress={() => {
-          if (router.canGoBack()) router.back();
-          Alert.alert("Manage Account", "Typically, you'd link to Clerk's hosted user profile page or build custom forms to edit data stored in your backend.");
-        }}
+      onPress={() => router.push('/(root)/(tabs)/settings/usersettings')}
       >
         <Text style={styles.manageAccountButtonText}>Manage Account</Text>
       </TouchableOpacity>

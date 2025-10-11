@@ -1,23 +1,53 @@
-// /api/index.ts
 import { ClerkExpressWithAuth } from '@clerk/clerk-sdk-node';
-import { PrismaClient } from '@prisma/client';
+import { Client } from '@googlemaps/google-maps-services-js';
 import cors from 'cors';
 import express, { Request, Response } from 'express';
-import { createServer } from 'http';
+import prisma from './lib/prisma'; // Import the shared prisma instance
 
 
-const prisma = new PrismaClient();
-const app = express();
-const httpServer = createServer(app);
-app.use(cors());
+const router = express.Router();
+router.use(cors());
 const CLERK_WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
+const googleMapsClient = new Client();
+
+async function getEtaAndDistance(
+    origin: { lat: number; lon: number }, destination: { lat: number; lon: number })
+    {
+    try {
+        const response = await googleMapsClient.directions({
+            params: {
+                origin: `${origin.lat},${origin.lon}`, // Pass coordinates as a string
+                destination: `${destination.lat},${destination.lon}`, // Pass coordinates as a string
+                key: process.env.GOOGLE_MAPS_API_KEY!,
+            },
+            timeout: 1000, // Optional timeout
+        });
+        // ... the rest of the function is the same ...
+        if (response.data.routes.length > 0 && response.data.routes[0].legs.length > 0) {
+            const leg = response.data.routes[0].legs[0];
+            return {
+                etaMinutes: Math.round(leg.duration.value / 60),
+                distanceKm: Math.round(leg.distance.value / 1000),
+            };
+        }
+        return { etaMinutes: null, distanceKm: null };
+    } catch (error) {
+        console.error("Google Directions API Error:", error);
+        return { etaMinutes: null, distanceKm: null };
+    }
+}
+
 
 //garageNearby
-app.get(
+// In your api/garages.ts file
+
+router.get(
     '/api/garages/nearby',
     async (req: Request, res: Response) => {
         try {
-            const { lat, lon, category } = req.query;
+            // FIX #1: Make sure to get 'serviceId' from the query as well
+            const { lat, lon, category, serviceId } = req.query;
+
             if (!lat || !lon) {
                 return res.status(400).json({ error: 'Latitude and longitude are required.' });
             }
@@ -27,37 +57,80 @@ app.get(
                 return res.status(400).json({ error: 'Invalid coordinate values.' });
             }
 
-            const geoQuery: any = { isOpen: true };
-            if (category && typeof category === 'string') {
-                geoQuery.supportedVehicleTypes = category;
+            const geoQuery: any = { isOpen: true, status: 'APPROVED' };
+
+            // Only apply the category filter if a specific service is NOT being requested
+            // FIX #2: Correctly split the category string and use the '$in' operator
+            if (category && typeof category === 'string' && !serviceId) {
+                const categoryArray = category.split(',').map(cat => cat.trim());
+                geoQuery.supportedVehicleTypes = { '$in': categoryArray };
             }
 
-            console.log(`[Garages] Searching near: Lon=${longitude}, Lat=${latitude} with query:`, geoQuery);
-            const nearbyGarages = await prisma.garage.aggregateRaw({
-                pipeline: [
+            const pipeline: any[] = [
+                {
+                    '$geoNear': {
+                        near: { type: "Point", coordinates: [longitude, latitude] },
+                        distanceField: "distance",
+                        maxDistance: 50000, // 50km radius
+                        query: geoQuery,
+                        spherical: true
+                    }
+                },
+            ];
+
+            // FIX #3: Re-introduce the entire serviceId filtering logic
+            if (serviceId) {
+                pipeline.push(
                     {
-                        '$geoNear': {
-                            near: { type: "Point", coordinates: [longitude, latitude] },
-                            distanceField: "distance",
-                            maxDistance: 50000,
-                            query: geoQuery,
-                            spherical: true
+                        '$lookup': {
+                            from: "garage_services",
+                            let: { 
+                                garage_id: "$_id",
+                                service_id_string: serviceId 
+                            },
+                            pipeline: [
+                                {
+                                    '$match': {
+                                        '$expr': {
+                                            '$and': [
+                                                { '$eq': ["$garageId", "$$garage_id"] },
+                                                { '$eq': ["$serviceId", { '$toObjectId': "$$service_id_string" }] } 
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            as: "offeredServices"
                         }
                     },
-                    { '$limit': 50 } // Increased limit for better coverage
-                ]
+                    {
+                        '$match': {
+                            "offeredServices": { '$ne': [] } 
+                        }
+                    }
+                );
+            }
+
+            pipeline.push({ '$limit': 20 });
+            
+            console.log('[API /garages/nearby] Executing Pipeline:', JSON.stringify(pipeline, null, 2));
+
+            const nearbyGarages = await prisma.garage.aggregateRaw({
+                pipeline: pipeline
             });
-            console.log(`[Garages] Found ${Array.isArray(nearbyGarages) ? nearbyGarages.length : 0} garages via geoNear.`);
+
+            console.log(`[Garages] Found ${Array.isArray(nearbyGarages) ? nearbyGarages.length : 0} garages.`);
             return res.status(200).json(nearbyGarages);
+
         } catch (error: any) {
             console.error("--- 💥 GARAGE NEARBY API ERROR 💥 ---");
             console.error("Error Details:", error.message || error);
-            return res.status(500).json({ error: 'Failed to execute geographical search. Check server logs for index errors.' });
+            return res.status(500).json({ error: 'Failed to execute geographical search.' });
         }
     }
 );
 
-app.get(
+router.get(
     '/api/garages/test',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -85,7 +158,7 @@ app.get(
     }
 );
 
-app.post(
+router.post(
     '/api/garages',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -145,7 +218,7 @@ app.post(
 
 // --- Parameterized routes last ---
 
-app.get(
+router.get(
     '/api/garages/:garageId',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -182,7 +255,7 @@ app.get(
     }
 );
 
-app.put(
+router.put(
     '/api/garages/:garageId',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -256,7 +329,7 @@ app.put(
     }
 );
 
-app.delete(
+router.delete(
     '/api/garages/:garageId',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -264,7 +337,7 @@ app.delete(
         const { garageId } = req.params;
         try {
             if (!ownerId) {
-                return res.status(401).json({ error: 'Unauthorized - No user ID provided' });
+                return res.status(401).json({ error: 'Unauthorized - User ID not found' });
             }
             const garage = await prisma.garage.findFirst({
                 where: { id: garageId, owner: { clerkId: ownerId } },
@@ -280,7 +353,7 @@ app.delete(
     }
 );
 
-app.get(
+router.get(
     '/api/garages/:garageId/bookings',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -313,3 +386,5 @@ app.get(
         }
     }
 );
+
+export default router;

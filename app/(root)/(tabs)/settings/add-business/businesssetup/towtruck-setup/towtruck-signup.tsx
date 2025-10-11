@@ -1,22 +1,22 @@
 // /app/settings/add-business/businesssetup/towtruck-signup.tsx
 
+import { TowableVehicleType, useTowTruckStore } from '@/store/towtruckStore'; // Adjust path if needed
+import { Picker } from '@react-native-picker/picker';
+import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  View,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Alert,
-  Switch, // Added Switch for service selection
+  View,
 } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
-import { useRouter } from 'expo-router';
-import { useTowTruckStore, TowableVehicleType } from '@/store/towtruckStore'; // Adjust path if needed
 
 // This interface helps manage the local state of the form for services
 interface ServiceSelectionState {
@@ -164,7 +164,7 @@ export default function TowTruckSignupScreen() {
                       </View>
                       {service.selected && (
                           <View style={styles.priceInputRow}>
-                              <Text style={styles.priceLabel}>Price (AED):</Text>
+                              <Text style={styles.priceLabel}>Price (INR):</Text>
                               <TextInput
                                   style={styles.priceInput}
                                   placeholder="e.g., 150"

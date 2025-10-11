@@ -1,5 +1,5 @@
-import { Text, Image, TouchableOpacity, View, FlatList, Dimensions } from "react-native";
 import { useRouter } from 'expo-router';
+import { Dimensions, FlatList, Image, Text, TouchableOpacity, View } from "react-native";
 
 const opts = [{
   id:1,
@@ -36,7 +36,7 @@ export default function NavOptions() {
   const router = useRouter();
     return (
       <FlatList
-      className="mx-1 mb-1 h-[12rem] bg-white"
+      className="mx-1 mb-1 h-[12rem]"
       data={opts}
       horizontal
       showsHorizontalScrollIndicator={false}

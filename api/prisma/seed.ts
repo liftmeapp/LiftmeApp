@@ -38,12 +38,12 @@ const servicesToSeed = [
     { name: "Hatchback", icon: "tow-hatchback.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Towing for hatchback vehicles." },
     { name: "SUV", icon: "tow-suv.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Towing for SUVs and light trucks." },
     { name: "Bike", icon: "tow-bike.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Specialized towing for motorcycles." },
+    { name: "Luxury-Enclosed Transport", icon: "luxury-transport.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Fully enclosed transport for maximum protection of high-value vehicles." },
     { name: "Luxury Vehicle", icon: "tow-luxury.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Premium flatbed towing for luxury cars." },
 
     // ============================
     // Luxury Services (at Garage or Mobile)
     // ============================ 
-    { name: "Luxury-Enclosed Transport", icon: "luxury-transport.png", type: "TOW_TRUCK", category: ServiceCategory.LUXURY, description: "Fully enclosed transport for maximum protection of high-value vehicles." },
     { name: "Luxury-Performance Tuning", icon: "luxury-tuning.png", type: "GARAGE", category: ServiceCategory.LUXURY, description: "ECU and performance tuning for sports and luxury cars." },
     { name: "Luxury-Certified Tech Service", icon: "luxury-tech.png", type: "GARAGE", category: ServiceCategory.LUXURY, description: "Service by manufacturer-certified technicians for luxury brands." },
     { name: "Luxury-Concierge Detailing", icon: "luxury-detailing.png", type: "GARAGE", category: ServiceCategory.LUXURY, description: "High-end, meticulous vehicle detailing service." },

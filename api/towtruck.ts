@@ -1,15 +1,14 @@
 import { ClerkExpressWithAuth, clerkClient } from '@clerk/clerk-sdk-node';
-import { PrismaClient } from '@prisma/client';
 import cors from 'cors';
 import express, { Request, Response } from 'express';
+import prisma from './lib/prisma'; // Import the shared prisma instance
 
 
-const prisma = new PrismaClient();
-const app = express();
-app.use(cors());
+const router = express.Router();
+router.use(cors());
 
 //towtruckNearby
-app.get(
+router.get(
     '/api/tow-trucks/nearby',
     async (req: Request, res: Response) => {
         try {
@@ -53,7 +52,7 @@ app.get(
     }
 );
 
-app.post(
+router.post(
     '/api/tow-trucks/location',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -81,7 +80,7 @@ app.post(
     }
 );
 
-app.post(
+router.post(
     '/api/tow-trucks',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -133,7 +132,7 @@ app.post(
 
 // --- Parameterized and nested routes last ---
 
-app.get(
+router.get(
     '/api/tow-trucks/:truckId/bookings',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -166,7 +165,7 @@ app.get(
     }
 );
 
-app.get(
+router.get(
     '/api/tow-trucks/:truckId',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -185,7 +184,7 @@ app.get(
     }
 );
 
-app.put(
+router.put(
     '/api/tow-trucks/:truckId',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -243,7 +242,7 @@ app.put(
     }
 );
 
-app.delete(
+router.delete(
     '/api/tow-trucks/:truckId',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
@@ -268,36 +267,6 @@ app.delete(
     }
 );
 
-app.put(
-    '/api/users/me',
-    ClerkExpressWithAuth(),
-    async (req: Request, res: Response) => {
-        const clerkId = req.auth.userId;
-        if (!clerkId) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
 
-        const { firstName, lastName } = req.body;
 
-        try {
-            const updatedUser = await clerkClient.users.updateUser(clerkId, {
-                firstName,
-                lastName,
-            });
-
-            // Also update our local database
-            await prisma.user.update({
-                where: { clerkId },
-                data: {
-                    firstName: updatedUser.firstName || undefined,
-                    lastName: updatedUser.lastName || undefined,
-                }
-            });
-
-            return res.status(200).json(updatedUser);
-        } catch (error: any) {
-            console.error("Failed to update user:", error);
-            return res.status(500).json({ error: 'Failed to update user profile.' });
-        }
-    }
-);
+export default router;

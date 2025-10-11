@@ -38,7 +38,6 @@ const HorizontalScrollView = () => {
 const styles = StyleSheet.create({
   cardContainer: {
     height: 155, // 18rem
-    backgroundColor: '#fff', // slate-50
     marginHorizontal: 8, // mx-2
     marginBottom: 2,
     marginTop:2, // mb-5

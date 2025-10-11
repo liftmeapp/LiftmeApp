@@ -1,3 +1,4 @@
+
 import { ClerkExpressWithAuth, clerkClient } from '@clerk/clerk-sdk-node';
 import { Client } from '@googlemaps/google-maps-services-js';
 import { BookingStatus } from '@prisma/client';
@@ -52,6 +53,153 @@ async function getEtaAndDistance(
         return { etaMinutes: null, distanceKm: null };
     }
 }
+
+// ===================================================================
+//  SPARE PART SELLER ROUTES
+// ===================================================================
+
+bookingsRouter.get('/spare-parts/orders', async (req: Request, res: Response) => {
+    const sellerClerkId = req.auth.userId;
+    const statusQuery = req.query.status as string;
+
+    if (!sellerClerkId) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+        const store = await prisma.sparePartStore.findFirst({ 
+            where: { owner: { clerkId: sellerClerkId } }
+        });
+        if (!store) return res.status(404).json({ error: "Spare part store not found for this user." });
+
+        let statuses: BookingStatus[];
+        if (statusQuery === 'Pending') {
+            statuses = [BookingStatus.PENDING_ACCEPTANCE];
+        } else if (statusQuery === 'Current') {
+            statuses = [BookingStatus.AWAITING_PAYMENT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS];
+        } else if (statusQuery === 'History') {
+            statuses = [BookingStatus.COMPLETED, BookingStatus.CANCELLED];
+        } else {
+            return res.status(400).json({ error: "Invalid status query parameter." });
+        }
+
+        const orders = await prisma.booking.findMany({
+            where: {
+                sparePartStoreId: store.id,
+                bookingType: 'SPARE_PART',
+                status: { in: statuses },
+            },
+            include: {
+                user: { select: { firstName: true, lastName: true, email: true } },
+                sparePart: { select: { partName: true, images: true } },
+            },
+            orderBy: { bookedAt: 'desc' },
+        });
+
+        return res.status(200).json(orders);
+
+    } catch (error: any) {
+        console.error("Failed to fetch spare part orders:", error);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+bookingsRouter.post('/bookings/:bookingId/accept-spare-part', async (req: Request, res: Response) => {
+    const { bookingId } = req.params;
+    const sellerClerkId = req.auth.userId;
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { 
+                id: bookingId,
+                sparePartStore: { owner: { clerkId: sellerClerkId } }
+            },
+            include: { sparePart: true, user: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: "Order not found or you are not the seller." });
+        if (booking.status !== 'PENDING_ACCEPTANCE') return res.status(409).json({ error: "This order is not awaiting acceptance." });
+        if (!booking.sparePart) return res.status(404).json({ error: "Associated spare part not found." });
+
+        const partToUpdate = booking.sparePart;
+        const quantityToOrder = booking.basePrice / partToUpdate.price; // Assuming basePrice stores total for the quantity
+
+        if (partToUpdate.quantity < quantityToOrder) {
+            return res.status(400).json({ error: 'Not enough stock available to accept this order.' });
+        }
+
+        // Use a transaction to ensure atomicity
+        const [, updatedBooking] = await prisma.$transaction([
+            prisma.sparePart.update({
+                where: { id: partToUpdate.id },
+                data: { quantity: { decrement: quantityToOrder } },
+            }),
+            prisma.booking.update({
+                where: { id: bookingId },
+                data: { 
+                    status: booking.paymentMethod === 'CARD' ? BookingStatus.AWAITING_PAYMENT : BookingStatus.CONFIRMED,
+                    paymentExpiresAt: booking.paymentMethod === 'CARD' ? new Date(Date.now() + 10 * 60 * 1000) : null, // 10 min payment window
+                },
+                include: { user: true, sparePart: { include: { store: true } } }
+            })
+        ]);
+
+        // If card payment, create payment intent now
+        if (updatedBooking.paymentMethod === 'CARD') {
+            const { user, sparePart, finalAmount } = updatedBooking;
+            if (!user.stripeCustomerId || !sparePart?.store.stripeAccountId) {
+                console.warn(`[Stripe Bypass] Stripe accounts not configured for booking ${updatedBooking.id}. Forcing CASH payment.`);
+                // Force to CASH payment if Stripe accounts are not configured
+                await prisma.booking.update({
+                    where: { id: updatedBooking.id },
+                    data: { paymentMethod: 'CASH', status: BookingStatus.CONFIRMED },
+                });
+                // Notify customer that cash order is confirmed
+                const customerSocketId = customerSockets[user.clerkId];
+                if (customerSocketId) {
+                    io.to(customerSocketId).emit('spare_part_order_confirmed', { bookingId: updatedBooking.id });
+                }
+                return res.status(200).json({ success: true, booking: updatedBooking, message: "Stripe not configured, defaulted to cash payment." });
+            }
+
+            const amountInCents = Math.round(finalAmount * 100);
+            const applicationFee = Math.round(amountInCents * 0.10);
+
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amountInCents,
+                currency: 'inr',
+                customer: user.stripeCustomerId,
+                application_fee_amount: applicationFee,
+                transfer_data: {
+                    destination: sparePart.store.stripeAccountId,
+                },
+                capture_method: 'manual',
+                metadata: { bookingId: updatedBooking.id, type: 'spare_part_purchase' },
+            });
+
+            await prisma.booking.update({ where: { id: updatedBooking.id }, data: { paymentIntentId: paymentIntent.id } });
+
+            // Notify customer that payment is required
+            const customerSocketId = customerSockets[user.clerkId];
+            if (customerSocketId) {
+                io.to(customerSocketId).emit('spare_part_order_accepted', { 
+                    bookingId: updatedBooking.id, 
+                    clientSecret: paymentIntent.client_secret 
+                });
+            }
+        } else { // CASH payment
+            // Notify customer that cash order is confirmed
+            const customerSocketId = customerSockets[updatedBooking.user.clerkId];
+            if (customerSocketId) {
+                io.to(customerSocketId).emit('spare_part_order_confirmed', { bookingId: updatedBooking.id });
+            }
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to accept spare part order:", error);
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
 
 // ===================================================================
 //  PROVIDER-FACING BOOKING ROUTES
@@ -135,7 +283,7 @@ bookingsRouter.get('/tow-truck/bookings', async (req: Request, res: Response) =>
                     }
                 ]
             },
-            include: { user: true, vehicle: true },
+            include: { user: true, vehicle: true, garage: true },
             orderBy: { bookedAt: 'desc' }
         });
         
@@ -718,34 +866,48 @@ bookingsRouter.get('/bookings/active', async (req: Request, res: Response) => {
         const activeBookings = await prisma.booking.findMany({
             where: {
                 user: { clerkId: customerClerkId },
-                status: { in: [BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS] }
+                status: { in: [BookingStatus.PENDING_ACCEPTANCE, BookingStatus.AWAITING_PAYMENT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS] }
             },
-                        include: {
-                            garage: true,
-                            towTruck: {
-                                include: {
-                                    liveLocation: true
-                                }
-                            },
-                            service: true,
-                        },
-                        orderBy: {
-                            bookedAt: 'desc'
-                        }
-                    });
+            include: {
+                garage: true,
+                towTruck: {
+                    include: {
+                        liveLocation: true
+                    }
+                },
+                service: true,
+                sparePart: true,
+                sparePartStore: { include: { owner: true } },
+            },
+            orderBy: {
+                bookedAt: 'desc'
+            }
+        });
+        
+        const bookingsWithEta = await Promise.all(activeBookings.map(async (booking) => {
+            let isTowingPhase = false;
+            if (booking.bookingType === 'TOW_TO_GARAGE') {
+                const atGarageSubStatuses = ['VEHICLE_DELIVERED', 'AWAITING_GARAGE_QUOTE', 'AWAITING_QUOTE_APPROVAL', 'SERVICE_IN_PROGRESS', 'SERVICE_COMPLETED'];
+                if (!atGarageSubStatuses.includes(booking.subStatus)) {
+                    isTowingPhase = true;
+                }
+            } else if (booking.bookingType !== 'SPARE_PART') {
+                isTowingPhase = true;
+            }
+
+            if (booking.status === 'CONFIRMED' && isTowingPhase) {
+                const provider = booking.garage || booking.towTruck;
+                const providerLocation = booking.garage?.location || booking.towTruck?.liveLocation?.location;
+
+                if (provider && isGeoJSONPoint(booking.pickupLocation) && isGeoJSONPoint(providerLocation)) {
+                    const userCoords = booking.pickupLocation.coordinates;
+                    const providerCoords = providerLocation.coordinates;
+                    const { etaMinutes, distanceKm } = await getEtaAndDistance({ lat: providerCoords[1], lon: providerCoords[0] }, { lat: userCoords[1], lon: userCoords[0] });
+                    return { ...booking, providerEta: etaMinutes, providerDistance: distanceKm };
+                }
+            }
             
-                    const bookingsWithEta = await Promise.all(activeBookings.map(async (booking) => {
-                        const provider = booking.garage || booking.towTruck;
-                        const providerLocation = booking.garage?.location || booking.towTruck?.liveLocation?.location;
-            
-                        if (provider && isGeoJSONPoint(booking.pickupLocation) && isGeoJSONPoint(providerLocation)) 
-                            {
-                                const userCoords = booking.pickupLocation.coordinates;
-                                const providerCoords = providerLocation.coordinates;
-                                const { etaMinutes, distanceKm } = await getEtaAndDistance({ lat: providerCoords[1], lon: providerCoords[0] }, { lat: userCoords[1], lon: userCoords[0] });
-                                return { ...booking, providerEta: etaMinutes, providerDistance: distanceKm };
-                            }
-                    return { ...booking, providerEta: null, providerDistance: null };
+            return { ...booking, providerEta: null, providerDistance: null };
         }));
 
         return res.status(200).json(bookingsWithEta);
@@ -1250,6 +1412,7 @@ bookingsRouter.post('/bookings/:bookingId/cancel-by-user', async (req: Request, 
 
         const cancellableStatuses: BookingStatus[] = [
             BookingStatus.SEARCHING,
+            BookingStatus.PENDING_ACCEPTANCE,
             BookingStatus.AWAITING_PAYMENT,
             BookingStatus.CONFIRMED,
         ];
@@ -1681,15 +1844,109 @@ bookingsRouter.post('/stripe/create-connect-account', async (req: Request, res: 
     }
 });
 
+bookingsRouter.post('/bookings/request-spare-part', async (req: Request, res: Response) => {
+    const { partId, quantity, paymentMethod } = req.body;
+    const customerClerkId = req.auth.userId;
+
+    if (!partId || !quantity || !paymentMethod) {
+        return res.status(400).json({ error: 'Part ID, quantity, and payment method are required.' });
+    }
+
+    try {
+        const part = await prisma.sparePart.findUnique({ where: { id: partId }, include: { store: true } });
+        if (!part) return res.status(404).json({ error: 'Spare part not found.' });
+        if (part.quantity < quantity) return res.status(400).json({ error: 'Not enough stock available.' });
+
+        const user = await prisma.user.findUnique({ where: { clerkId: customerClerkId } });
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+
+        const finalAmount = part.price * quantity;
+
+        const booking = await prisma.booking.create({
+            data: {
+                bookingType: 'SPARE_PART',
+                status: 'PENDING_ACCEPTANCE',
+                paymentMethod: paymentMethod,
+                finalAmount: finalAmount,
+                user: { connect: { id: user.id } },
+                sparePart: { connect: { id: part.id } },
+                sparePartStore: { connect: { id: part.storeId } },
+                basePrice: finalAmount,
+            }
+        });
+
+        // Notify seller of new order
+        const sellerSocketId = providerSockets[part.store.ownerId];
+        if (sellerSocketId) {
+            io.to(sellerSocketId).emit('new_spare_part_order', booking);
+        }
+
+        return res.status(201).json({ bookingId: booking.id, message: 'Order placed and awaiting seller confirmation.' });
+
+    } catch (error: any) {
+        console.error("Failed to request spare part:", error);
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
+
+
+bookingsRouter.post('/bookings/:bookingId/reject-quote', async (req: Request, res: Response) => {
+    const { bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: {
+                id: bookingId,
+                user: { clerkId: customerClerkId }
+            },
+            include: { garage: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+
+        if (booking.subStatus !== 'AWAITING_QUOTE_APPROVAL') {
+            return res.status(403).json({ error: 'This quote is not awaiting your approval.' });
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                status: BookingStatus.CANCELLED,
+                cancellationReason: 'Customer rejected the service quote.',
+            }
+        });
+
+        if (booking.garage?.id) {
+            const providerSocketId = providerSockets[booking.garage.id];
+            if (providerSocketId) {
+                io.to(providerSocketId).emit('quote_rejected_by_customer', {
+                    bookingId: updatedBooking.id,
+                    reason: 'Customer rejected the service quote.'
+                });
+                console.log(`📬 Emitted 'quote_rejected_by_customer' to provider ${booking.garage.id}`);
+            }
+        }
+
+        return res.status(200).json({ success: true, message: 'Quote rejected and booking cancelled.' });
+
+    } catch (error: any) {
+        console.error("Failed to reject quote:", error);
+        return res.status(500).json({ error: 'An internal server error occurred' });
+    }
+});
+
 export default bookingsRouter;
 
 bookingsRouter.post('/bookings/:id/submit-quote', async (req: Request, res: Response) => {
     const { id: bookingId } = req.params;
-    const { amount, days, notes } = req.body;
+    const { vehicleStatus, servicesRequired, servicesEstimate, jobEstimate, notes } = req.body;
     const garageOwnerId = req.auth.userId;
 
-    if (!amount || !days) {
-        return res.status(400).json({ error: "Amount and days are required." });
+    if (!jobEstimate || !servicesRequired) {
+        return res.status(400).json({ error: "Job Estimate and Services Required are mandatory." });
     }
 
     try {
@@ -1709,9 +1966,11 @@ bookingsRouter.post('/bookings/:id/submit-quote', async (req: Request, res: Resp
         const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
-                garageQuoteAmount: amount,
-                garageQuoteDays: days,
-                garageQuoteNotes: notes,
+                vehicleStatus: vehicleStatus,
+                servicesRequired: servicesRequired,
+                servicesEstimate: servicesEstimate,
+                jobEstimate: jobEstimate,
+                notes: notes, // Re-using this field for general notes
                 subStatus: 'AWAITING_QUOTE_APPROVAL',
             }
         });
@@ -1722,9 +1981,11 @@ bookingsRouter.post('/bookings/:id/submit-quote', async (req: Request, res: Resp
             io.to(customerSocketId).emit('garage_quote_ready', {
                 bookingId: updatedBooking.id,
                 quote: {
-                    amount: updatedBooking.garageQuoteAmount,
-                    days: updatedBooking.garageQuoteDays,
-                    notes: updatedBooking.garageQuoteNotes,
+                    vehicleStatus: updatedBooking.vehicleStatus,
+                    servicesRequired: updatedBooking.servicesRequired,
+                    servicesEstimate: updatedBooking.servicesEstimate,
+                    jobEstimate: updatedBooking.jobEstimate,
+                    notes: updatedBooking.notes,
                 }
             });
             console.log(`📬 Emitted 'garage_quote_ready' to customer ${booking.user.clerkId}`);
@@ -1735,6 +1996,130 @@ bookingsRouter.post('/bookings/:id/submit-quote', async (req: Request, res: Resp
     } catch (error: any) {
         console.error("Failed to submit quote:", error);
         return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
+
+bookingsRouter.post('/bookings/:bookingId/reject-spare-part', async (req: Request, res: Response) => {
+    const { bookingId } = req.params;
+    const sellerClerkId = req.auth.userId;
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: {
+                id: bookingId,
+                sparePartStore: { owner: { clerkId: sellerClerkId } }
+            },
+            include: { user: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: "Order not found or you are not the seller." });
+        if (booking.status !== 'PENDING_ACCEPTANCE') return res.status(409).json({ error: "This order is not in a pending acceptance state." });
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                status: BookingStatus.REJECTED,
+                cancellationReason: 'Seller rejected the order.',
+            }
+        });
+
+        // Notify customer via WebSocket
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('spare_part_order_rejected', { bookingId: updatedBooking.id });
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to reject spare part order:", error);
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
+
+bookingsRouter.post('/bookings/:bookingId/confirm-spare-part-payment', async (req: Request, res: Response) => {
+    const { bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { sparePartStore: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+        if (booking.bookingType !== 'SPARE_PART' || booking.status !== 'AWAITING_PAYMENT') return res.status(409).json({ error: 'This booking is not awaiting payment for a spare part.' });
+        if (!booking.paymentIntentId) return res.status(400).json({ error: 'Payment has not been initiated for this booking.' });
+
+        const intent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
+        if (intent.status !== 'requires_capture') {
+            return res.status(400).json({ error: 'Payment could not be authorized. Please try again.' });
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                status: BookingStatus.CONFIRMED,
+                paymentStatus: 'paid',
+                paymentExpiresAt: null,
+            }
+        });
+
+        // Notify seller that payment is confirmed
+        if (booking.sparePartStore?.ownerId) {
+            const sellerSocketId = providerSockets[booking.sparePartStore.ownerId];
+            if (sellerSocketId) {
+                io.to(sellerSocketId).emit('spare_part_payment_confirmed', { bookingId: updatedBooking.id });
+            }
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to confirm spare part payment:", error);
+        return res.status(500).json({ error: 'An internal server error occurred' });
+    }
+});
+
+bookingsRouter.post('/bookings/:bookingId/confirm-spare-part-cash', async (req: Request, res: Response) => {
+    const { bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { sparePartStore: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+        if (booking.bookingType !== 'SPARE_PART' || booking.status !== 'PENDING_ACCEPTANCE') return res.status(409).json({ error: 'This booking is not awaiting cash confirmation for a spare part.' });
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                status: BookingStatus.CONFIRMED,
+                paymentMethod: 'CASH',
+                paymentStatus: 'pending_cash',
+            },
+        });
+
+        // Notify seller that cash order is confirmed
+        if (booking.sparePartStore?.ownerId) {
+            const sellerSocketId = providerSockets[booking.sparePartStore.ownerId];
+            if (sellerSocketId) {
+                io.to(sellerSocketId).emit('spare_part_cash_order_confirmed', { bookingId: updatedBooking.id });
+            }
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to confirm spare part cash payment:", error);
+        return res.status(500).json({ error: 'An internal server error occurred' });
     }
 });
 

@@ -22,8 +22,22 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
     ) : null
 );
 
-const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, isAccepting, isDeclining }: { booking: any, onAccept: (id: string) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, isAccepting: boolean, isDeclining: boolean }) => (
-    <TouchableOpacity style={styles.bookingCard} onPress={() => onPress(booking)}>
+const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onChat, isAccepting, isDeclining, jobsSubTab }: { booking: any, onAccept: (id: string) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onChat: (bookingId: string) => void, isAccepting: boolean, isDeclining: boolean, jobsSubTab: 'Pending' | 'Current' | 'History' }) => {
+    const getCoords = (loc: any) => {
+        if (loc?.coordinates) return loc.coordinates;
+        if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
+            return [loc.longitude, loc.latitude];
+        }
+        return null;
+    };
+
+    const pickupCoords = getCoords(booking.pickupLocation);
+    const destinationCoords = getCoords(booking.destinationLocation);
+    const showChatButton = ['CONFIRMED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status);
+
+
+    return (
+    <View style={styles.bookingCard}>
         <View style={{ position: 'absolute', top: 0, left: 0, backgroundColor: 'rgba(255, 255, 0, 0.7)', padding: 4, borderRadius: 4, zIndex: 10 }}>
             <Text style={{fontSize: 10, color: 'black', fontWeight: 'bold'}}>{booking.status} / {booking.subStatus || 'N/A'}</Text>
         </View>
@@ -45,34 +59,16 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
         </View>
         <View style={styles.bookingDetails}>
             <Ionicons name="flag-outline" size={20} color="#e74c3c" />
-            <Text style={styles.bookingText}>To: {booking.destinationLocation?.description || 'N/A'}</Text>
+            <Text style={styles.bookingText}>To: {booking.destinationLocation?.description || booking.garage?.name || 'N/A'}</Text>
         </View>
-        {booking.destinationLocation?.description && (
+        {(pickupCoords && destinationCoords) && (
             <TouchableOpacity 
                 style={styles.checkMapButton}
                 onPress={() => {
-                    const pickup = booking.pickupLocation;
-                    const destination = booking.destinationLocation;
-
-                    const getCoords = (loc: any) => {
-                        if (loc?.coordinates) return loc.coordinates;
-                        if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
-                            return [loc.longitude, loc.latitude];
-                        }
-                        return null;
-                    };
-
-                    const pickupCoords = getCoords(pickup);
-                    const destCoords = getCoords(destination);
-
-                    if (pickupCoords && destCoords) {
-                        const waypoints = `${pickupCoords[1]},${pickupCoords[0]}`;
-                        const dest = `${destCoords[1]},${destCoords[0]}`;
-                        const url = `https://www.google.com/maps/dir/?api=1&destination=${dest}&waypoints=${waypoints}`;
-                        Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
-                    } else {
-                        Alert.alert("Map Error", "Could not open map because location data is incomplete.");
-                    }
+                    const waypoints = `${pickupCoords[1]},${pickupCoords[0]}`;
+                    const dest = `${destinationCoords[1]},${destinationCoords[0]}`;
+                    const url = `https://www.google.com/maps/dir/?api=1&destination=${dest}&waypoints=${waypoints}`;
+                    Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
                 }}
             >
                 <Ionicons name="map-outline" size={18} color="#fff" />
@@ -89,6 +85,15 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
              <View style={styles.bookingDetails}>
                 <Ionicons name="location-outline" size={20} color="#16a085" />
                 <Text style={styles.bookingText}>Pickup is ~{booking.distance.toFixed(1)} km away</Text>
+            </View>
+        )}
+
+        {showChatButton && (
+            <View style={styles.bookingActions}>
+                <TouchableOpacity style={[styles.bookingButton, styles.chatButton]} onPress={() => onChat(booking.id)}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
+                    <Text style={styles.bookingButtonText}>Chat</Text>
+                </TouchableOpacity>
             </View>
         )}
 
@@ -137,8 +142,9 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                 </TouchableOpacity>
             </View>
         )}
-    </TouchableOpacity>
-);
+    </View>
+    );
+};
 
 
 const OtpVerificationModal = ({ visible, onClose, otp, setOtp, onVerify, isVerifying }: { visible: boolean, onClose: () => void, otp: string, setOtp: (otp: string) => void, onVerify: () => void, isVerifying: boolean }) => (
@@ -201,6 +207,49 @@ export default function TowTruckDashboard() {
     const [bookingToComplete, setBookingToComplete] = useState<string | null>(null);
     const [otp, setOtp] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
+
+    const handleChat = async (bookingId: string) => {
+        console.log(`[handleChat] Initiated for bookingId: ${bookingId}`);
+        try {
+            console.log('[handleChat] Getting auth token...');
+            const token = await getToken();
+            if (!token) {
+                console.error('[handleChat] Auth token is null or undefined.');
+                Alert.alert("Chat Error", "Authentication token not found. Please sign in again.");
+                return;
+            }
+            console.log('[handleChat] Token retrieved. Fetching chat room...');
+    
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/chat`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+    
+            console.log(`[handleChat] API response status: ${response.status}`);
+    
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response.' }));
+                console.error('[handleChat] API response not OK:', errorData);
+                throw new Error(errorData.error || "Failed to get or create chat.");
+            }
+    
+            const chat = await response.json();
+            console.log('[handleChat] Chat data received:', chat);
+    
+            if (!chat || !chat.id) {
+                console.error('[handleChat] Invalid chat data received from API:', chat);
+                throw new Error("Received invalid chat data from server.");
+            }
+    
+            console.log(`[handleChat] Navigating to /chat/${chat.id}`);
+            router.push(`/chat/${chat.id}`);
+            console.log('[handleChat] Navigation command issued.');
+    
+        } catch (error: any) {
+            console.error('[handleChat] CATCH block error:', error);
+            Alert.alert("Chat Error", error.message);
+        }
+    };
 
 
 
@@ -537,7 +586,6 @@ export default function TowTruckDashboard() {
                 {mainTab === 'Jobs' ? (
                     <View>
                         {/* Bookings Section */}
-                        <Text style={styles.bookingsHeader}>Job Requests</Text>
                         <View style={styles.tabContainer}>
                             <TouchableOpacity onPress={() => setJobsSubTab('Pending')} style={[styles.tab, jobsSubTab === 'Pending' && styles.activeTab]}>
                                 <Text style={[styles.tabText, jobsSubTab === 'Pending' && styles.activeTabText]}>Pending</Text>
@@ -551,17 +599,19 @@ export default function TowTruckDashboard() {
                         </View>
                         
                         {filteredBookings.length > 0 ? (
-                            filteredBookings.map(booking => <BookingCard 
+                            <BookingCard 
                                 key={booking.id} 
                                 booking={booking} 
                                 onAccept={handleAccept} 
                                 onDecline={handleDecline} 
                                 onCancel={handleCancel}
                                 onComplete={handleOpenOtpModal}
+                                onChat={handleChat}
                                 onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
                                 isAccepting={acceptingId === booking.id}
                                 isDeclining={decliningId === booking.id}
-                            />)
+                                jobsSubTab={jobsSubTab}
+                            />
                         ) : (
                             <View style={styles.tabContent}>
                                 <Text style={styles.noBookingsText}>No {jobsSubTab.toLowerCase()} bookings found.</Text>
@@ -649,21 +699,22 @@ const modalStyles = StyleSheet.create({
     closeButton: { position: 'absolute', top: 10, right: 10, zIndex: 1 },
     otpInput: {
         height: 50,
-        width: '80%',
+        width: '100%',
         borderColor: '#3498db',
         borderWidth: 1,
         borderRadius: 8,
-        paddingHorizontal: 15,
+        paddingHorizontal: 24,
         fontSize: 20,
         textAlign: 'center',
-        marginBottom: 25,
+        marginBottom: 15,
         backgroundColor: '#f8f9fa',
         letterSpacing: 8,
+        alignSelf: 'center',
     },
 });
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f4f4f8' },
+    container: { flex: 1, backgroundColor: '#f4f4f8', paddingTop: 20 },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
     errorText: { fontSize: 16, color: '#e74c3c', textAlign: 'center' },
     headerCard: {
@@ -690,7 +741,7 @@ const styles = StyleSheet.create({
     deleteButton: { backgroundColor: '#e74c3c' },
     actionButtonText: { color: 'white', fontWeight: 'bold', marginLeft: 8 },
     bookingsHeader: { fontSize: 22, fontWeight: 'bold', marginHorizontal: 15, marginTop: 20, textAlign: 'center', color: '#34495e' },
-    tabContainer: { flexDirection: 'row', backgroundColor: '#e9ecef', marginHorizontal: 15, borderRadius: 10, padding: 4, marginTop: 15, marginBottom: 10 },
+    tabContainer: { flexDirection: 'row', backgroundColor: '#e9ecef', marginHorizontal: 15, borderRadius: 10, padding: 2, marginTop: 15, marginBottom: 10 },
     tab: { flex: 1, padding: 10, borderRadius: 8, alignItems: 'center' },
     activeTab: { backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 2 },
     tabText: { fontSize: 16, fontWeight: '600', color: '#6c757d' },
@@ -703,20 +754,41 @@ const styles = StyleSheet.create({
     bookingPrice: { fontSize: 16, fontWeight: 'bold', color: '#2c3e50' },
     bookingDetails: { flexDirection: 'row', alignItems: 'center', marginVertical: 5 },
     bookingText: { fontSize: 15, color: '#34495e', marginLeft: 10 },
-    bookingActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-    bookingButton: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 8, marginLeft: 10 },
+    bookingActions: { 
+        flexDirection: 'row', 
+        justifyContent: 'flex-end', 
+        marginTop: 10, 
+        paddingTop: 12, 
+        borderTopWidth: 1, 
+        borderTopColor: '#f0f0f0' 
+    },
+    bookingButton: { 
+        paddingVertical: 8, 
+        paddingHorizontal: 16, 
+        borderRadius: 8, 
+        marginLeft: 8,
+        minHeight: 42,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     acceptButton: { backgroundColor: '#27ae60' },
     declineButton: { backgroundColor: '#c0392b' },
     cancelButton: { backgroundColor: '#f39c12' },
     completeButton: { backgroundColor: '#2980b9' },
-    bookingButtonText: { color: 'white', fontWeight: 'bold' },
+    bookingButtonText: { 
+        color: 'white', 
+        fontWeight: 'bold',
+        textAlign: 'center',
+        fontSize: 16,
+        width: '100%',
+    },
     disabledButton: { backgroundColor: '#95a5a6' },
     mainTabContainer: {
         flexDirection: 'row',
         backgroundColor: '#fff',
         marginHorizontal: 15,
         borderRadius: 10,
-        padding: 5,
+        padding: 3,
         marginTop: 15,
         marginBottom: 10,
         elevation: 2,
@@ -757,5 +829,10 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginLeft: 8,
         fontSize: 14,
+    },
+    chatButton: {
+        backgroundColor: '#3498db',
+        flex: 1,
+        marginRight: 10,
     },
 });

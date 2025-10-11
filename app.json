@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "afthuliftme",
-    "slug": "afthuliftme",
+    "name": "liftme",
+    "slug": "liftme",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/lmicon.png",
-    "scheme": "afthuliftme",
+    "scheme": "liftme",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -58,7 +58,8 @@
       [
         "expo-location",
         {
-          "locationWhenInUseUsageDescription": "We need your location to help you set up your garage's position on the map."
+          "locationWhenInUseUsageDescription": "We need your location to help you set up your service position on the map.",
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
         }
       ],
       "expo-web-browser",

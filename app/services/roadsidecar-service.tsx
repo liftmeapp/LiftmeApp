@@ -174,7 +174,7 @@ export default function MainMap() {
             setSavedCards(cards);
             if (cards.length > 0) {
                 setSelectedCard(cards[0].id);
-            }
+            }   
         } catch (error: any) {
             Alert.alert("Error loading cards", error.message);
         } finally {

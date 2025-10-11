@@ -46,7 +46,7 @@ const color = {
 };
 
 // --- Main Component ---
-export default function MainMap() {
+export default function LuxuryService() {
     const mapRef = useRef<MapView>(null);
     const router = useRouter();
     const { getToken } = useAuth();

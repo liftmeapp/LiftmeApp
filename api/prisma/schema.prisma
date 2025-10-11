@@ -64,6 +64,7 @@
 
   enum BookingStatus {
     SEARCHING
+    PENDING_ACCEPTANCE // New status for spare part orders awaiting seller confirmation
     PENDING
     AWAITING_PAYMENT
     CONFIRMED
@@ -71,7 +72,8 @@
     COMPLETED
     CANCELLED
     EXPIRED
-    REFUNDED   
+    REFUNDED
+    REJECTED   
   }
 
   enum DiscountType {
@@ -88,8 +90,8 @@
     DIRECT_TOW
     TOW_TO_GARAGE
     ROADSIDE_ASSISTANCE
+    SPARE_PART
   }
-
   enum BookingSubStatus {
     AWAITING_GARAGE_ACCEPTANCE
     AWAITING_TOW_TRUCK_ACCEPTANCE
@@ -125,8 +127,11 @@
     vehicles Vehicle[]
     garage   Garage?
     towTruck TowTruck?
+    sparePartStore SparePartStore?
     bookings Booking[]
     stripeCustomerId String? @unique
+
+    messages Message[] @relation("UserMessages")
 
     @@map("users")
   }
@@ -197,7 +202,6 @@
     ownerId    String          @unique @db.ObjectId
     owner      User            @relation(fields: [ownerId], references: [id])
     services   GarageService[]
-    spareParts SparePart[]
     bookings   Booking[]
 
     @@index([location], map: "location_2dsphere")
@@ -275,18 +279,44 @@
     @@map("live_truck_locations")
   }
 
+  model SparePartStore {
+    id          String      @id @default(auto()) @map("_id") @db.ObjectId
+    name        String
+    description String?
+    location    Json
+    status      VerificationStatus @default(PENDING)
+    rejectionReason String?
+
+    ownerId     String      @unique @db.ObjectId
+    owner       User        @relation(fields: [ownerId], references: [id])
+    parts       SparePart[]
+
+    createdAt   DateTime    @default(now())
+    updatedAt   DateTime    @updatedAt
+    bookings    Booking[]
+
+    @@index([location], map: "location_2dsphere")
+    @@map("spare_part_stores")
+  }
+
   model SparePart {
     id                String @id @default(auto()) @map("_id") @db.ObjectId
     partName          String
-    compatibleMake    String
-    compatibleModel   String
-    compatibleYear    Int
+    description       String
     price             Float
-    quantityAvailable Int
+    quantity          Int
+    category          String
+    brand             String      // e.g., Toyota, Honda
+    model             String      // e.g., Camry, Civic
+    year              Int
+    images            String[]
+    location          Json
 
-    garageId String @db.ObjectId
-    garage   Garage @relation(fields: [garageId], references: [id])
+    storeId           String      @db.ObjectId
+    store             SparePartStore @relation(fields: [storeId], references: [id])
+    bookings          Booking[]
 
+    @@index([location], map: "location_2dsphere")
     @@map("spare_parts")
   }
 
@@ -320,9 +350,10 @@
     paymentMethod   PaymentMethod @default(CARD)
 
     // Garage-specific quote and payment for Tow-to-Garage flow
-    garageQuoteAmount     Float?
-    garageQuoteDays       Int?
-    garageQuoteNotes      String?
+    vehicleStatus     String?
+    servicesRequired  String?
+    servicesEstimate  String?
+    jobEstimate       Float?
     garagePaymentStatus   String?   @default("pending")
     garagePaymentIntentId String?
 
@@ -336,8 +367,8 @@
       
         userId    String  @db.ObjectId
         user      User    @relation(fields: [userId], references: [id])
-        vehicleId String  @db.ObjectId
-        vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
+        vehicleId String?  @db.ObjectId
+        vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
     eligibleProviderIds String[] @db.ObjectId
 
     serviceId       String?        @db.ObjectId // NEW: Direct link to the master Service
@@ -356,6 +387,13 @@
 
     promoCodeId String?    @db.ObjectId
     promoCode   PromoCode? @relation(fields: [promoCodeId], references: [id])
+
+    sparePartId String? @db.ObjectId
+    sparePart SparePart? @relation(fields: [sparePartId], references: [id])
+    sparePartStoreId String? @db.ObjectId
+    sparePartStore SparePartStore? @relation(fields: [sparePartStoreId], references: [id])
+
+    chat Chat?
 
     @@index([userId, status])
     @@index([garageId, status])
@@ -377,3 +415,28 @@
 
     @@map("promo_codes")
   }
+
+model Chat {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId String    @unique @db.ObjectId
+  booking   Booking   @relation(fields: [bookingId], references: [id])
+  
+  messages  Message[]
+  participantClerkIds String[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  chatId    String   @db.ObjectId
+  chat      Chat     @relation(fields: [chatId], references: [id])
+  
+  senderId  String   @db.ObjectId
+  sender    User     @relation("UserMessages", fields: [senderId], references: [id])
+  
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([chatId])
+}
