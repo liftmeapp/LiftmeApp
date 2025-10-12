@@ -242,7 +242,7 @@ export default function TowTruckDashboard() {
             }
     
             console.log(`[handleChat] Navigating to /chat/${chat.id}`);
-            router.push(`/chat/${chat.id}`);
+            router.push(`/conversation/${chat.id}`);
             console.log('[handleChat] Navigation command issued.');
     
         } catch (error: any) {

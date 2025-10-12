@@ -1,7 +1,7 @@
 
+import { clerkClient } from '@clerk/clerk-sdk-node';
 import { Router } from 'express';
 import prisma from './lib/prisma';
-import { clerkClient } from '@clerk/clerk-sdk-node';
 
 const router = Router();
 
@@ -53,10 +53,10 @@ router.post('/bookings/:bookingId/chat', async (req, res) => {
             });
         }
 
-        res.status(200).json(chat);
+        return res.status(200).json(chat);
     } catch (error) {
         console.error('Failed to get or create chat:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        return res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -72,22 +72,36 @@ router.get('/chat/:chatId/messages', async (req, res) => {
             try {
                 const chat = await prisma.chat.findUnique({
                     where: { id: chatId },
-                    select: { participantClerkIds: true }, // Only fetch participantClerkIds
+                    select: { participantClerkIds: true },
                 });
     
                 if (!chat || !chat.participantClerkIds.includes(userId)) {
                     return res.status(403).json({ error: 'You are not a member of this chat' });
                 }
-        const messages = await prisma.message.findMany({
-            where: { chatId },
-            orderBy: { createdAt: 'asc' },
-            include: { sender: true },
-        });
 
-        res.status(200).json(messages);
+                const [messages, participants] = await Promise.all([
+                    prisma.message.findMany({
+                        where: { chatId },
+                        orderBy: { createdAt: 'asc' },
+                        include: { sender: true },
+                    }),
+                    prisma.user.findMany({
+                        where: {
+                            clerkId: { in: chat.participantClerkIds }
+                        },
+                        select: {
+                            clerkId: true,
+                            firstName: true,
+                            lastName: true,
+                        }
+                    })
+                ]);
+
+                // Return both messages and participant details
+                return res.status(200).json({ messages, participants });
     } catch (error) {
         console.error('Failed to get messages:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        return res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -145,10 +159,10 @@ router.post('/chat/:chatId/messages', async (req, res) => {
             }
         });
 
-        res.status(201).json(message);
+        return res.status(201).json(message);
     } catch (error) {
         console.error('Failed to send message:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        return res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -209,10 +223,10 @@ router.get('/chats', async (req, res) => {
             })
         );
 
-        res.status(200).json(chatsWithParticipantDetails);
+        return res.status(200).json(chatsWithParticipantDetails);
     } catch (error) {
         console.error('Failed to get chats:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        return res.status(500).json({ error: 'Internal server error' });
     }
 });
 

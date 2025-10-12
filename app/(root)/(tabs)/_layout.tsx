@@ -83,18 +83,20 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
-        name="chats"
+        name="conversation"
         options={{
-          title: "Chats",
+          title: "Conversation",
           tabBarIcon: ({ focused }) => (
             <TabIcon source={icons.chat} focused={focused} />
           ),
         }}
+        listeners={({ navigation, route }) => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate('conversation', { screen: 'index' });
+          },
+        })}
       />
-
-      {/* --- THIS IS THE CORRECT WAY TO CONFIGURE A GROUPED TAB --- */}
-      {/* The `name` points to the DIRECTORY. */}
-      {/* All screens inside `app/(tabs)/settings` will now belong to this tab. */}
       <Tabs.Screen
         name="settings"
         options={{
