@@ -2,7 +2,7 @@ import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -13,14 +13,24 @@ interface Chat {
         createdAt: string;
     };
     participants: {
-        firstName: string;
-        lastName: string;
+        clerkId: string;
+        firstName: string | null;
+        lastName: string | null;
+        username: string | null;
+        phone: string | null;
     }[];
 }
 
 const ChatListItem = ({ chat, onPress }: { chat: Chat; onPress: () => void }) => {
     const otherParticipant = chat.participants[0];
-    const participantName = otherParticipant ? `${otherParticipant.firstName} ${otherParticipant.lastName}`.trim() : 'Unknown User';
+
+    let participantName = 'Unknown User';
+    if (otherParticipant) {
+        const { firstName, lastName, username, phone, clerkId } = otherParticipant;
+        const fullName = `${firstName || ''} ${lastName || ''}`.trim();
+        participantName = fullName || username || phone || clerkId;
+    }
+
     const lastMessage = chat.lastMessage?.content || 'No messages yet.';
     const lastMessageTime = chat.lastMessage ? new Date(chat.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
@@ -45,6 +55,7 @@ export default function ConversationsScreen() {
     const router = useRouter();
     const [chats, setChats] = useState<Chat[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
     const fetchChats = useCallback(async () => {
         try {
@@ -65,6 +76,7 @@ export default function ConversationsScreen() {
             console.error('Error fetching chats:', error);
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     }, []);
 
@@ -74,6 +86,11 @@ export default function ConversationsScreen() {
             fetchChats();
         }, [fetchChats])
     );
+
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        fetchChats();
+    }, [fetchChats]);
 
     const handleChatPress = (chatId: string) => {
         router.push(`/conversation/${chatId}`);
@@ -102,6 +119,9 @@ export default function ConversationsScreen() {
                         <Ionicons name="chatbubbles-outline" size={60} color="#ccc" />
                         <Text style={styles.emptyText}>No conversations yet.</Text>
                     </View>
+                }
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
                 }
             />
         </View>

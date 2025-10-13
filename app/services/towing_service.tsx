@@ -57,6 +57,7 @@ const TowingServiceMapContent = () => {
         isInitialLoading,
         isConfirmingPayment, confirmPayment, confirmCashBooking,
         startTowingBooking, startTowToGarageBooking, cancelTowingBooking,
+        resetTowingBookingFlow,
         searchCountdown, eligibleTruckCount
     } = useTowingBooking();
             
@@ -131,9 +132,11 @@ const TowingServiceMapContent = () => {
             case TowingBookingStage.PICKUP_SELECTION: setCurrentStage(TowingBookingStage.VEHICLE_SELECTION); break;
             case TowingBookingStage.DESTINATION_SELECTION: setCurrentStage(TowingBookingStage.PICKUP_SELECTION); break;
             case TowingBookingStage.SEARCHING_FOR_PROVIDER:
-            case TowingBookingStage.CONFIRMED:
             case TowingBookingStage.ERROR:
             case TowingBookingStage.CANCELLED:
+                resetTowingBookingFlow();
+                break;
+            case TowingBookingStage.CONFIRMED:
                 router.back();
                 break;
         }

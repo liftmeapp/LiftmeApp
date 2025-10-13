@@ -247,11 +247,14 @@ export default function MainMap() {
             case BookingStage.LOCATION_CONFIRMATION:
                 setStage(BookingStage.VEHICLE_SELECTION);
                 break;
-            case BookingStage.SEARCHING_FOR_PROVIDER:
-                cancelBooking();
-                break;
             case BookingStage.PAYMENT:
                 setStage(BookingStage.LOCATION_CONFIRMATION);
+                break;
+            case BookingStage.SEARCHING_FOR_PROVIDER:
+            case BookingStage.ERROR:
+            case BookingStage.CANCELLED:
+            case BookingStage.EXPIRED:
+                resetBookingFlow();
                 break;
         }
     };

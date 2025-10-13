@@ -37,7 +37,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
 
 
     return (
-    <View style={styles.bookingCard}>
+    <TouchableOpacity style={styles.bookingCard} onPress={() => onPress(booking)}>
         <View style={{ position: 'absolute', top: 0, left: 0, backgroundColor: 'rgba(255, 255, 0, 0.7)', padding: 4, borderRadius: 4, zIndex: 10 }}>
             <Text style={{fontSize: 10, color: 'black', fontWeight: 'bold'}}>{booking.status} / {booking.subStatus || 'N/A'}</Text>
         </View>
@@ -87,16 +87,6 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                 <Text style={styles.bookingText}>Pickup is ~{booking.distance.toFixed(1)} km away</Text>
             </View>
         )}
-
-        {showChatButton && (
-            <View style={styles.bookingActions}>
-                <TouchableOpacity style={[styles.bookingButton, styles.chatButton]} onPress={() => onChat(booking.id)}>
-                    <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
-                    <Text style={styles.bookingButtonText}>Chat</Text>
-                </TouchableOpacity>
-            </View>
-        )}
-
         {(booking.status === 'CONFIRMED' || booking.status === 'IN_PROGRESS') && (
             <View style={styles.bookingActions}>
                 <TouchableOpacity 
@@ -105,6 +95,12 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                 >
                     <Text style={styles.bookingButtonText}>Cancel</Text>
                 </TouchableOpacity>
+                 <View style={styles.bookingActions}>
+                <TouchableOpacity style={[styles.bookingButton, styles.chatButton]} onPress={() => onChat(booking.id)}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
+                    <Text style={styles.bookingButtonText}>Chat</Text>
+                </TouchableOpacity>
+            </View>
                 <TouchableOpacity 
                     style={[styles.bookingButton, styles.completeButton]} 
                     onPress={() => onComplete(booking.id)}
@@ -115,7 +111,6 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                 </TouchableOpacity>
             </View>
         )}
-
         {booking.status === 'SEARCHING' && (
             <View style={styles.bookingActions}>
                 <TouchableOpacity 
@@ -142,7 +137,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                 </TouchableOpacity>
             </View>
         )}
-    </View>
+    </TouchableOpacity>
     );
 };
 
@@ -599,19 +594,21 @@ export default function TowTruckDashboard() {
                         </View>
                         
                         {filteredBookings.length > 0 ? (
-                            <BookingCard 
-                                key={booking.id} 
-                                booking={booking} 
-                                onAccept={handleAccept} 
-                                onDecline={handleDecline} 
-                                onCancel={handleCancel}
-                                onComplete={handleOpenOtpModal}
-                                onChat={handleChat}
-                                onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
-                                isAccepting={acceptingId === booking.id}
-                                isDeclining={decliningId === booking.id}
-                                jobsSubTab={jobsSubTab}
-                            />
+                            filteredBookings.map((booking) => (
+                                <BookingCard 
+                                    key={booking.id} 
+                                    booking={booking} 
+                                    onAccept={handleAccept} 
+                                    onDecline={handleDecline} 
+                                    onCancel={handleCancel}
+                                    onComplete={handleOpenOtpModal}
+                                    onChat={handleChat}
+                                    onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
+                                    isAccepting={acceptingId === booking.id}
+                                    isDeclining={decliningId === booking.id}
+                                    jobsSubTab={jobsSubTab}
+                                />
+                            ))
                         ) : (
                             <View style={styles.tabContent}>
                                 <Text style={styles.noBookingsText}>No {jobsSubTab.toLowerCase()} bookings found.</Text>

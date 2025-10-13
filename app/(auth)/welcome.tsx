@@ -23,7 +23,7 @@ const Home = () => {
           router.replace("/(auth)/signup");
           console.log("Get Started");
         }}
-        className="w-[12rem] mt-10 bg-[#7b381a]  absolute bottom-16 mb-20 rounded-none py-3 px-4 opacity-80 shadow-lg "
+        className="w-[12rem] mt-10 bg-[#7b381a]  absolute bottom-16 mb-20 rounded-2xl py-3 px-4 opacity-80 shadow-lg "
         >
           <Text className=" w-full text-white font-extrabold text-xl text-center">
             Get Started

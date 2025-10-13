@@ -119,11 +119,7 @@ useEffect(() => {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.name}>{user?.firstName || 'User'}</Text>
-          <View style={styles.ratingBox}>
-            <Icon name="star" size={14} color="#fff" />
-            <Text style={styles.rating}>5.0</Text>
-          </View>
+          <Text style={styles.name}>Settings</Text>
         </View>
 
         <View style={styles.quickActions}>

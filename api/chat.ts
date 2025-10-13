@@ -209,6 +209,8 @@ router.get('/chats', async (req, res) => {
                             clerkId: clerkUser.id,
                             firstName: clerkUser.firstName,
                             lastName: clerkUser.lastName,
+                            username: clerkUser.username,
+                            phone: clerkUser.primaryPhoneNumber?.phoneNumber
                         };
                     } catch (clerkError) {
                         console.warn(`Could not fetch Clerk user details for ${otherParticipantClerkId}:`, clerkError);

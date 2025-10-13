@@ -149,14 +149,15 @@ export default function ConversationScreen() {
         if (!messageToSend || !chatId) return;
 
         const messagesWithClerkId = newMessages.map(message => ({
-        ...message,
-        clerkId: userId  // Add the clerkId to each message
-    }));
+            ...message,
+            clerkId: userId  // Add the clerkId to each message
+        }));
 
         // Optimistically update the UI
-    setMessages(previousMessages => 
-        GiftedChat.append(previousMessages, messagesWithClerkId) as AppMessage[]
-    );
+        setMessages(previousMessages => 
+            GiftedChat.append(previousMessages, messagesWithClerkId) as AppMessage[]
+        );
+        
         const sendMessageToServer = async () => {
             try {
                 const token = await getToken();
@@ -175,7 +176,7 @@ export default function ConversationScreen() {
         };
 
         sendMessageToServer();
-    }, [chatId, getToken]);
+    }, [chatId, getToken, userId]);
 
     const getOtherParticipantName = () => {
         return chatRoomDetails?.otherParticipantName || 'Conversation';
@@ -199,16 +200,23 @@ export default function ConversationScreen() {
                 <Text style={styles.headerTitle}>{getOtherParticipantName()}</Text>
                 <View style={styles.backButtonPlaceholder} />
             </View>
-            <GiftedChat
-                messages={messages}
-                onSend={messages => onSend(messages)}
-                user={{
-                    _id: userId, // clerkId is the user ID in our system
-                }}
-                messagesContainerStyle={styles.messagesContainer}
-                renderUsernameOnMessage
-            />
-            {Platform.OS === 'android' && <KeyboardAvoidingView behavior="padding" />}
+
+            <KeyboardAvoidingView
+                style={styles.flex}
+                behavior={Platform.OS === "ios" ? "padding" : undefined}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+                contentContainerStyle={styles.flex}
+            >
+                <GiftedChat
+                    messages={messages}
+                    onSend={messages => onSend(messages)}
+                    user={{ _id: userId }}
+                    messagesContainerStyle={styles.messagesContainer}
+                    renderUsernameOnMessage
+                    bottomOffset={Platform.OS === 'android' ? -70 : 0}
+                    minInputToolbarHeight={44}
+                />
+            </KeyboardAvoidingView>
         </View>
     );
 }
@@ -217,6 +225,9 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#f4f4f8',
+    },
+    flex: {
+        flex: 1,
     },
     centered: {
         flex: 1,
@@ -243,9 +254,9 @@ const styles = StyleSheet.create({
         padding: 5,
     },
     backButtonPlaceholder: {
-        width: 34, // Match back button width to center title
+        width: 34,
     },
     messagesContainer: {
-        paddingBottom: 10,
+        paddingBottom: 0,
     },
 });

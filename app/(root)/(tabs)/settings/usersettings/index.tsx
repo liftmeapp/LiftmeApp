@@ -1,11 +1,11 @@
 import { useUser } from '@clerk/clerk-expo';
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal } from 'react-native';
 import { Stack } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 type ModalType = 'email' | 'phone' | null;
 
-const ManagementModal = ({ visible, type, onClose }) => {
+const ManagementModal = ({ visible, type, onClose }: { visible: boolean; type: ModalType; onClose: () => void } ) => {
   const [value, setValue] = useState('');
   const [code, setCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
