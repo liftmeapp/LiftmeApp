@@ -21,7 +21,7 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
     ) : null
 );
 
-const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onOpenQuoteModal, onChat, isAccepting, isDeclining = false, garageLocation }: { booking: any, onAccept: (booking: any) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onOpenQuoteModal: (booking: any) => void, onChat: (bookingId: string) => void, isAccepting: boolean, isDeclining?: boolean, garageLocation?: any }) => {
+const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onOpenQuoteModal, onChat, isAccepting, isDeclining = false, garageLocation, currentTab }: { booking: any, onAccept: (booking: any) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onOpenQuoteModal: (booking: any) => void, onChat: (bookingId: string) => void, isAccepting: boolean, isDeclining?: boolean, garageLocation?: any, currentTab: 'Pending' | 'Current' | 'History' }) => {
     const getBadge = () => {
         if (booking.bookingType === 'TOW_TO_GARAGE') {
             if (booking.subStatus === 'AWAITING_TOW_TRUCK_ACCEPTANCE') {
@@ -88,7 +88,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
             </View>
         )}
 
-        {booking.pickupLocation?.coordinates && garageLocation?.coordinates && (
+        {booking.pickupLocation?.coordinates && garageLocation?.coordinates && currentTab !== 'History' && (
             <TouchableOpacity
                 style={styles.checkMapButton}
                 onPress={() => {
@@ -107,31 +107,33 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
             </TouchableOpacity>
         )}
 
-        <View style={styles.buttonRow}>
-            <TouchableOpacity 
-                style={[styles.actionButton, styles.cancelButton]}
-                onPress={() => onCancel(booking.id)}
-            >
-                <Ionicons name="close-circle-outline" size={16} color="#fff" />
-                <Text style={styles.actionButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-                style={[styles.actionButton, styles.chatButton]}
-                onPress={() => onChat(booking.id)}
-            >
-                <Ionicons name="chatbubble-ellipses-outline" size={16} color="#fff" />
-                <Text style={styles.actionButtonText}>Chat</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-                style={[styles.actionButton, styles.completeButton]}
-                onPress={() => onComplete(booking.id)}
-            >
-                <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
-                <Text style={styles.actionButtonText}>Complete</Text>
-            </TouchableOpacity>
-        </View>
+        {currentTab === 'Current' && (
+            <View style={styles.buttonRow}>
+                <TouchableOpacity 
+                    style={[styles.actionButton, styles.cancelButton]}
+                    onPress={() => onCancel(booking.id)}
+                >
+                    <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                    style={[styles.actionButton, styles.chatButton]}
+                    onPress={() => onChat(booking.id)}
+                >
+                    <Ionicons name="chatbubble-ellipses-outline" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>Chat</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                    style={[styles.actionButton, styles.completeButton]}
+                    onPress={() => onComplete(booking.id)}
+                >
+                    <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>Complete</Text>
+                </TouchableOpacity>
+            </View>
+        )}
 
         {showSubmitQuoteButton && (
             <View style={styles.bookingActions}>
@@ -798,6 +800,7 @@ export default function GarageDashboard() {
                                 onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
                                 isAccepting={acceptingId === booking.id}
                                 garageLocation={garage?.location}
+                                currentTab={jobsSubTab}
                             />)
                         ) : (
                             <View style={styles.tabContent}>
