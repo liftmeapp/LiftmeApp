@@ -114,9 +114,6 @@ const GaragesScreen = () => {
         category: activeCategory ? activeCategory.join(',') : null, // Pass categories as comma-separated string
         serviceId: selectedServiceId,
     };
-
-    console.log('[GaragesScreen] Filters being passed to GarageMap:', filters);
-
     return (
         <View style={styles.container}>
             <GarageMap 
@@ -136,20 +133,20 @@ const GaragesScreen = () => {
                     <FilterButton 
                         icon="car-sport-outline" 
                         label="Car"
-                        isActive={activeCategory?.includes(ServiceCategory.ROADSIDE_CAR) || activeCategory?.includes(ServiceCategory.LUXURY)}
-                        onPress={() => handleCategoryFilterPress([ServiceCategory.ROADSIDE_CAR, ServiceCategory.LUXURY])}
+                        isActive={activeCategory?.includes(ServiceCategory.INGARAGE_CAR)}
+                        onPress={() => handleCategoryFilterPress([ServiceCategory.INGARAGE_CAR])}
                     />
                     <FilterButton 
                         icon="bicycle-outline" 
                         label="Bike"
-                        isActive={activeCategory?.includes(ServiceCategory.ROADSIDE_BIKE)}
-                        onPress={() => handleCategoryFilterPress([ServiceCategory.ROADSIDE_BIKE])}
+                        isActive={activeCategory?.includes(ServiceCategory.INGARAGE_BIKE)}
+                        onPress={() => handleCategoryFilterPress([ServiceCategory.INGARAGE_BIKE])}
                     />
                     <FilterButton 
                         icon="flash-outline" 
                         label="EV"
-                        isActive={activeCategory?.includes(ServiceCategory.ELECTRIC_VEHICLE)}
-                        onPress={() => handleCategoryFilterPress([ServiceCategory.ELECTRIC_VEHICLE])}
+                        isActive={activeCategory?.includes(ServiceCategory.INGARAGE_ELECTRIC)}
+                        onPress={() => handleCategoryFilterPress([ServiceCategory.INGARAGE_ELECTRIC])}
                     />
                 </ScrollView>
             </View>

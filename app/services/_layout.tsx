@@ -13,7 +13,7 @@ export default function RootLayout() {
       <Stack.Screen name="garages" options={{ headerShown: false }}/>
       <Stack.Screen name="towing_service" options={{ headerShown: false }}/>
       <Stack.Screen name="luxury-service" options={{ headerShown: false }}/>
-      <Stack.Screen name="electric-service" options={{ headerShown: false }}/>
+      <Stack.Screen name="electric-vehicleservice" options={{ headerShown: false }}/>
     </Stack>
   );
 };

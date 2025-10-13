@@ -23,8 +23,11 @@ import {
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 const MAIN_VEHICLE_CATEGORIES = [
-  { key: 'ROADSIDE_CAR', label: 'Car Services' },
-  { key: 'ROADSIDE_BIKE', label: 'Bike Services' },
+  { key: 'INGARAGE_CAR', label: 'In-Garage Car Services' },
+  { key: 'INGARAGE_BIKE', label: 'In-Garage Bike Services' },
+  { key: 'INGARAGE_ELECTRIC', label: 'In-Garage Electric Vehicle Services' },
+  { key: 'ROADSIDE_CAR', label: 'Roadside Car Services' },
+  { key: 'ROADSIDE_BIKE', label: 'Roadside Bike Services' },
   { key: 'ELECTRIC_VEHICLE', label: 'Electric Vehicle Services' },
   { key: 'HOME_SERVICE', label: 'Home Services' },
   { key: 'LUXURY', label: 'Luxury Services' },
@@ -103,14 +106,24 @@ export default function EditServicesScreen() {
               };
           });
 
-          // Initialize category selections based on existingSupportedVehicleTypes
+          // Derive active categories from the list of existing services
+          const selectedServiceIds = new Set(existingServices.map(s => s.serviceId));
+          const activeCategories = new Set<string>();
+          allServices.forEach(service => {
+              if (selectedServiceIds.has(service.id)) {
+                  activeCategories.add(service.category);
+              }
+          });
+          const activeCategoriesArray = Array.from(activeCategories);
+
+          // Initialize category selections based on derived active categories
           MAIN_VEHICLE_CATEGORIES.forEach(mainCat => {
-              initialCategorySelections[mainCat.key] = existingSupportedVehicleTypes.includes(mainCat.key);
+              initialCategorySelections[mainCat.key] = activeCategoriesArray.includes(mainCat.key);
           });
 
           setSelections(initialSelections);
           setCategorySelections(initialCategorySelections);
-          setSelectedVehicleCategories(existingSupportedVehicleTypes); // Set initial main categories
+          setSelectedVehicleCategories(activeCategoriesArray); // Set initial main categories
 
       } catch (e: any) {
           console.error("💥 ERROR during initialization:", e);
@@ -185,33 +198,43 @@ export default function EditServicesScreen() {
 
     const selectedServices = Object.entries(selections)
       .filter(([, value]) => value.selected)
-      .map(([serviceId, value]) => ({
-        serviceId,
-        garageId,
-        price: parseFloat(value.price),
-        duration: 60, // Default duration of 60 minutes, adjust as needed
-      }));
+      .map(([serviceId, value]) => {
+        const service = masterServices.find(s => s.id === serviceId);
+        const isNoPriceCategory = service?.category === 'INGARAGE_CAR' || service?.category === 'INGARAGE_BIKE';
+        
+        return {
+          serviceId,
+          garageId,
+          price: isNoPriceCategory ? 0 : parseFloat(value.price),
+          duration: 60, // Default duration of 60 minutes, adjust as needed
+          // Temporary property for validation
+          _isNoPriceCategory: isNoPriceCategory,
+        };
+      });
   
     if (selectedServices.length === 0) {
       return Alert.alert('No Services Selected', 'You must offer at least one service.');
     }
     
-    const invalidPriceService = selectedServices.find(s => isNaN(s.price) || s.price <= 0);
+    const invalidPriceService = selectedServices.find(s => !s._isNoPriceCategory && (isNaN(s.price) || s.price <= 0));
     if (invalidPriceService) {
-      return Alert.alert('Invalid Price', 'Please enter a valid, positive price for all selected services.');
+      return Alert.alert('Invalid Price', 'Please enter a valid, positive price for all selected services that require pricing.');
     }
   
     try {
       setIsNavigating(true);
       
+      // Prepare data for the store by removing the temporary property
+      const servicesToStore = selectedServices.map(({ _isNoPriceCategory, ...rest }) => rest);
+
       // Save services to store
-      saveServicesToStore(selectedServices);
+      saveServicesToStore(servicesToStore);
       console.log("EditServicesScreen: Saving selectedVehicleCategories to store:", selectedVehicleCategories);
       setSupportedVehicleTypes(selectedVehicleCategories);
       
       // Navigate to the next screen
       router.push({
-        pathname: '/settings/add-business/businesssetup/garage-setup/location-picker',
+        pathname: '/settings/add-business/businesssetup/location-picker',
         params: { garageId }
       });
       
@@ -295,7 +318,7 @@ export default function EditServicesScreen() {
                                     value={selectionState.selected}
                                 />
                             </View>
-                            {selectionState.selected && (
+                            {selectionState.selected && !['INGARAGE_CAR', 'INGARAGE_BIKE'].includes(service.category) && (
                             <View style={styles.priceInputContainer}>
                                 <TextInput
                                     style={styles.priceInput}

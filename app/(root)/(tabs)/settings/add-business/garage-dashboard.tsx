@@ -292,7 +292,7 @@ export default function GarageDashboard() {
     const router = useRouter();
     const { getToken } = useAuth();
     const { garageId } = useLocalSearchParams<{ garageId: string }>();
-    const { setDetails, setServices, setLocation, reset: resetGarageStore } = useGarageStore();
+    const { setDetails, setServices, setLocation, setSupportedVehicleTypes, reset: resetGarageStore } = useGarageStore();
 
     const [garage, setGarage] = useState<any>(null);
     const [bookings, setBookings] = useState<any[]>([]);
@@ -601,6 +601,7 @@ export default function GarageDashboard() {
             stripeAccountId: garage.stripeAccountId,
         });
         setServices(garage.services.map((s: any) => ({ serviceId: s.service.id, price: s.price })));
+        setSupportedVehicleTypes(garage.supportedVehicleTypes || []);
         if (garage.location?.coordinates) {
             setLocation({ latitude: garage.location.coordinates[1], longitude: garage.location.coordinates[0] });
         }
@@ -822,7 +823,9 @@ export default function GarageDashboard() {
                                 garage.services.map((serviceItem: any) => (
                                     <View key={serviceItem.id} style={styles.serviceRow}>
                                         <Text style={styles.serviceName}>{serviceItem.service.name}</Text>
-                                        <Text style={styles.servicePrice}>INR {serviceItem.price.toFixed(2)}</Text>
+                                        {serviceItem.service.category !== 'INGARAGE_CAR' && serviceItem.service.category !== 'INGARAGE_BIKE' &&
+                                            <Text style={styles.servicePrice}>INR {serviceItem.price.toFixed(2)}</Text>
+                                        }
                                     </View>
                                 ))
                             ) : (

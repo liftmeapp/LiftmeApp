@@ -68,7 +68,6 @@ const fetchNearbyData = async (url: string, token: string) => {
 const fetchNearbyEVStations = async (lat: number, lon: number) => {
     try {
         const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lon}&radius=25000&keyword=ev%20charging%20station&key=${GOOGLE_API_KEY}`;
-        console.log("[Map.tsx] Fetching EV Stations from URL:", url);
         const response = await fetch(url);
         if (!response.ok) {
             const errorBody = await response.text();
@@ -76,7 +75,6 @@ const fetchNearbyEVStations = async (lat: number, lon: number) => {
             throw new Error('Failed to fetch EV stations from Google Places API');
         }
         const data = await response.json();
-        console.log(`[Map.tsx] Google Places API found ${data.results?.length || 0} EV stations with status: ${data.status}`);
         if (data.status === 'ZERO_RESULTS') {
             console.log('[Map.tsx] Note: Google Places returned ZERO_RESULTS. This means the search worked but found nothing in the area.');
         } else if (data.status !== 'OK') {
@@ -141,7 +139,6 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
     };
 
     const debouncedGetAddress = useCallback(debounce(async (lat: number, lon: number) => {
-        console.log("[Map.tsx] Debounced geocode triggered.");
         const address = await getAddressFromCoords(lat, lon);
         onPinLocationChange({ latitude: lat, longitude: lon, description: address });
     }, 500), [onPinLocationChange]);
@@ -186,9 +183,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
 
             promises.push(fetchNearbyEVStations(lat, lon));
 
-            const [garagesData, towTrucksData, evStationsData] = await Promise.all(promises);
-            console.log('[GarageMap] Garages data received:', garagesData);
-            
+            const [garagesData, towTrucksData, evStationsData] = await Promise.all(promises);            
             setGarages(Array.isArray(garagesData) ? garagesData : []);
             setTowTrucks(Array.isArray(towTrucksData) ? towTrucksData : []);
             setChargingStations(Array.isArray(evStationsData) ? evStationsData : []);

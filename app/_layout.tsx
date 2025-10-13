@@ -55,7 +55,6 @@ function InitialLayout() {
     // [This useEffect for sign-out detection is unchanged and correct]
     const [prevIsSignedIn, setPrevIsSignedIn] = useState<boolean | undefined>(undefined);
     const [justSignedOut, setJustSignedOut] = useState(false);
-    
     useEffect(() => {
         if (isAuthLoaded && prevIsSignedIn === undefined) {
             setPrevIsSignedIn(isSignedIn);
@@ -95,10 +94,8 @@ function InitialLayout() {
                 const inTabsGroup = segments[0] === '(root)' && segments[1] === '(tabs)';
                 const authPaths = ["/(auth)/welcome", "/(auth)/signin", "/(auth)/signup"];
                 const isOnAuthPath = authPaths.some(path => pathname === path);
-                
                 const isServicePath = segments.length > 0 && segments[0] === 'services';
                 const isSettingsPath = segments.length > 0 && segments[0] === 'settings';
-                
                 if ((!inTabsGroup && !isServicePath && !isSettingsPath) || isOnAuthPath) {
                     router.replace("/(root)/(tabs)/home");
                 }

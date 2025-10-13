@@ -26,8 +26,11 @@ import {
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 const MAIN_VEHICLE_CATEGORIES = [
-  { key: 'ROADSIDE_CAR', label: 'Car Services' },
-  { key: 'ROADSIDE_BIKE', label: 'Bike Services' },
+  { key: 'INGARAGE_CAR', label: 'In-Garage Car Services' },
+  { key: 'INGARAGE_BIKE', label: 'In-Garage Bike Services' },
+  { key: 'INGARAGE_ELECTRIC', label: 'In-Garage Electric Vehicle Services' },
+  { key: 'ROADSIDE_CAR', label: 'Roadside Car Services' },
+  { key: 'ROADSIDE_BIKE', label: 'Roadside Bike Services' },
   { key: 'ELECTRIC_VEHICLE', label: 'Electric Vehicle Services' },
   { key: 'HOME_SERVICE', label: 'Home Services' },
   { key: 'LUXURY', label: 'Luxury Services' },
@@ -110,20 +113,11 @@ export default function AddServicesScreen() {
             setMasterServices(data);
 
             const initialSelections: ServiceSelectionState = {};
-            const initialCategorySelections: { [key: string]: boolean } = {};
-            
-            const categories = new Set<string>();
             data.forEach(service => {
                 initialSelections[service.id] = { selected: false, price: '' };
-                categories.add(service.category || 'GENERAL_LISTING');
-            });
-
-            categories.forEach(category => {
-                initialCategorySelections[category] = false;
             });
 
             setSelections(initialSelections);
-            setCategorySelections(initialCategorySelections);
             setSelectedVehicleCategories([]); // Initialize as empty
             console.log("6. State initialized.");
 
@@ -197,24 +191,37 @@ export default function AddServicesScreen() {
   const handleNext = () => {
     const selectedServices = Object.entries(selections)
       .filter(([, value]) => value.selected)
-      .map(([serviceId, value]) => ({
-        serviceId,
-        price: parseFloat(value.price),
-        duration: 60, // Add default duration
-        garageId: '',  // Add placeholder for new garage
-      }));
+      .map(([serviceId, value]) => {
+        const service = masterServices.find(s => s.id === serviceId);
+        const isNoPriceCategory = service?.category === 'INGARAGE_CAR' || service?.category === 'INGARAGE_BIKE';
+        
+        return {
+          serviceId,
+          price: isNoPriceCategory ? 0 : parseFloat(value.price),
+          duration: 60, // Add default duration
+          garageId: '',  // Add placeholder for new garage
+          // Temporary property for validation
+          _isNoPriceCategory: isNoPriceCategory,
+        };
+      });
 
     if (selectedServices.length === 0) {
       return Alert.alert('No Services Selected', 'Please select and price at least one service to offer.');
     }
-    if (selectedServices.some(s => isNaN(s.price) || s.price <= 0)) {
-      return Alert.alert('Invalid Price', 'Please enter a valid, positive price for all selected services.');
+
+    // Validate prices only for services that require them
+    const invalidPriceService = selectedServices.find(s => !s._isNoPriceCategory && (isNaN(s.price) || s.price <= 0));
+    if (invalidPriceService) {
+      return Alert.alert('Invalid Price', 'Please enter a valid, positive price for all selected services that require pricing.');
     }
 
-    saveServicesToStore(selectedServices);
+    // Prepare data for the store by removing the temporary property
+    const servicesToStore = selectedServices.map(({ _isNoPriceCategory, ...rest }) => rest);
+
+    saveServicesToStore(servicesToStore);
     console.log("AddServicesScreen: Saving selectedVehicleCategories to store:", selectedVehicleCategories);
     setSupportedVehicleTypes(selectedVehicleCategories);
-    router.push('/settings/add-business/businesssetup/garage-setup/location-picker');
+    router.push('/settings/add-business/businesssetup/location-picker');
   };
 
   const categorizedServices = useMemo(() => {
@@ -296,7 +303,7 @@ export default function AddServicesScreen() {
                                     value={selectionState.selected}
                                 />
                             </View>
-                            {selectionState.selected && (
+                            {selectionState.selected && !['INGARAGE_CAR', 'INGARAGE_BIKE'].includes(service.category) && (
                             <View style={styles.priceInputContainer}>
                                 <TextInput
                                     style={styles.priceInput}

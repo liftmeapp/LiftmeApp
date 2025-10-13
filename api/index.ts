@@ -133,20 +133,21 @@ app.get(
     async (req: Request, res: Response) => {
         try {
             console.log("[API /api/services] Attempting to fetch services...");
-            const categories = req.query.categories as string;
-            let whereClause = {};
+            const { categories } = req.query;
+            let whereClause: any = {};
 
-            if (categories) {
-                console.log(`[API /api/services] Filtering by categories: ${categories}`);
-                const categoryArray = categories.split(',').map(cat => cat.trim().toUpperCase());
-                whereClause = { category: { in: categoryArray } };
+            if (categories && typeof categories === 'string') {
+                const categoryList = categories.split(',');
+                whereClause.category = {
+                    in: categoryList,
+                };
             }
 
             const services = await prisma.service.findMany({
                 where: whereClause,
                 orderBy: { name: 'asc' },
             });
-            console.log(`[API /api/services] Successfully fetched ${services.length} services.`);
+            console.log(`[API /api/services] Successfully fetched ${services.length} services with filters: ${JSON.stringify(whereClause)}`);
             return res.status(200).json(services);
         } catch (error) {
             console.error("[API /api/services] CRITICAL: Failed to fetch services.", error);
@@ -159,12 +160,6 @@ app.use('/api', chatRoutes);
 app.use('/api', sparePartRoutes);
 
 // Apply express.json() middleware for all subsequent routes
-
-
-
-
-
-
 
 app.get(
     '/api/users/my-business',

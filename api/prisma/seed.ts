@@ -71,11 +71,20 @@ const servicesToSeed = [
   { name: "EV Cooling System Maintenance", icon: "ev-cool.png", type: "GARAGE", category: ServiceCategory.INGARAGE_ELECTRIC, description: "Coolant and thermal system maintenance for battery health." },
   { name: "EV Motor Service", icon: "ev-motor.png", type: "GARAGE", category: ServiceCategory.INGARAGE_ELECTRIC, description: "Electric drive motor inspection and replacement." },
 
+  //
+  //Luxury
+  //
+  { name: "Luxury-Performance Tuning", icon: "luxury-tuning.png", type: "GARAGE", category: ServiceCategory.LUXURY, description: "ECU and performance tuning for sports and luxury cars." },
+  { name: "Luxury-Certified Tech Service", icon: "luxury-tech.png", type: "GARAGE", category: ServiceCategory.LUXURY, description: "Service by manufacturer-certified technicians for luxury brands." },
+  { name: "Luxury-Concierge Detailing", icon: "luxury-detailing.png", type: "GARAGE", category: ServiceCategory.LUXURY, description: "High-end, meticulous vehicle detailing service." },
+
+    //===========================
   // ============================
   // Towing Services
   // ============================
-  { name: "Towing - Sedan", icon: "tow-sedan.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Flatbed towing service for sedans." },
-  { name: "Towing - SUV", icon: "tow-suv.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Safe towing for SUVs and 4x4 vehicles." },
+  { name: "Towing - Hatchback", icon: "tow-sedan.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Towing service for Hatchbacks." },
+  { name: "Towing - Sedan", icon: "tow-sedan.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Towing service for Sedans." },
+  { name: "Towing - SUV", icon: "tow-suv.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Towing service for SUVs and 4x4 vehicles." },
   { name: "Towing - Bike", icon: "tow-bike.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Two-wheeler towing with specialized carriers." },
   { name: "Towing - Luxury Enclosed", icon: "luxury-transport.png", type: "TOW_TRUCK", category: ServiceCategory.TOWING, description: "Enclosed, secure towing for luxury or sports cars." },
 ];
