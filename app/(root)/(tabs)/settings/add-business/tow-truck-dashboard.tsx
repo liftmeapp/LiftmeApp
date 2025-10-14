@@ -88,24 +88,29 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
             </View>
         )}
         {(booking.status === 'CONFIRMED' || booking.status === 'IN_PROGRESS') && (
-            <View style={styles.bookingActions}>
+            <View style={styles.buttonRow}>
                 <TouchableOpacity 
-                    style={[styles.bookingButton, styles.cancelButton]} 
+                    style={[styles.cardActionButton, styles.cancelButton]}
                     onPress={() => onCancel(booking.id)}
                 >
-                    <Text style={styles.bookingButtonText}>Cancel</Text>
+                    <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                    <Text style={styles.cardActionButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                 <View style={styles.bookingActions}>
-                <TouchableOpacity style={[styles.bookingButton, styles.chatButton]} onPress={() => onChat(booking.id)}>
-                    <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
-                    <Text style={styles.bookingButtonText}>Chat</Text>
-                </TouchableOpacity>
-            </View>
+                
                 <TouchableOpacity 
-                    style={[styles.bookingButton, styles.completeButton]} 
+                    style={[styles.cardActionButton, styles.chatButton]}
+                    onPress={() => onChat(booking.id)}
+                >
+                    <Ionicons name="chatbubble-ellipses-outline" size={16} color="#fff" />
+                    <Text style={styles.cardActionButtonText}>Chat</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                    style={[styles.cardActionButton, styles.completeButton]}
                     onPress={() => onComplete(booking.id)}
                 >
-                    <Text style={styles.bookingButtonText}>
+                    <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                    <Text style={styles.cardActionButtonText}>
                         {booking.bookingType === 'TOW_TO_GARAGE' ? 'Confirm Delivery' : 'Complete Service'}
                     </Text>
                 </TouchableOpacity>
@@ -829,7 +834,30 @@ const styles = StyleSheet.create({
     },
     chatButton: {
         backgroundColor: '#3498db',
+    },
+    buttonRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 15,
+        paddingTop: 15,
+        borderTopWidth: 1,
+        borderTopColor: '#f0f0f0',
+        gap: 8,
+    },
+    cardActionButton: {
         flex: 1,
-        marginRight: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 4,
+        borderRadius: 6,
+        minHeight: 36,
+    },
+    cardActionButtonText: {
+        color: 'white',
+        fontSize: 12,
+        fontWeight: '600',
+        marginLeft: 4,
     },
 });

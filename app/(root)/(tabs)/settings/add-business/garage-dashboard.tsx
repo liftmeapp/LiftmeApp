@@ -48,6 +48,12 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
 
     const showChatButton = ['CONFIRMED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status);
 
+    const showCurrentTabActions =
+        currentTab === 'Current' &&
+        (booking.bookingType !== 'TOW_TO_GARAGE' ||
+            (booking.bookingType === 'TOW_TO_GARAGE' &&
+                ['AWAITING_GARAGE_QUOTE', 'AWAITING_QUOTE_APPROVAL', 'SERVICE_IN_PROGRESS'].includes(booking.subStatus)));
+
 
     return (
     <View style={styles.bookingCard}>
@@ -107,7 +113,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
             </TouchableOpacity>
         )}
 
-        {currentTab === 'Current' && (
+        {showCurrentTabActions && (
             <View style={styles.buttonRow}>
                 <TouchableOpacity 
                     style={[styles.actionButton, styles.cancelButton]}
