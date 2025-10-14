@@ -1,6 +1,7 @@
 import { useGarageStore } from '@/store/garageStore';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -9,7 +10,70 @@ import { io } from "socket.io-client";
 // --- CONFIGURATION ---
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
+// --- NOTIFICATION HANDLER ---
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,  // Add this line
+    shouldShowList: true   
+  }),
+});
+
 // --- Reusable Components ---
+
+async function registerForPushNotificationsAsync(providerId: string, type: 'garage' | 'towTruck', getToken: () => Promise<string | null>) {
+  let token;
+  if (Platform.OS === 'android') {
+    Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+    });
+  }
+
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+  if (finalStatus !== 'granted') {
+    Alert.alert('Permission not granted', 'Failed to get push token for push notification!');
+    return;
+  }
+  token = (await Notifications.getExpoPushTokenAsync()).data;
+  console.log('Expo Push Token:', token);
+
+  // Send the token to your backend
+  try {
+    const authToken = await getToken();
+    if (!authToken) {
+      console.error('Auth token not available for sending push token to backend.');
+      return;
+    }
+    const response = await fetch(`${API_BASE_URL}/api/notifications/register-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ token, providerId, type }),
+    });
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Failed to send push token to backend:', errorData);
+    } else {
+      console.log('Push token sent to backend successfully.');
+    }
+  } catch (error) {
+    console.error('Error sending push token to backend:', error);
+  }
+
+  return token;
+}
 
 const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap, label: string, value?: string | number | null }) => (
     value ? (
@@ -50,6 +114,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
 
     const showCurrentTabActions =
         currentTab === 'Current' &&
+        (booking.status === 'CONFIRMED' || booking.status === 'IN_PROGRESS') &&
         (booking.bookingType !== 'TOW_TO_GARAGE' ||
             (booking.bookingType === 'TOW_TO_GARAGE' &&
                 ['AWAITING_GARAGE_QUOTE', 'AWAITING_QUOTE_APPROVAL', 'SERVICE_IN_PROGRESS'].includes(booking.subStatus)));
@@ -532,13 +597,32 @@ export default function GarageDashboard() {
             socket.emit('register_provider', garageId);
         });
 
-        const handleNewBooking = (newBooking: any, type: string) => {
+        const handleNewBooking = async (newBooking: any, type: string) => {
             console.log(`🎉 [Socket.IO] Received ${type}:`, newBooking);
+            let title = '';
+            let body = '';
+
             if (type === 'new_tow_in_request') {
-                Alert.alert('New Tow-In Request!', `A customer needs a ${newBooking.vehicle.name} towed to your garage for service.`);
+                title = 'New Tow-In Request!';
+                body = `A customer needs a ${newBooking.vehicle.name} towed to your garage for service.`;
             } else {
-                Alert.alert('New Job Request!', `You have a new job request in your pending list.`);
+                title = 'New Job Request!';
+                body = `You have a new job request in your pending list.`;
             }
+
+            // Show alert for immediate feedback
+            Alert.alert(title, body);
+
+            // Schedule a local notification
+            await Notifications.scheduleNotificationAsync({
+                content: {
+                    title: title,
+                    body: body,
+                    data: { bookingId: newBooking.id, type: type },
+                },
+                trigger: null, // Show immediately
+            });
+
             fetchData();
         };
 
@@ -587,8 +671,11 @@ export default function GarageDashboard() {
     }, [garageId, fetchData]);
 
     useEffect(() => {
+        if (garageId) {
+            registerForPushNotificationsAsync(garageId, 'garage', getToken);
+        }
         fetchData(); // Fetch immediately on mount/tab change
-    }, [fetchData]); 
+    }, [fetchData, garageId]); 
         
     const onRefresh = useCallback(() => {
         fetchData(true); // Pass true to show refresh indicator

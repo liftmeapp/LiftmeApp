@@ -420,26 +420,75 @@
   }
 
 model Chat {
-  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+
   bookingId String    @unique @db.ObjectId
+
   booking   Booking   @relation(fields: [bookingId], references: [id])
+
   
+
   messages  Message[]
+
   participantClerkIds String[]
+
   createdAt DateTime  @default(now())
+
   updatedAt DateTime  @updatedAt
+
 }
 
+
+
 model Message {
+
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
+
   chatId    String   @db.ObjectId
+
   chat      Chat     @relation(fields: [chatId], references: [id])
+
   
+
   senderId  String   @db.ObjectId
+
   sender    User     @relation("UserMessages", fields: [senderId], references: [id])
+
   
+
   content   String
+
   createdAt DateTime @default(now())
 
+
+
   @@index([chatId])
+
+}
+
+
+
+model PushToken {
+
+  id           String @id @default(auto()) @map("_id") @db.ObjectId
+
+  token        String @unique // The ExpoPushToken
+
+  providerId   String // ID of the garage or tow truck
+
+  providerType String // 'garage' or 'towTruck'
+
+  clerkId      String // Clerk ID of the owner
+
+
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+
+
+  @@map("push_tokens")
+
 }

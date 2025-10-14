@@ -388,6 +388,9 @@ const TowingServiceMapContent = () => {
                                 <Text style={styles.priceLabel}>Total (Service + Distance):</Text>
                                 <Text style={styles.priceValue}>AED {finalPrice.toFixed(2)}</Text>
                             </View>
+                            <Text style={styles.pricingExplanation}>
+                                *Price is calculated based on your vehicle type's rate per kilometer.
+                            </Text>
                         </View>
     
                         <TouchableOpacity 
@@ -511,4 +514,11 @@ const styles = StyleSheet.create({
     garageButtonText: { color: color.primary, fontSize: 18, fontWeight: 'bold', marginLeft: 10 },
     cancelBookingButton: { alignItems: 'center', justifyContent: 'center', backgroundColor: color.danger, paddingVertical: 15, borderRadius: 10, marginTop: 10 },
     cancelBookingButtonText: { color: color.white, fontSize: 16, fontWeight: '600' },
+    pricingExplanation: {
+        fontSize: 12,
+        color: color.mediumGray,
+        textAlign: 'center',
+        marginTop: 5,
+        marginBottom: 10,
+    },
 });

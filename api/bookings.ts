@@ -866,7 +866,7 @@ bookingsRouter.get('/bookings/active', async (req: Request, res: Response) => {
         const activeBookings = await prisma.booking.findMany({
             where: {
                 user: { clerkId: customerClerkId },
-                status: { in: [BookingStatus.PENDING_ACCEPTANCE, BookingStatus.AWAITING_PAYMENT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS] }
+                status: { in: [BookingStatus.PENDING_ACCEPTANCE, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS] }
             },
             include: {
                 garage: true,

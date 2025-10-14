@@ -1,10 +1,21 @@
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react'; // Added useEffect
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { io } from 'socket.io-client'; // Added socket.io-client
+import * as Notifications from 'expo-notifications'; // Added expo-notifications
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+
+// --- NOTIFICATION HANDLER ---
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 interface Chat {
     id: string;
@@ -79,6 +90,51 @@ export default function ConversationsScreen() {
             setRefreshing(false);
         }
     }, []);
+
+    const { userId } = useAuth(); // Get userId here
+
+    useEffect(() => {
+        if (!API_BASE_URL || !userId) { // Check userId here
+            console.error("API_BASE_URL or userId is not defined.");
+            return;
+        }
+
+        const socket = io(API_BASE_URL, {
+            reconnection: true,
+            reconnectionAttempts: 5,
+            transports: ['websocket']
+        });
+
+        socket.on('connect', () => {
+            console.log(`--- [Socket.IO] Connected to chat with ID: ${socket.id} ---`);
+            // Register the customer with the socket
+            socket.emit('register_customer', userId);
+        });
+
+        socket.on('new_message', async (message: any) => {
+            console.log('Received new message:', message);
+            // Schedule a local notification
+            await Notifications.scheduleNotificationAsync({
+                content: {
+                    title: `New Message from ${message.sender.firstName || 'Someone'}`,
+                    body: message.content,
+                    data: { chatId: message.chatId, messageId: message.id },
+                },
+                trigger: null, // Show immediately
+            });
+            // Optionally, refresh chats to show the new message
+            fetchChats();
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log(`--- [Socket.IO] Disconnected from chat: ${reason} ---`);
+        });
+
+        return () => {
+            console.log("--- [Socket.IO] Disconnecting chat socket... ---");
+            socket.disconnect();
+        };
+    }, [API_BASE_URL, userId, fetchChats]); // Dependencies for useEffect
 
     useFocusEffect(
         useCallback(() => {

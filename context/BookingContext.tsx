@@ -125,8 +125,8 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // --- Real-time WebSocket Logic ---
   useEffect(() => {
-    // Only run this effect when we are in the searching stage with a valid booking ID.
-    if (currentStage !== BookingStage.SEARCHING_FOR_PROVIDER || !currentBookingId) {
+    // Connect WebSocket as long as user is available
+    if (!user?.id) { // Connect if user is logged in
       return;
     }
 
@@ -143,7 +143,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
             console.log('[BookingContext] Booking IDs match! Updating stage to PAYMENT.');
             setSelectedProvider(data.provider);
             setCurrentStage(BookingStage.PAYMENT); // Move to payment stage
-            socket.disconnect();
+            // socket.disconnect(); // REMOVED: Socket should remain connected for further events
         } else {
             console.warn(`[BookingContext] Booking ID mismatch. Current: ${currentBookingId}, Received: ${data.bookingId}. Ignoring event.`);
         }
@@ -158,6 +158,14 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
         }
     };
 
+    const handleServiceCompleted = (data: any) => {
+        console.log(`✅ [Socket.IO] Received 'service_completed':`, data);
+        if (data.bookingId === currentBookingId) {
+            Alert.alert('Service Completed', 'Your service has been successfully completed!');
+            resetBookingFlow(); // Reset the context after service completion
+        }
+    };
+
     socket.on('connect', () => {
         console.log(`[Socket.IO] Customer connected with ID: ${socket.id}`);
         // Register the customer with their Clerk user ID
@@ -169,6 +177,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
     // Listen for events from the server
     socket.on('booking_accepted', handleBookingAccepted);
     socket.on('booking_expired', handleBookingExpired);
+    socket.on('service_completed', handleServiceCompleted);
 
     socket.on('disconnect', (reason) => {
         console.log(`[Socket.IO] Customer disconnected: ${reason}`);
@@ -179,10 +188,11 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log('[BookingContext] Cleaning up WebSocket connection.');
         socket.off('booking_accepted', handleBookingAccepted);
         socket.off('booking_expired', handleBookingExpired);
+        socket.off('service_completed', handleServiceCompleted);
         socket.disconnect();
     };
 
-  }, [currentStage, currentBookingId, user]);
+  }, [user?.id, currentBookingId, currentStage, resetBookingFlow]); // Dependencies for useEffect
 
   // Countdown Timer Effect
   useEffect(() => {

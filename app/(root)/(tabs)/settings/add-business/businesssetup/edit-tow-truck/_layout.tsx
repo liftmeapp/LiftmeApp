@@ -5,7 +5,7 @@ import React from 'react';
 export default function EditTowTruckLayout() {
   return (
     <Stack>
-      <Stack.Screen name="edit-tow-truck-details" options={{ title: 'Edit Tow Truck' }} />
+      <Stack.Screen options={{ headerShown: false }} />
     </Stack>
   );
 }
