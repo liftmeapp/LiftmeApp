@@ -9,70 +9,78 @@ import { Order } from './types';
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 export default function ProfileScreen() {
-  const { isLoaded, isSignedIn, user } = useUser();
+  const { isLoaded: isClerkLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   const router = useRouter();
 
   const [orderHistory, setOrderHistory] = useState<Order[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [dbUser, setDbUser] = useState<any>(null); // To store user data from our DB
+  const [isLoading, setIsLoading] = useState(true);
   
   const isFetchingRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
       const fetchData = async () => {
-        // Guard 1: Prevent stacking fetches if one is already running
-        if (isFetchingRef.current) {
-          console.log('[ProfileScreen] Fetch already in progress, skipping.');
+        if (isFetchingRef.current) return;
+        if (!isSignedIn || !user?.id) {
+          setIsLoading(false);
           return;
         }
 
-        // Guard 2: Don't fetch if not signed in
-        if (!isSignedIn || !user?.id) {
-          console.log('[ProfileScreen] Not signed in, skipping fetch.');
-          // If user is not signed in, we are not loading anything.
-          setLoadingHistory(false); 
-          return;
-        }
+        isFetchingRef.current = true;
+        setIsLoading(true);
 
         try {
-          console.log('[ProfileScreen] Starting history fetch...');
-          isFetchingRef.current = true;
-          setLoadingHistory(true);
-
           const token = await getToken();
           if (!token) throw new Error("Authentication token not found.");
           
-          const response = await fetch(`${API_BASE_URL}/api/bookings/history`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
+          // Fetch both history and user profile in parallel
+          const [historyResponse, profileResponse] = await Promise.all([
+            fetch(`${API_BASE_URL}/api/bookings/history`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }),
+            fetch(`${API_BASE_URL}/api/users/me`, { // Fetch user from our DB
+              headers: { 'Authorization': `Bearer ${token}` }
+            })
+          ]);
 
-          if (!response.ok) {
-            const errorBody = await response.text();
+          if (!historyResponse.ok) {
+            const errorBody = await historyResponse.text();
             throw new Error(`Failed to fetch history: ${errorBody}`);
           }
+          if (profileResponse.ok) {
+            const profileData = await profileResponse.json();
+            setDbUser(profileData);
+          } else {
+            // Don't throw an error, we can fallback to Clerk's data
+            console.warn('Could not fetch user profile from local DB.');
+          }
 
-          const data = await response.json();
-          console.log('[ProfileScreen] History fetched successfully.');
-          setOrderHistory(data);
+          const historyData = await historyResponse.json();
+          setOrderHistory(historyData);
 
         } catch (error: any) {
-          console.error('[ProfileScreen] Error fetching history:', error.message);
-          Alert.alert('Error', 'Could not load your order history.');
+          console.error('[ProfileScreen] Error fetching data:', error.message);
+          Alert.alert('Error', 'Could not load your profile data.');
         } finally {
-          // IMPORTANT: Always release the lock and loading state
           isFetchingRef.current = false;
-          setLoadingHistory(false);
+          setIsLoading(false);
         }
       };
       fetchData();
       return () => {
-        console.log('[ProfileScreen] Screen blurred.');
-        };
+        isFetchingRef.current = false; // Reset on blur
+      };
     }, [isSignedIn, user?.id]) 
   );
 
-  if (!isLoaded) {
+  // Determine the name to display. Prioritize our DB, then Clerk, then a fallback.
+  const displayName = dbUser?.firstName 
+    ? `${dbUser.firstName} ${dbUser.lastName || ''}`.trim() 
+    : (user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : 'User');
+
+  if (!isClerkLoaded || isLoading) {
     return (
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator size="large" color="#b95528" />
@@ -98,7 +106,7 @@ export default function ProfileScreen() {
         />
         <View style={styles.profileDetails}>
           <Text style={styles.name}>
-            {user.firstName || user.lastName ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'User'}
+            {displayName}
           </Text>
           {user.primaryEmailAddress?.emailAddress && (
             <Text style={styles.contactInfo}>{user.primaryEmailAddress.emailAddress}</Text>
@@ -111,7 +119,7 @@ export default function ProfileScreen() {
 
       <TouchableOpacity
         style={styles.manageAccountButton}
-      onPress={() => router.push('/(root)/(tabs)/settings/usersettings')}
+        onPress={() => router.push('/(root)/(tabs)/settings/usersettings')}
       >
         <Text style={styles.manageAccountButtonText}>Manage Account</Text>
       </TouchableOpacity>
@@ -119,7 +127,7 @@ export default function ProfileScreen() {
       <View style={styles.divider} />
 
       <Text style={styles.sectionTitle}>Service Summary</Text>
-      {loadingHistory ? (
+      {isLoading ? (
         <ActivityIndicator size="large" color="#b95528" style={{ marginTop: 20 }} />
       ) : orderHistory.length > 0 ? (
         <FlatList

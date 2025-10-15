@@ -18,7 +18,6 @@ const HorizontalScrollView = () => {
       snapToInterval={cardWidth + 20}
       decelerationRate="fast"
       showsHorizontalScrollIndicator={false}
-      className="mb-1"
     >
       {data.map((item) => (
         <View key={item.id} style={styles.cardContainer}>
@@ -37,7 +36,6 @@ const HorizontalScrollView = () => {
 
 const styles = StyleSheet.create({
   cardContainer: {
-    height: 155, // 18rem
     marginHorizontal: 8, // mx-2
     marginBottom: 2,
     marginTop:2, // mb-5

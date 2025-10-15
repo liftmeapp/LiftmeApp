@@ -38,7 +38,7 @@ const TowingServiceMapContent = () => {
     const router = useRouter();
     const { getToken } = useAuth();
     const bottomSheetRef = useRef<BottomSheet>(null);
-    const snapPoints = useMemo(() => ['45%', '80%'], []);
+    const snapPoints = useMemo(() => ['45%', '85%'], []);
 
     // --- STATE MANAGEMENT ---
     const [savedCards, setSavedCards] = useState<any[]>([]);
@@ -86,6 +86,7 @@ const TowingServiceMapContent = () => {
         
         if (currentStage === TowingBookingStage.CONFIRMED) {
             router.replace('/(root)/(tabs)/orders');
+            resetTowingBookingFlow();
             return;
         }
 
@@ -253,6 +254,10 @@ const TowingServiceMapContent = () => {
                         <Text style={styles.confirmButtonText}>Confirm Vehicle & Set Pickup</Text>
                     </TouchableOpacity>
                 )}
+                 <TouchableOpacity style={styles.addVehicleButton} onPress={() => router.push('/(root)/(tabs)/settings/vehicle-page/add-vehicle')}>
+                    <Ionicons name="add-circle-outline" size={22} color={color.white} />
+                    <Text style={styles.addVehicleButtonText}>Add a New Vehicle</Text>
+                </TouchableOpacity>
             </BottomSheetView>
         );
     };    
@@ -384,9 +389,19 @@ const TowingServiceMapContent = () => {
                                 <Ionicons name="add-circle-outline" size={20} color={color.primary} />
                                 <Text style={styles.addCardButtonText}>Add New Card</Text>
                             </TouchableOpacity>
-                            <View style={styles.priceSummary}>
-                                <Text style={styles.priceLabel}>Total (Service + Distance):</Text>
-                                <Text style={styles.priceValue}>AED {finalPrice.toFixed(2)}</Text>
+                            <View style={styles.priceBreakdownContainer}>
+                                <View style={styles.priceRow}>
+                                    <Text style={styles.priceLabel}>Distance</Text>
+                                    <Text style={styles.priceValue}>{selectedProvider?.distance?.toFixed(1) || 'N/A'} km</Text>
+                                </View>
+                                <View style={styles.priceRow}>
+                                    <Text style={styles.priceLabel}>Rate</Text>
+                                    <Text style={styles.priceValue}>INR {selectedProvider?.pricePerKm?.toFixed(2) || '0.00'} / km</Text>
+                                </View>
+                                <View style={[styles.priceRow, styles.totalRow]}>
+                                    <Text style={[styles.priceLabel, styles.totalLabel]}>Total Fare</Text>
+                                    <Text style={[styles.priceValue, styles.totalValue]}>INR {finalPrice.toFixed(2)}</Text>
+                                </View>
                             </View>
                             <Text style={styles.pricingExplanation}>
                                 *Price is calculated based on your vehicle type's rate per kilometer.
@@ -412,7 +427,7 @@ const TowingServiceMapContent = () => {
                                 <ActivityIndicator color={color.white}/>
                             ) : (
                                 <Text style={styles.confirmButtonText}>
-                                    {paymentMethod === 'CASH' ? 'Confirm Booking' : `Pay AED ${finalPrice.toFixed(2)} & Confirm`}
+                                    {paymentMethod === 'CASH' ? 'Confirm Booking' : `Pay INR ${finalPrice.toFixed(2)} & Confirm`}
                                 </Text>)}
                         </TouchableOpacity>
                         <TouchableOpacity 
@@ -494,9 +509,13 @@ const styles = StyleSheet.create({
     searchErrorText: { color: '#c62828', fontSize: 14 },
     confirmationBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#e8f5e9', padding: 14, borderRadius: 8, borderWidth: 1, borderColor: color.success, marginBottom: 15 },
     confirmationBannerText: { color: '#2e7d32', fontSize: 15, fontWeight: '500', marginLeft: 10, flexShrink: 1 },
-    priceSummary: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: color.border, paddingTop: 15, marginTop: 5 },
-    priceLabel: { fontSize: 16, fontWeight: '600', color: color.darkGray },
-    priceValue: { fontSize: 16, fontWeight: 'bold', color: color.primary },
+    priceBreakdownContainer: { marginVertical: 15, padding: 15, backgroundColor: color.lightGray, borderRadius: 10 },
+    priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
+    totalRow: { borderTopWidth: 1, borderTopColor: color.border, marginTop: 8, paddingTop: 12 },
+    priceLabel: { fontSize: 16, color: color.mediumGray },
+    priceValue: { fontSize: 16, fontWeight: '500', color: color.darkGray },
+    totalLabel: { fontSize: 18, fontWeight: 'bold', color: color.darkGray },
+    totalValue: { fontSize: 18, fontWeight: 'bold', color: color.primary },
     contentArea: { flex: 1, marginBottom: 20 },
     paymentMethodHeader: { fontSize: 16, fontWeight: '600', color: color.darkGray, marginBottom: 15 },
     cardItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: color.white, padding: 15, borderRadius: 10, marginBottom: 10, borderWidth: 1, borderColor: color.border },
@@ -513,12 +532,28 @@ const styles = StyleSheet.create({
     garageButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff8f2', padding: 15, borderRadius: 10, borderWidth: 1.5, borderColor: color.primary, borderStyle: 'solid' },
     garageButtonText: { color: color.primary, fontSize: 18, fontWeight: 'bold', marginLeft: 10 },
     cancelBookingButton: { alignItems: 'center', justifyContent: 'center', backgroundColor: color.danger, paddingVertical: 15, borderRadius: 10, marginTop: 10 },
-    cancelBookingButtonText: { color: color.white, fontSize: 16, fontWeight: '600' },
+    cancelBookingButtonText: { color: color.white, fontSize: 16, fontWeight: '600',paddingBottom: 10 },
     pricingExplanation: {
         fontSize: 12,
         color: color.mediumGray,
         textAlign: 'center',
         marginTop: 5,
         marginBottom: 10,
+    },
+    addVehicleButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#27ae60',
+        paddingVertical: 14,
+        borderRadius: 10,
+        marginTop: 5,
+        marginBottom: 4,
+    },
+    addVehicleButtonText: {
+        color: color.white,
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginLeft: 10,
     },
 });

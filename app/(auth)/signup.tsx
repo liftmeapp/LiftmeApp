@@ -150,21 +150,24 @@ export default function SignUpScreen() {
     setIsLoading(true);
 
     try {
+      // Pass firstName and lastName as top-level parameters for Clerk
+      // This makes them available directly on the user object (user.firstName)
       const signUpParams: any = {
-        phoneNumber: formattedPhoneNumber, // Use the full formatted number from the library
+        phoneNumber: formattedPhoneNumber,
         password,
-        unsafeMetadata: {
-          firstName: firstName.trim(),
-          ...(lastName.trim() && { lastName: lastName.trim() }), // Add lastName if provided
-          ...(emailAddress.trim() && { providedEmail: emailAddress.trim() }),
-        }
+        firstName: firstName.trim(),
       };
 
-      // If your Clerk instance is configured to also accept 'firstName' and 'lastName' as top-level params
-      // during sign-up (check User Attributes in Clerk dashboard, some might be allowed), you could try:
-      // signUpParams.firstName = firstName.trim();
-      // if (lastName.trim()) signUpParams.lastName = lastName.trim();
-      // But unsafeMetadata is safer for custom/non-primary fields.
+      if (lastName.trim()) {
+        signUpParams.lastName = lastName.trim();
+      }
+
+      // Also save to unsafeMetadata as a backup and for any other custom data
+      signUpParams.unsafeMetadata = {
+        firstName: firstName.trim(),
+        ...(lastName.trim() && { lastName: lastName.trim() }),
+        ...(emailAddress.trim() && { providedEmail: emailAddress.trim() }),
+      };
 
       console.log("Creating sign up with params:", JSON.stringify(signUpParams));
       await signUp.create(signUpParams);

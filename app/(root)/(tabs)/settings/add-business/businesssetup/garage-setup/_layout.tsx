@@ -1,4 +1,6 @@
 
-export default function SettingsLayout() {
-  return 
+import { Stack } from 'expo-router';
+
+export default function GarageSetupLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
 }

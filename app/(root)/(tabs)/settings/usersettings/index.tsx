@@ -1,7 +1,9 @@
-import { useUser } from '@clerk/clerk-expo';
-import { Stack } from 'expo-router';
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import { Stack, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 type ModalType = 'email' | 'phone' | null;
 
@@ -93,30 +95,100 @@ const ManagementModal = ({ visible, type, onClose }: { visible: boolean; type: M
 
 const UserSettingsScreen = () => {
   const { user, isLoaded } = useUser();
+  const { getToken, signOut } = useAuth();
+  const router = useRouter();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState<ModalType>(null);
 
   useEffect(() => {
-    if (user) {
-      setFirstName(user.firstName || '');
-      setLastName(user.lastName || '');
-    }
-  }, [user]);
+    const fetchUserDataFromDb = async () => {
+      if (!isLoaded || !user) {
+        setIsLoadingProfile(false);
+        return;
+      }
+      setIsLoadingProfile(true);
+      try {
+        const token = await getToken();
+        if (!token) throw new Error("No auth token");
+
+        const response = await fetch(`${API_BASE_URL}/api/users/me`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (!response.ok) throw new Error("Failed to fetch from DB");
+        
+        const dbUser = await response.json();
+        setFirstName(dbUser.firstName || '');
+        setLastName(dbUser.lastName || '');
+
+      } catch (e) {
+        console.error("Error fetching user profile from DB:", e);
+        // If DB fails, fall back to Clerk data
+        setFirstName(user.firstName || '');
+        setLastName(user.lastName || '');
+      } finally {
+        setIsLoadingProfile(false);
+      }
+    };
+
+    fetchUserDataFromDb();
+  }, [isLoaded, user]);
 
   const onSaveName = async () => {
     if (!firstName) { Alert.alert('First name is required.'); return; }
     setIsSaving(true);
     try {
-      await user?.update({ firstName, lastName });
+      const updateData: { firstName: string; lastName?: string } = { firstName };
+      if (lastName) {
+        updateData.lastName = lastName;
+      }
+      await user?.update(updateData);
       Alert.alert('Success', 'Your profile has been updated.');
     } catch (error: any) {
-      Alert.alert('Error', error.errors?.[0]?.message || 'Failed to update profile.');
+      const errorMessage = error.errors?.[0]?.longMessage || error.errors?.[0]?.message || 'An unknown error occurred while updating your profile.';
+      Alert.alert('Error', errorMessage);
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const onDeleteAccount = async () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you absolutely sure? This action is irreversible and will permanently delete your account and all associated data.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const token = await getToken();
+              const response = await fetch(`${API_BASE_URL}/api/users/me`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` },
+              });
+
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: "Failed to delete account." }));
+                throw new Error(errorData.error);
+              }
+
+              await signOut();
+              router.replace('/(auth)/signin');
+              Alert.alert("Account Deleted", "Your account has been successfully deleted.");
+
+            } catch (error: any) {
+              Alert.alert("Error", error.message);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const openModal = (type: ModalType) => {
@@ -137,11 +209,17 @@ const UserSettingsScreen = () => {
         <Stack.Screen options={{ title: 'Profile Settings' }} />
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Personal Information</Text>
-          <TextInput style={styles.input} placeholder="First Name" value={firstName} onChangeText={setFirstName} />
-          <TextInput style={styles.input} placeholder="Last Name" value={lastName} onChangeText={setLastName} />
-          <TouchableOpacity style={styles.saveButton} onPress={onSaveName} disabled={isSaving}>
-            {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Update Name</Text>}
-          </TouchableOpacity>
+          {isLoadingProfile ? (
+            <ActivityIndicator style={{ marginVertical: 20 }} />
+          ) : (
+            <>
+              <TextInput style={styles.input} placeholder="First Name" value={firstName} onChangeText={setFirstName} />
+              <TextInput style={styles.input} placeholder="Last Name" value={lastName} onChangeText={setLastName} />
+              <TouchableOpacity style={styles.saveButton} onPress={onSaveName} disabled={isSaving}>
+                {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Update Name</Text>}
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -161,6 +239,12 @@ const UserSettingsScreen = () => {
           </View>
           <TouchableOpacity style={styles.addButton} onPress={() => openModal('phone')}>
             <Text style={styles.addButtonText}>{primaryPhone ? 'Update Phone Number' : 'Add Phone Number'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <TouchableOpacity style={styles.deleteButton} onPress={onDeleteAccount}>
+            <Text style={styles.deleteButtonText}>Delete Account</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -190,6 +274,17 @@ const styles = StyleSheet.create({
   modalButton: { backgroundColor: '#007BFF', padding: 15, borderRadius: 8, alignItems: 'center' },
   modalButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   closeButton: { alignSelf: 'flex-end', marginBottom: 10 },
+  deleteButton: {
+    backgroundColor: '#dc3545',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
 });
 
 export default UserSettingsScreen;

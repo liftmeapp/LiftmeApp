@@ -1,5 +1,5 @@
 // /api/index.ts
-import { ClerkExpressWithAuth } from '@clerk/clerk-sdk-node';
+import { ClerkExpressWithAuth, clerkClient } from '@clerk/clerk-sdk-node';
 import { Client } from '@googlemaps/google-maps-services-js';
 import { PrismaClient, Role } from '@prisma/client';
 import cors from 'cors';
@@ -112,6 +112,36 @@ app.post(
                 // You should have monitoring (e.g., Sentry) on this error log.
                 return res.status(200).json({ message: 'Webhook processed, but DB creation failed.' });
             }
+        } else if (eventType === 'user.updated') {
+            console.log("Processing 'user.updated' event...");
+            const { id, first_name, last_name } = evt.data;
+
+            if (!id) {
+                console.error('🔴 Error: Clerk user ID is missing from update payload.');
+                return res.status(200).json({ message: 'Error: Missing Clerk user ID' });
+            }
+
+            const userDataForDb = {
+                firstName: first_name || undefined,
+                lastName: last_name || undefined,
+            };
+
+            console.log("Attempting to update user in DB for Clerk ID:", id, "with data:", userDataForDb);
+
+            try {
+                await prisma.user.update({
+                    where: { clerkId: id },
+                    data: userDataForDb,
+                });
+                console.log("✅ User successfully updated in database for Clerk ID:", id);
+            } catch (dbError: any) {
+                if (dbError.code === 'P2025') { 
+                     console.warn(`⚠️ User with Clerk ID ${id} not found in local DB for update.`);
+                } else {
+                    console.error('🔴 Database error updating user:', dbError);
+                }
+                return res.status(200).json({ message: 'Webhook processed, but DB update failed.' });
+            }
         } else {
              console.log(`Received unhandled event type: ${eventType}`);
         }
@@ -157,9 +187,36 @@ app.get(
 );
 
 app.use('/api', chatRoutes);
-app.use('/api', sparePartRoutes);
+app.use('/api/spare-parts', sparePartRoutes);
 
 // Apply express.json() middleware for all subsequent routes
+
+app.get(
+    '/api/users/me',
+    ClerkExpressWithAuth(),
+    async (req: Request, res: Response) => {
+        const clerkId = req.auth.userId;
+        if (!clerkId) {
+            return res.status(401).json({ error: 'User not authenticated.' });
+        }
+        try {
+            const userInDb = await prisma.user.findUnique({
+                where: { clerkId: clerkId },
+            });
+
+            if (!userInDb) {
+                return res.status(404).json({ error: 'User not found in database.' });
+            }
+            
+            return res.status(200).json(userInDb);
+
+        } catch (error) {
+            console.error("Failed to fetch user profile:", error);
+            return res.status(500).json({ error: 'An internal server error occurred.' });
+        }
+    }
+);
+
 
 app.get(
     '/api/users/my-business',
@@ -222,6 +279,62 @@ app.get(
     }
 );
 
+
+app.delete(
+    '/api/users/me',
+    ClerkExpressWithAuth(),
+    async (req: Request, res: Response) => {
+        const clerkId = req.auth.userId;
+        if (!clerkId) {
+            return res.status(401).json({ error: 'User not authenticated.' });
+        }
+
+        try {
+            const user = await prisma.user.findUnique({
+                where: { clerkId },
+                include: { garage: true, towTruck: true, sparePartStore: true }
+            });
+
+            if (!user) {
+                // If user is not in our DB, just delete from Clerk and return
+                await clerkClient.users.deleteUser(clerkId);
+                return res.status(200).json({ message: 'Account deleted successfully.' });
+            }
+            const userId = user.id;
+
+            // Prisma Transaction to ensure atomicity
+            await prisma.$transaction(async (tx) => {
+                await tx.booking.deleteMany({ where: { userId } });
+                await tx.vehicle.deleteMany({ where: { userId } });
+                await tx.message.deleteMany({ where: { senderId: userId } });
+
+                if (user.garage) {
+                    await tx.garageService.deleteMany({ where: { garageId: user.garage.id } });
+                    await tx.garage.delete({ where: { id: user.garage.id } });
+                }
+                if (user.towTruck) {
+                    await tx.towTruckService.deleteMany({ where: { towTruckId: user.towTruck.id } });
+                    await tx.liveTruckLocation.delete({ where: { towTruckId: user.towTruck.id } }).catch(() => {});
+                    await tx.towTruck.delete({ where: { id: user.towTruck.id } });
+                }
+                if (user.sparePartStore) {
+                    await tx.sparePart.deleteMany({ where: { storeId: user.sparePartStore.id } });
+                    await tx.sparePartStore.delete({ where: { id: user.sparePartStore.id } });
+                }
+
+                await tx.user.delete({ where: { id: userId } });
+            });
+
+            await clerkClient.users.deleteUser(clerkId);
+
+            return res.status(200).json({ message: 'Account deleted successfully.' });
+
+        } catch (error) {
+            console.error("🔴 FAILED TO DELETE ACCOUNT:", error);
+            return res.status(500).json({ error: 'An internal server error occurred during account deletion.' });
+        }
+    }
+);
 
 app.get(
     '/api/debug/database',

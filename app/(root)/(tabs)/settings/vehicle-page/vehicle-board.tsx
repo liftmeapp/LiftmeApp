@@ -1,10 +1,10 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, RefreshControl, SafeAreaView, FlatList } from "react-native";
-import { useRouter, useFocusEffect, Stack } from "expo-router";
+import RotatingLoader from '@/components/RotatingLoader';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import RotatingLoader from '@/components/RotatingLoader';
+import { Stack, useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useState } from 'react';
+import { Alert, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -144,7 +144,7 @@ export default function VehicleDashboard() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#f8f9fa",marginTop:40 },
+    container: { flex: 1, backgroundColor: "#f8f9fa",marginTop:10 },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     header: { padding: 20, paddingBottom: 10, alignItems: 'center' },
     heading: { fontSize: 28, fontWeight: 'bold' },

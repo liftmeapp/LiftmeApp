@@ -6,7 +6,7 @@ export default function RootLayout() {
 
   return (
     <Stack>
-      <Stack.Screen name="roadsidecar-service" options={{ headerShown: false }}/>
+      <Stack.Screen name="roadsidecar-service" options={{ title: "Roadside Car Service" }}/>
       <Stack.Screen name="roadsidebike-service" options={{ headerShown: false }}/>
       <Stack.Screen name="homeservice" options={{ headerShown: false }}/>
       <Stack.Screen name="service-map" options={{ headerShown: false }}/>

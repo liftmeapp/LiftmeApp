@@ -201,6 +201,52 @@ bookingsRouter.post('/bookings/:bookingId/accept-spare-part', async (req: Reques
     }
 });
 
+bookingsRouter.post('/bookings/:bookingId/complete-spare-part', async (req: Request, res: Response) => {
+    const { bookingId } = req.params;
+    const sellerClerkId = req.auth.userId;
+
+    try {
+        // 1. Find the booking and verify ownership and status
+        const booking = await prisma.booking.findFirst({
+            where: { 
+                id: bookingId,
+                sparePartStore: { owner: { clerkId: sellerClerkId } }
+            },
+            include: { user: true }
+        });
+
+        if (!booking) {
+            return res.status(404).json({ error: "Order not found or you are not the seller." });
+        }
+
+        if (booking.status !== 'CONFIRMED' && booking.status !== 'IN_PROGRESS') {
+            return res.status(409).json({ error: "This order is not in a state that can be completed." });
+        }
+
+        // 2. Update the booking status to COMPLETED
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                status: BookingStatus.COMPLETED,
+                paymentStatus: booking.paymentMethod === 'CASH' ? 'paid_in_cash' : booking.paymentStatus, // Mark cash as paid
+                serviceEndedAt: new Date(), // Mark completion time
+            }
+        });
+
+        // 3. Notify the customer
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('spare_part_order_completed', { bookingId: updatedBooking.id });
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to complete spare part order:", error);
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
+
 // ===================================================================
 //  PROVIDER-FACING BOOKING ROUTES
 // ===================================================================
@@ -422,13 +468,19 @@ bookingsRouter.post('/bookings/:id/accept-tow-in', async (req: Request, res: Res
 
         // 3. Find eligible tow trucks near the user's pickup location
         const pickup = bookingToAccept.pickupLocation as any;
+        if (!pickup || !pickup.coordinates || pickup.coordinates.length !== 2) {
+            return res.status(400).json({ error: "Booking is missing a valid pickup location." });
+        }
+        if (!bookingToAccept.vehicle) {
+            return res.status(400).json({ error: "Booking is missing vehicle information." });
+        }
         const vehicleType = bookingToAccept.vehicle.type;
 
         const nearbyTrucksRaw = await prisma.liveTruckLocation.aggregateRaw({
             pipeline: [
                 {
                     '$geoNear': {
-                        near: { type: "Point", coordinates: [pickup.longitude, pickup.latitude] },
+                        near: { type: "Point", coordinates: [pickup.coordinates[0], pickup.coordinates[1]] },
                         distanceField: "distance",
                         maxDistance: 15000, // 15km in meters
                         query: { isAvailable: true },
@@ -453,6 +505,11 @@ bookingsRouter.post('/bookings/:id/accept-tow-in', async (req: Request, res: Res
                 id: { in: nearbyTruckIds },
                 status: 'APPROVED',
                 services: { some: { vehicleType: vehicleType } }
+            },
+            include: {
+                services: {
+                    where: { vehicleType: vehicleType }
+                }
             }
         });
 
@@ -482,21 +539,35 @@ bookingsRouter.post('/bookings/:id/accept-tow-in', async (req: Request, res: Res
 
         // 5. Broadcast to eligible tow trucks
         const userLocation = { lat: pickup.latitude, lon: pickup.longitude };
-        for (const providerId of eligibleTowTruckIds) {
+        const garageLocation = { lat: (garage.location as any).coordinates[1], lon: (garage.location as any).coordinates[0] };
+        const { distanceKm: totalTowingDistance } = await getEtaAndDistance(userLocation, garageLocation);
+
+        for (const truck of eligibleTrucks) {
             try {
-                const truckLocation = await prisma.liveTruckLocation.findUnique({ where: { towTruckId: providerId } });
+                const service = truck.services.find(s => s.vehicleType === vehicleType);
+                const pricePerKm = service?.price || 0;
+                const estimatedFare = totalTowingDistance !== null ? totalTowingDistance * pricePerKm : pricePerKm;
+
+                const truckLocation = await prisma.liveTruckLocation.findUnique({ where: { towTruckId: truck.id } });
+                let distanceToPickup = null;
                 if (truckLocation && truckLocation.location && isGeoJSONPoint(truckLocation.location)) {
                     const providerCoords = { lat: truckLocation.location.coordinates[1], lon: truckLocation.location.coordinates[0] };
                     const { distanceKm } = await getEtaAndDistance(userLocation, providerCoords);
+                    distanceToPickup = distanceKm;
+                }
 
-                    const socketId = providerSockets[providerId];
-                    if (socketId) {
-                        io.to(socketId).emit('new_tow_request_for_garage', { ...updatedBooking, distance: distanceKm });
-                        console.log(`📬 Emitted 'new_tow_request_for_garage' to tow truck ${providerId} on socket ${socketId}`);
-                    }
+                const socketId = providerSockets[truck.id];
+                if (socketId) {
+                    io.to(socketId).emit('new_tow_request_for_garage', { 
+                        ...updatedBooking, 
+                        distance: distanceToPickup,
+                        totalDistance: totalTowingDistance,
+                        finalAmount: estimatedFare
+                    });
+                    console.log(`📬 Emitted 'new_tow_request_for_garage' to tow truck ${truck.id} with fare ${estimatedFare}`);
                 }
             } catch (e) {
-                console.error(`Failed to process and emit for tow truck ${providerId}`, e);
+                console.error(`Failed to process and emit for tow truck ${truck.id}`, e);
             }
         }
         
@@ -556,10 +627,10 @@ bookingsRouter.post('/bookings/:id/accept-tow', async (req: Request, res: Respon
         if (!towTruckService) {
             return res.status(400).json({ error: "This tow truck does not offer service for the requested vehicle type." });
         }
-        const servicePrice = towTruckService.price;
+        const pricePerKm = towTruckService.price;
 
         // Calculate distance and final price
-        let finalAmount = servicePrice;
+        let finalAmount = pricePerKm; // Default to the per-km rate as a minimum charge
         let etaMinutes: number | null = null;
         let distanceKm: number | null = null;
 
@@ -575,8 +646,7 @@ bookingsRouter.post('/bookings/:id/accept-tow', async (req: Request, res: Respon
             distanceKm = etaResult.distanceKm;
 
             if (distanceKm !== null) {
-                const distanceCost = distanceKm * PRICE_PER_KM;
-                finalAmount += distanceCost;
+                finalAmount = distanceKm * pricePerKm;
             }
         }
 
@@ -586,7 +656,7 @@ bookingsRouter.post('/bookings/:id/accept-tow', async (req: Request, res: Respon
                 status: BookingStatus.AWAITING_PAYMENT,
                 subStatus: 'TOW_TRUCK_ASSIGNED',
                 towTruck: { connect: { id: towTruck.id } },
-                basePrice: servicePrice, // Update base price to the actual tow truck's price
+                basePrice: pricePerKm, // Store the per-km rate in basePrice
                 finalAmount: finalAmount, // Set the calculated final amount
                 eligibleProviderIds: [],
                 expiresAt: null,
@@ -602,6 +672,7 @@ bookingsRouter.post('/bookings/:id/accept-tow', async (req: Request, res: Respon
                 ...updatedBooking.towTruck,
                 eta: etaMinutes,
                 distance: distanceKm,
+                pricePerKm: pricePerKm,
                 finalPrice: finalAmount
             };
             io.to(customerSocketId).emit('booking_accepted', {
@@ -888,8 +959,8 @@ bookingsRouter.get('/bookings/active', async (req: Request, res: Response) => {
             let isTowingPhase = false;
             if (booking.bookingType === 'TOW_TO_GARAGE') {
                 const atGarageSubStatuses = ['VEHICLE_DELIVERED', 'AWAITING_GARAGE_QUOTE', 'AWAITING_QUOTE_APPROVAL', 'SERVICE_IN_PROGRESS', 'SERVICE_COMPLETED'];
-                if (!atGarageSubStatuses.includes(booking.subStatus)) {
-                    isTowingPhase = true;
+                if (booking.subStatus && !atGarageSubStatuses.includes(booking.subStatus)) {
+                     isTowingPhase = true;
                 }
             } else if (booking.bookingType !== 'SPARE_PART') {
                 isTowingPhase = true;
@@ -1095,28 +1166,28 @@ bookingsRouter.get('/bookings/:id/status', async(req: Request, res: Response) =>
             });
         }
         
-        if (booking.status === BookingStatus.CONFIRMED && (booking.garage || booking.towTruck)) {
-            const provider = booking.garage || booking.towTruck;
-            const providerLocation = booking.garage?.location || booking.towTruck?.liveLocation;
+        const provider = booking.garage || booking.towTruck;
 
-            if (!isGeoJSONPoint(booking.pickupLocation) || !isGeoJSONPoint(providerLocation)) {
-                return res.status(200).json({ status: booking.status, otp: booking.otp, provider: { ...provider, eta: null, distance: null }, finalPrice: booking.finalAmount, error: "Could not calculate ETA due to invalid location data." });
+        if (provider && (booking.status === BookingStatus.AWAITING_PAYMENT || booking.status === BookingStatus.CONFIRMED)) {
+            const providerLocation = booking.garage?.location || booking.towTruck?.liveLocation?.location;
+
+            if (isGeoJSONPoint(booking.pickupLocation) && isGeoJSONPoint(providerLocation)) {
+                const userCoords = booking.pickupLocation.coordinates;
+                const providerCoords = providerLocation.coordinates;
+                
+                // Correctly calculate provider-to-user ETA
+                const { etaMinutes, distanceKm } = await getEtaAndDistance({ lat: providerCoords[1], lon: providerCoords[0] }, { lat: userCoords[1], lon: userCoords[0] });
+                
+                return res.status(200).json({
+                    status: booking.status,
+                    otp: booking.otp,
+                    provider: { ...(provider as any), eta: etaMinutes, distance: distanceKm },
+                    finalPrice: booking.finalAmount
+                });
             }
-
-            const userCoords = booking.pickupLocation.coordinates;
-            const providerCoords = providerLocation.coordinates;
-            
-            const { etaMinutes, distanceKm } = await getEtaAndDistance({ lat: userCoords[1], lon: userCoords[0] }, { lat: providerCoords[1], lon: providerCoords[0] });
-            
-            return res.status(200).json({
-                status: booking.status,
-                otp: booking.otp,
-                provider: { ...provider, eta: etaMinutes, distance: distanceKm },
-                finalPrice: booking.finalAmount
-            });
         }
 
-        return res.status(200).json({ status: booking.status, provider: booking.garage, finalPrice: booking.finalAmount });
+        return res.status(200).json({ status: booking.status, provider: provider, finalPrice: booking.finalAmount, otp: booking.otp });
 
     } catch (error: any) {
          console.error("Failed to get booking status:", error);
@@ -1198,7 +1269,20 @@ bookingsRouter.post('/bookings/:bookingId/confirm-cash', async (req: Request, re
             },
         });
 
-        // TODO: Notify provider that the booking is confirmed
+        // Notify provider that the booking is confirmed for cash payment
+        const providerId = booking.garageId || booking.towTruckId;
+        if (providerId) {
+            const providerSocketId = providerSockets[providerId];
+            if (providerSocketId) {
+                io.to(providerSocketId).emit('booking_confirmed_by_user', { 
+                    bookingId: updatedBooking.id, 
+                    status: updatedBooking.status,
+                    paymentMethod: 'CASH'
+                });
+                console.log(`📬 Emitted 'booking_confirmed_by_user' (CASH) to provider ${providerId}`);
+            }
+        }
+
         return res.status(200).json({ success: true, booking: updatedBooking });
 
     } catch (error: any) {
@@ -1280,23 +1364,21 @@ bookingsRouter.post('/bookings/request-tow-to-garage', async (req: Request, res:
     const SEARCH_TIMEOUT_MINUTES = 5;
 
     try {
-        // 1. Get User and Vehicle details
         const user = await prisma.user.findUnique({ where: { clerkId: ownerId } });
         if (!user) return res.status(404).json({ reason: "User profile not found." });
 
         const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
         if (!vehicle) return res.status(404).json({ reason: "Vehicle not found." });
 
-        // 2. Map VehicleType to a supported category string
         let requiredServiceCategory: string;
         switch (vehicle.type) {
             case 'SEDAN':
             case 'HATCHBACK':
             case 'SUV':
-                requiredServiceCategory = 'ROADSIDE_CAR';
+                requiredServiceCategory = 'INGARAGE_CAR';
                 break;
             case 'BIKE':
-                requiredServiceCategory = 'ROADSIDE_BIKE';
+                requiredServiceCategory = 'INGARAGE_BIKE';
                 break;
             case 'LUXURY':
                 requiredServiceCategory = 'LUXURY';
@@ -1306,7 +1388,7 @@ bookingsRouter.post('/bookings/request-tow-to-garage', async (req: Request, res:
         }
         console.log(`[API] Vehicle type ${vehicle.type} requires garage category: ${requiredServiceCategory}`);
 
-        // 3. Find nearby, eligible garages
+        // 1. Find all nearby, open, and approved garages
         const nearbyGaragesRaw = await prisma.garage.aggregateRaw({
             pipeline: [
                 {
@@ -1314,26 +1396,37 @@ bookingsRouter.post('/bookings/request-tow-to-garage', async (req: Request, res:
                         near: { type: "Point", coordinates: [pickup.longitude, pickup.latitude] },
                         distanceField: "distance",
                         maxDistance: 15000, // 15km in meters
-                        query: { 
-                            isOpen: true,
-                            status: 'APPROVED',
-                            supportedVehicleTypes: requiredServiceCategory 
-                        },
+                        query: { isOpen: true, status: 'APPROVED' },
                         spherical: true
                     }
                 },
-                { '$limit': 25 } // Limit the number of garages to consider
+                { '$limit': 50 } // Get a larger pool to filter from
             ]
         });
 
         if (!Array.isArray(nearbyGaragesRaw) || nearbyGaragesRaw.length === 0) {
-            return res.status(404).json({ reason: `No approved garages supporting ${requiredServiceCategory} were found within 15km.` });
+            return res.status(404).json({ reason: `No approved garages were found within 15km.` });
         }
 
-        const eligibleGarageIds = nearbyGaragesRaw.map((g: any) => g._id.$oid);
+        // 2. From the nearby garages, find which ones actually offer the required service category.
+        const nearbyGarageIds = nearbyGaragesRaw.map((g: any) => g._id.$oid);
+        const garagesWithCorrectServices = await prisma.garage.findMany({
+            where: {
+                id: { in: nearbyGarageIds },
+                services: { some: { service: { category: requiredServiceCategory as any } } }
+            },
+            select: { id: true }
+        });
+
+        const eligibleGarageIds = garagesWithCorrectServices.map(g => g.id);
+
+        if (eligibleGarageIds.length === 0) {
+            return res.status(404).json({ reason: `No approved garages supporting ${requiredServiceCategory} were found within 15km.` });
+        }
         console.log(`[API] Found ${eligibleGarageIds.length} eligible garages.`);
 
-        // 4. Create the new booking
+        const pickupGeo = { type: 'Point', coordinates: [pickup.longitude, pickup.latitude], description: pickup.description };
+
         const newBooking = await prisma.booking.create({
             data: {
                 bookingType: 'TOW_TO_GARAGE',
@@ -1341,17 +1434,15 @@ bookingsRouter.post('/bookings/request-tow-to-garage', async (req: Request, res:
                 subStatus: 'AWAITING_GARAGE_ACCEPTANCE',
                 user: { connect: { id: user.id } },
                 vehicle: { connect: { id: vehicleId } },
-                basePrice: 0, // Price is determined by garage and tow truck later
+                basePrice: 0,
                 finalAmount: 0,
                 expiresAt: new Date(Date.now() + SEARCH_TIMEOUT_MINUTES * 60 * 1000),
                 eligibleProviderIds: eligibleGarageIds,
-                pickupLocation: pickup,
-                // Destination is the garage, to be set upon acceptance
+                pickupLocation: pickupGeo,
             }
         });
         console.log(`[API] Created TOW_TO_GARAGE booking ${newBooking.id}`);
 
-        // 5. Broadcast to eligible garages
         const detailedBooking = await prisma.booking.findUnique({
             where: { id: newBooking.id },
             include: {
@@ -1372,7 +1463,6 @@ bookingsRouter.post('/bookings/request-tow-to-garage', async (req: Request, res:
 
                         const socketId = providerSockets[providerId];
                         if (socketId) {
-                            // Use a new event name to distinguish on the client-side
                             io.to(socketId).emit('new_tow_in_request', { ...detailedBooking, distance: distanceKm });
                             console.log(`📬 Emitted 'new_tow_in_request' to garage ${providerId} on socket ${socketId}`);
                         } else {
@@ -1590,6 +1680,9 @@ bookingsRouter.post(
             const eligibleProviderIds = eligibleTrucks.map(truck => truck.id);
             const basePrice = eligibleTrucks[0].services[0].price; // Use price from the first eligible truck as a baseline
 
+            const pickupGeo = { type: 'Point', coordinates: [pickup.longitude, pickup.latitude], description: pickup.description };
+            const destinationGeo = { type: 'Point', coordinates: [destination.longitude, destination.latitude], description: destination.description };
+
             const newBooking = await prisma.booking.create({
                 data: {
                     bookingType: 'DIRECT_TOW', // Explicitly set booking type
@@ -1600,8 +1693,8 @@ bookingsRouter.post(
                     finalAmount: basePrice, // This will be recalculated later
                     expiresAt: new Date(Date.now() + SEARCH_TIMEOUT_MINUTES * 60 * 1000),
                     eligibleProviderIds: eligibleProviderIds,
-                    pickupLocation: pickup,
-                    destinationLocation: destination,
+                    pickupLocation: pickupGeo,
+                    destinationLocation: destinationGeo,
                 }
             });
             
@@ -1618,25 +1711,44 @@ bookingsRouter.post(
             });
 
             if (detailedBooking) {
-                console.log(`[Socket.IO] Broadcasting tow booking ${detailedBooking.id} to ${detailedBooking.eligibleProviderIds.length} providers.`);
+                console.log(`[Socket.IO] Broadcasting tow booking ${detailedBooking.id} to ${eligibleTrucks.length} providers.`);
                 const userLocation = { lat: pickup.latitude, lon: pickup.longitude };
-                for (const providerId of detailedBooking.eligibleProviderIds) {
+                const destinationLocation = { lat: destination.latitude, lon: destination.longitude };
+
+                // Calculate the total towing distance once.
+                const { distanceKm: totalTowingDistance } = await getEtaAndDistance(userLocation, destinationLocation);
+
+                for (const truck of eligibleTrucks) {
                     try {
-                        const truckLocation = await prisma.liveTruckLocation.findUnique({ where: { towTruckId: providerId } });
+                        // Calculate the estimated fare for this specific truck
+                        const service = truck.services.find(s => s.vehicleType === vehicleType);
+                        const pricePerKm = service?.price || 0;
+                        const estimatedFare = totalTowingDistance !== null ? totalTowingDistance * pricePerKm : pricePerKm;
+
+                        // Calculate distance from truck to user
+                        const truckLocation = await prisma.liveTruckLocation.findUnique({ where: { towTruckId: truck.id } });
+                        let distanceToPickup = null;
                         if (truckLocation && truckLocation.location && isGeoJSONPoint(truckLocation.location)) {
                             const providerCoords = { lat: truckLocation.location.coordinates[1], lon: truckLocation.location.coordinates[0] };
                             const { distanceKm } = await getEtaAndDistance(userLocation, providerCoords);
+                            distanceToPickup = distanceKm;
+                        }
 
-                            const socketId = providerSockets[providerId];
-                            if (socketId) {
-                                io.to(socketId).emit('new_booking', { ...detailedBooking, distance: distanceKm });
-                                console.log(`📬 Emitted 'new_booking' to provider ${providerId} (tow truck) on socket ${socketId}`);
-                            } else {
-                                console.log(`- Provider ${providerId} is not connected.`);
-                            }
+                        const socketId = providerSockets[truck.id];
+                        if (socketId) {
+                            // Send a custom payload with the calculated fare for this provider
+                            io.to(socketId).emit('new_booking', { 
+                                ...detailedBooking, 
+                                distance: distanceToPickup,
+                                totalDistance: totalTowingDistance,
+                                finalAmount: estimatedFare, // Overwrite finalAmount with the estimated fare
+                            });
+                            console.log(`📬 Emitted 'new_booking' to provider ${truck.id} with estimated fare ${estimatedFare}`);
+                        } else {
+                            console.log(`- Provider ${truck.id} is not connected.`);
                         }
                     } catch (e) {
-                        console.error(`Failed to process and emit for provider ${providerId}`, e);
+                        console.error(`Failed to process and emit for provider ${truck.id}`, e);
                     }
                 }
             }
@@ -2141,11 +2253,11 @@ bookingsRouter.post('/bookings/:bookingId/create-garage-payment-intent', async (
         if (!booking.garage || !booking.garage.stripeAccountId) {
             return res.status(400).json({ error: 'Provider is not set up to receive payments.' });
         }
-        if (!booking.garageQuoteAmount) {
+        if (!booking.jobEstimate) {
             return res.status(400).json({ error: 'No quote amount set for this booking.' });
         }
 
-        const amountInCents = Math.round(booking.garageQuoteAmount * 100);
+        const amountInCents = Math.round(booking.jobEstimate * 100);
         const applicationFee = Math.round(amountInCents * 0.10);
 
         const paymentIntent = await stripe.paymentIntents.create({

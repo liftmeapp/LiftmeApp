@@ -1,33 +1,56 @@
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking } from "react-native";
+import { useAuth } from "@clerk/clerk-expo";
 import { FontAwesome5 } from "@expo/vector-icons";
+import { StripeProvider, useStripe } from "@stripe/stripe-react-native";
+import React, { useState } from "react";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-export default function PremiumScreen() {
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+
+function PremiumScreen() {
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const { getToken } = useAuth();
+  const [isPremium, setIsPremium] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
+
   const handleSubscribe = async () => {
+    setIsSubscribing(true);
     try {
-      // Replace with your backend URL to create a Stripe Checkout session
-      const response = await fetch("https://your-backend.com/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: "premium_monthly" }),
+      const token = await getToken();
+      // 1. Create a payment intent on the server
+      const response = await fetch(`${API_BASE_URL}/api/stripe/create-premium-intent`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
       });
+      const { clientSecret, error: intentError } = await response.json();
+      if (intentError) throw new Error(intentError);
 
-      const data = await response.json();
-      if (data?.url) {
-        Linking.openURL(data.url);
-      } else {
-        Alert.alert("Error", "Could not initiate payment.");
+      // 2. Initialize the payment sheet
+      const { error: initError } = await initPaymentSheet({
+        paymentIntentClientSecret: clientSecret,
+        merchantDisplayName: 'Afthuliftme Inc.',
+      });
+      if (initError) throw new Error(initError.message);
+
+      // 3. Present the payment sheet
+      const { error: presentError } = await presentPaymentSheet();
+      if (presentError) {
+        if (presentError.code !== 'Canceled') {
+          throw new Error(presentError.message);
+        }
+        setIsSubscribing(false);
+        return; // User cancelled
       }
-    } catch (error) {
-      Alert.alert("Error", "Something went wrong.");
+      Alert.alert("Payment Successful", "You are now a premium member!");
+      setIsPremium(true);
+
+    } catch (error: any) {
+      Alert.alert("Subscription Failed", error.message || "An unknown error occurred.");
+    } finally {
+      setIsSubscribing(false);
     }
   };
 
   const features = [
-    {
-      title: "Add Multiple Vehicles",
-      description: "Easily register and manage multiple cars up to 20 for your business under one premium account for added convenience.",
-    },
     {
       title: "Priority & Fast-Track Assistance",
       description: "Get faster response times and skip the queue with priority support on all service requests.",
@@ -61,14 +84,46 @@ export default function PremiumScreen() {
         ))}
       </ScrollView>
       <View style={styles.footer}>
-        <Text style={styles.price}>$79/month</Text>
-        <TouchableOpacity style={styles.subscribeButton} onPress={handleSubscribe}>
-          <Text style={styles.subscribeText}>Subscribe</Text>
-        </TouchableOpacity>
+        {isPremium ? (
+          <View style={styles.premiumMemberContainer}>
+            <FontAwesome5 name="crown" size={24} color="#FFD700" />
+            <Text style={styles.premiumMemberText}>You are now a premium member!</Text>
+          </View>
+        ) : (
+          <>
+            <Text style={styles.price}>Rs 179/month</Text>
+            <TouchableOpacity style={styles.subscribeButton} onPress={handleSubscribe} disabled={isSubscribing}>
+              {isSubscribing ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.subscribeText}>Subscribe</Text>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </View>
   );
 }
+
+export default function PremiumScreenWrapper() {
+  const STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+
+  if (!STRIPE_KEY) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>Stripe configuration error.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <StripeProvider publishableKey={STRIPE_KEY}>
+      <PremiumScreen />
+    </StripeProvider>
+  );
+}
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff", padding: 20, paddingTop: 60 },
@@ -86,6 +141,23 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 40,
     borderRadius: 10,
+    minHeight: 48, // Ensure button height is consistent
+    justifyContent: 'center',
   },
   subscribeText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  premiumMemberContainer: {
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#eaf8ff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#bde0fe',
+  },
+  premiumMemberText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#005f99',
+    marginTop: 10,
+    textAlign: 'center',
+  },
 });

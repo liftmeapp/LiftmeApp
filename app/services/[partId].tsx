@@ -98,12 +98,7 @@ export default function SparePartDetailScreen() {
                 <Text style={styles.description}>{part.description}</Text>
                 
                 <View style={styles.separator} />
-
                 <Text style={styles.sellerInfo}>Sold by: {part.store.name}</Text>
-
-                <View style={styles.quantityContainer}>
-                    <Text style={styles.quantityText}>{quantity}</Text>
-                </View>
 
                 <TouchableOpacity 
                     style={[styles.buyButton, isOrdering && styles.disabledButton]} 

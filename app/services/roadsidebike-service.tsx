@@ -6,7 +6,7 @@ import { BookingStage, useBooking } from '@/context/BookingContext';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons'; // Ensure @expo/vector-icons is installed
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -21,6 +21,7 @@ import {
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-get-random-values'; // Required for UUID or similar libraries if used indirectly
 import MapView from 'react-native-maps';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 
 // Helper functions for responsive sizing
@@ -94,6 +95,8 @@ export default function MainMap() {
         () => services.filter(service => service.category === 'ROADSIDE_BIKE'),
         [services]
     );
+
+    const filteredBikeVehicles = useMemo(() => vehicles.filter(vehicle => vehicle.type === 'BIKE'), [vehicles]);
 
     // --- Initial Effect ---
     useEffect(() => {
@@ -179,6 +182,7 @@ export default function MainMap() {
             fetchSavedCards();
         } else if (currentStage === BookingStage.CONFIRMED) {
             router.replace('/(root)/(tabs)/orders');
+            resetBookingFlow();
         }
     }, [currentStage, fetchSavedCards, router]);
 
@@ -345,7 +349,7 @@ export default function MainMap() {
                         
                         <View style={styles.contentArea}>
                             <FlatList
-                                data={vehicles}
+                                data={filteredBikeVehicles}
                                 renderItem={renderVehicleItem}
                                 keyExtractor={item => item.id}
                                 ListHeaderComponent={() => (
@@ -622,6 +626,21 @@ export default function MainMap() {
     // --- Final Component Return ---
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
+            <Stack.Screen
+                options={{
+                    header: () => (
+                        <SafeAreaView style={{ flex: 0, backgroundColor: 'white' }} edges={['top']}>
+                            <View style={styles.customHeader}>
+                                <TouchableOpacity onPress={() => router.back()} style={styles.headerBack}>
+                                    <Ionicons name="arrow-back" size={24} color="#333" />
+                                </TouchableOpacity>
+                                <Text style={styles.customHeaderTitle}>Roadside Bike Service</Text>
+                                <View style={{ width: 24 }} /> 
+                            </View>
+                        </SafeAreaView>
+                    ),
+                }}
+            />
             <View style={styles.container}>
                 <Map 
                     isPinningLocation={isPinModeActive}
@@ -650,6 +669,24 @@ export default function MainMap() {
 // --- Styles ---
 
 const styles = StyleSheet.create({
+    customHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 15,
+        height: 60,
+        backgroundColor: 'white',
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+    },
+    headerBack: {
+        padding: 5,
+    },
+    customHeaderTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#333',
+    },
     container: { 
         flex: 1, 
         backgroundColor: color.white 

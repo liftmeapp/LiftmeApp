@@ -630,6 +630,24 @@ export default function GarageDashboard() {
         socket.on('new_tow_in_request', (newBooking: any) => handleNewBooking(newBooking, 'new_tow_in_request'));
 
 
+        socket.on('payment_confirmed', (data: { bookingId: string }) => {
+            console.log(`💳 [Socket.IO] Payment confirmed for booking ${data.bookingId}`);
+            Alert.alert(
+                "Payment Confirmed",
+                `The customer has paid. The job is confirmed and moved to 'Current'.`
+            );
+            fetchData();
+        });
+
+        socket.on('booking_confirmed_by_user', (data: { bookingId: string }) => {
+            console.log(`🤝 [Socket.IO] Booking confirmed (Cash) for ${data.bookingId}`);
+            Alert.alert(
+                "Booking Confirmed (Cash)",
+                `The customer has confirmed a cash payment. The job is in your 'Current' list.`
+            );
+            fetchData();
+        });
+
         socket.on('tow_truck_assigned', (data: { bookingId: string; towTruck: any }) => {
             console.log(`🚚 [Socket.IO] Tow truck assigned for booking ${data.bookingId}:`, data.towTruck);
             Alert.alert(

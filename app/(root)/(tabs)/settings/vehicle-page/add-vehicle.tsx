@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView, Platform, SafeAreaView } from 'react-native';
-import { useAuth } from '@clerk/clerk-expo';
-import { useRouter, Stack } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import RotatingLoader from '@/components/RotatingLoader';
+import { useAuth } from '@clerk/clerk-expo';
+import { Ionicons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Stack, useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { Alert, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // CONFIGURATION
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -90,7 +90,17 @@ export default function AddVehicleScreen() {
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <Stack.Screen options={{ title: 'Add New Vehicle', headerBackTitle: 'Back' }} />
+            <Stack.Screen 
+                options={{
+                    title: 'Add New Vehicle',
+                    headerShown: true,
+                    headerLeft: () => (
+                        <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
+                            <Ionicons name="arrow-back" size={24} color="#b95528" />
+                        </TouchableOpacity>
+                    ),
+                }}
+            />
             <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
                 <View style={styles.headerContainer}>
                     <Text style={styles.header}>Add a New Vehicle</Text>
@@ -137,7 +147,7 @@ export default function AddVehicleScreen() {
 };
 
 const styles = StyleSheet.create({
-    safeArea: { backgroundColor: '#f8f9fa',marginTop: 50 },
+    safeArea: { backgroundColor: '#f8f9fa',marginTop: 10 },
     scrollContainer: { flexGrow: 1, padding: 20, marginTop: 50, paddingTop: 40 },
     headerContainer: { alignItems: 'center', marginBottom: 30 },
     header: { fontSize: 28, fontWeight: 'bold', color: '#333',marginBottom: 10 },

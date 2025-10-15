@@ -42,15 +42,15 @@ export default function Index() {
 };
 
   return (
-    <SafeAreaView className="">
-      <View className="">
+    <SafeAreaView>
+      <View>
       <FlatList
         data={dummyData}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         renderItem={null}
         ListHeaderComponent={() => (
-          <View className="h-[100%]">
+          <View>
             <View className="flex flex-row justify-between items-center py-2 px-3">
               <Image
                 source={require('@/assets/images/lml.png')}

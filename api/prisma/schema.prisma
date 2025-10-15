@@ -33,6 +33,7 @@
     BIKE
     LUXURY
     TRUCK
+    EV
   }
 
   enum VerificationStatus {

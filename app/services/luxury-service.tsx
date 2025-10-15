@@ -188,6 +188,8 @@ export default function LuxuryService() {
             fetchSavedCards();
         } else if (currentStage === BookingStage.CONFIRMED) {
             router.replace('/(root)/(tabs)/orders');
+            resetBookingFlow();
+
         }
     }, [currentStage, fetchSavedCards, router]);
 

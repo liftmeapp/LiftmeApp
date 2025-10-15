@@ -20,12 +20,13 @@ const TabIcon = ({ source, focused }: { source: ImageSourcePropType, focused: bo
 
 export default function SettingsStackLayout() {
   return (
-    <Stack>
+    <Stack screenOptions={{ headerShown: true }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
-       <Stack.Screen name="vehicle-page" options={{ headerShown: false }} />
-       <Stack.Screen name="add-business" options={{ headerShown: false }} />
-       <Stack.Screen name="premium" options={{ headerShown: false }} />
-       <Stack.Screen name="payments" options={{ headerShown: false }} />
+       <Stack.Screen name="vehicle-page" />
+       <Stack.Screen name="add-business" />
+       <Stack.Screen name="premium" />
+       <Stack.Screen name="payments" />
+       <Stack.Screen name="help" />
     </Stack>
   );
 }

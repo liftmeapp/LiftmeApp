@@ -85,23 +85,21 @@ export default function MainMap() {
     const [isPinModeActive, setIsPinModeActive] = useState(false);
     const [pinnedLocation, setPinnedLocation] = useState<PinnedLocationData | null>(null);
     const [isGeocoding, setIsGeocoding] = useState(false);
-   
     const [useCurrentLocation, setUseCurrentLocation] = useState(true);
     const [recentPlaces, setRecentPlaces] = useState<LocationState[]>([]);
     const [pinnedAddress, setPinnedAddress] = useState("Move map to set location...");
-    
     // --- Data from API ---
     const [vehicles, setVehicles] = useState<any[]>([]);
     const [services, setServices] = useState<any[]>([]);
-
     // --- Loading & UI States ---
     const [isInitialLoading, setIsInitialLoading] = useState(true);
     const [keyboardAvoidingHeight, setKeyboardAvoidingHeight] = useState(false);
-
     const filteredServices = useMemo(
         () => services.filter(service => service.category === 'ROADSIDE_CAR'),
         [services]
     );
+
+    const filteredCarVehicles = useMemo(() => vehicles.filter(vehicle => vehicle.type !== 'BIKE'), [vehicles]);
 
     // --- Initial Effect ---
     useEffect(() => {
@@ -187,6 +185,7 @@ export default function MainMap() {
             fetchSavedCards();
         } else if (currentStage === BookingStage.CONFIRMED) {
             router.replace('/(root)/(tabs)/orders');
+            resetBookingFlow();
         }
     }, [currentStage, fetchSavedCards, router]);
 
@@ -376,7 +375,7 @@ export default function MainMap() {
                         
                         <View style={styles.contentArea}>
                             <FlatList
-                                data={vehicles}
+                                data={filteredCarVehicles}
                                 renderItem={renderVehicleItem}
                                 keyExtractor={item => item.id}
                                 ListHeaderComponent={() => (

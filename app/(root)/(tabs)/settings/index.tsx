@@ -95,12 +95,11 @@ useEffect(() => {
   };
 
   const settingsOptions = [
-    { icon: 'cog-outline', label: 'User-Settings', link: '/settings/usersettings' },
+    { icon: 'cog-outline', label: 'Profile-Settings', link: '/settings/usersettings' },
     { icon: 'domain', label: 'Your Business Profile', subtitle: 'Set up your Lift-Me business profile', link: "/settings/add-business/businesssetup/businesspage" },
     { icon: 'car-outline', label: 'Manage Vehicles', link: '/settings/vehicle-page/vehicle-board' },
     { icon: 'wallet-outline', label: 'Manage Payment Methods', link: '/settings/payments' },
     { icon: 'car-outline', label: 'Premium Account', subtitle: 'Get more features ', link: "/settings/premium" },
-    { icon: 'umbrella-outline', label: 'Rider insurance', subtitle: '₹10L cover for ₹3/trip' },
     { icon: 'logout', label: 'Logout' },
   ];
 
@@ -123,12 +122,18 @@ useEffect(() => {
         </View>
 
         <View style={styles.quickActions}>
-          {['Help', 'Wallet', 'Activity'].map((item, index) => (
-            <TouchableOpacity key={index} style={styles.actionBtn}>
-              <Icon name={item === 'Help' ? 'lifebuoy' : item === 'Wallet' ? 'wallet-outline' : 'history'} size={24} color="#fff" />
-              <Text style={styles.actionLabel}>{item}</Text>
-            </TouchableOpacity>
-          ))}
+          <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(root)/(tabs)/settings/help')}>
+            <Icon name="lifebuoy" size={24} color="#fff" />
+            <Text style={styles.actionLabel}>Help</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(root)/(tabs)/settings/payments')}>
+            <Icon name="wallet-outline" size={24} color="#fff" />
+            <Text style={styles.actionLabel}>Wallet</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(root)/(tabs)/profile')}>
+            <Icon name="history" size={24} color="#fff" />
+            <Text style={styles.actionLabel}>Activity</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.section}>

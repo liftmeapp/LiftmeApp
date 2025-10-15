@@ -218,7 +218,7 @@ export default function EditTowTruckDetailsScreen() {
               </Picker>
           </View>
 
-          <Text style={styles.subheading}>Update Your Towing Prices</Text>
+          <Text style={styles.subheading}>Your Towing Prices/Km for :</Text>
           <View style={styles.serviceListContainer}>
               {serviceSelections.map((service, index) => (
                   <View key={service.type} style={styles.serviceItemContainer}>
@@ -228,7 +228,7 @@ export default function EditTowTruckDetailsScreen() {
                       </View>
                       {service.selected && (
                           <View style={styles.priceInputRow}>
-                              <Text style={styles.priceLabel}>Price (INR):</Text>
+                              <Text style={styles.priceLabel}>Price/km(INR):</Text>
                               <TextInput style={styles.priceInput} placeholder="e.g., 150" keyboardType="numeric" value={service.price} onChangeText={(text) => handlePriceChange(text, index)} />
                           </View>
                       )}

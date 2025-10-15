@@ -38,6 +38,7 @@ export interface TowingProviderInfo {
   eta?: number | null;
   distance?: number | null;
   finalPrice?: number;
+  pricePerKm?: number;
   otp?: string;
   // Add other provider details as needed
 }

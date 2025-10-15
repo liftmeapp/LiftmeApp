@@ -121,7 +121,7 @@ const QuoteDetailsModal = ({ booking, visible, onClose, onPaymentSuccess, onReje
                             <Text style={modalStyles.quoteValue}>INR {booking.jobEstimate?.toFixed(2)}</Text>
                         </View>
                         <View style={modalStyles.notesContainer}>
-                            <Text style={modalStyles.quoteLabel}>Garage Notes:</Text>
+                            <Text style={modalStyles.quoteLabel}>Note:</Text>
                             <Text style={modalStyles.notesText}>{booking.notes || 'No notes provided.'}</Text>
                         </View>
 

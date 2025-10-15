@@ -149,7 +149,7 @@ export default function TowTruckSignupScreen() {
               </Picker>
           </View>
 
-          <Text style={styles.subheading}>Set Your Towing Prices</Text>
+          <Text style={styles.subheading}>Your Towing Prices/Km for :</Text>
           <View style={styles.serviceListContainer}>
               {serviceSelections.map((service, index) => (
                   <View key={service.type} style={styles.serviceItemContainer}>
@@ -164,10 +164,10 @@ export default function TowTruckSignupScreen() {
                       </View>
                       {service.selected && (
                           <View style={styles.priceInputRow}>
-                              <Text style={styles.priceLabel}>Price (INR):</Text>
+                              <Text style={styles.priceLabel}>Price per km (INR):</Text>
                               <TextInput
                                   style={styles.priceInput}
-                                  placeholder="e.g., 150"
+                                  placeholder="e.g., 50"
                                   keyboardType="numeric"
                                   value={service.price}
                                   onChangeText={(text) => handlePriceChange(text, index)}

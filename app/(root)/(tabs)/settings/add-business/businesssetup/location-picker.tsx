@@ -197,9 +197,11 @@ export default function LocationPickerScreen() {
         }
 
         const successMessage = isEditMode ? 'Your garage has been updated!' : 'Your garage has been created!';
-        Alert.alert('Success!', successMessage, [
-            { text: 'OK', onPress: () => { reset(); router.replace('/settings/add-business/businesssetup/businesspage'); } },
-        ]);
+        // Directly reset and redirect for a smoother UX
+        reset();
+        router.replace('/settings/add-business/businesssetup/businesspage');
+        // Optionally, you could show a brief toast notification here instead of a blocking alert.
+        Alert.alert('Success!', successMessage);
 
     } catch (e: any) {
         Alert.alert('Submission Error', e.message);

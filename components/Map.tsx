@@ -320,10 +320,7 @@ export default function Map({ isPinningLocation, onPinLocationChange, onMapReady
                     debounce={300}
                     timeout={20000}
                     enableHighAccuracyLocation={true}                    
-                    // Main search handler
                     onPress={handleLocationSelect}
-                    
-                    // Error handlers
                     onFail={(error) => {
                         console.error('🔴 [Map.tsx] Google Places Autocomplete error:', error);
                         setSearchError('Search temporarily unavailable');
@@ -479,7 +476,7 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     searchContainer: {
         position: 'absolute',
-        top: 60,
+        paddingTop:10,
         left: 10,
         right: 10,
         zIndex: 1,
@@ -626,7 +623,7 @@ const styles = StyleSheet.create({
     // Refresh Indicator
     refreshIndicator: { 
         position: 'absolute', 
-        top: 50, 
+        top: 90, 
         alignSelf: 'center', 
         backgroundColor: 'rgba(255,255,255,0.9)', 
         paddingHorizontal: 15, 

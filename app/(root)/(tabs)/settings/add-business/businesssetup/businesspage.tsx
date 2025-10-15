@@ -2,10 +2,11 @@
 import RotatingLoader from '@/components/RotatingLoader';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useRef, useState } from 'react';
-import { Alert, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, RefreshControl, StyleSheet, Text, TouchableOpacity, View, Platform } from "react-native";
 import { ScrollView } from 'react-native-gesture-handler';
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -205,66 +206,101 @@ export default function ServicesHome() {
         }
     };
     return (
-        <ScrollView
-        style={styles.container}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        >
-        <View style={styles.header}>
-            <Text style={styles.heading}>Your Business Hub</Text>
-            <Text style={styles.subheading}>Manage your existing services or add new ones.</Text>
-        </View>
-        
-        {/* Conditional UI for Garage */}
-        {userBusiness?.garage ? (
-            <BusinessOption
-                title={userBusiness.garage.name}
-                description="View your garage's status and manage its details."
-                icon="business-outline"
-                onPress={handleGaragePress}
-                status={userBusiness.garage.status || 'PENDING'} // Default to PENDING if status is null
+        <>
+            <Stack.Screen
+                options={{
+                    header: () => (
+                        <SafeAreaView style={{ flex: 0, backgroundColor: 'white' }} edges={['top']}>
+                            <View style={styles.customHeader}>
+                                <TouchableOpacity onPress={() => router.back()} style={styles.headerBack}>
+                                    <Ionicons name="arrow-back" size={24} color="#333" />
+                                </TouchableOpacity>
+                                <Text style={styles.customHeaderTitle}>Business Hub</Text>
+                                <View style={{ width: 24 }} /> 
+                            </View>
+                        </SafeAreaView>
+                    ),
+                }}
             />
-        ) : (
-            <BusinessOption 
-                title="Set Up a Garage"
-                description="List your garage to offer repair, maintenance, and home services."
-                icon="add-circle-outline"
-                onPress={() => handleSetupPress('/(root)/(tabs)/settings/add-business/businesssetup/garage-setup/garage-sign')}
-                status='SETUP'
-            />
-        )}
-        
-        {/* Conditional UI for Tow Truck */}
-        {userBusiness?.towTruck ? (
-             <BusinessOption
-                title={userBusiness.towTruck.name}
-                description="View your tow truck's status and manage its details."
-                icon="car-sport"
-                onPress={handleTowTruckPress}
-                status={userBusiness.towTruck.status || 'PENDING'}
-            />
-        ) : (
-             <BusinessOption
-                title="Register a Tow Truck"
-                description="Provide roadside assistance and manage your live location."
-                icon="add-circle-outline"
-                onPress={() => handleSetupPress('/(root)/(tabs)/settings/add-business/businesssetup/towtruck-setup/towtruck-signup')}
-                status='SETUP'
-            />
-        )}
+            <ScrollView
+                style={styles.container}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            >
+                <View style={styles.header}>
+                    <Text style={styles.heading}>Your Business Hub</Text>
+                    <Text style={styles.subheading}>Manage your existing services or add new ones.</Text>
+                </View>
+                
+                {/* Conditional UI for Garage */}
+                {userBusiness?.garage ? (
+                    <BusinessOption
+                        title={userBusiness.garage.name}
+                        description="View your garage's status and manage its details."
+                        icon="business-outline"
+                        onPress={handleGaragePress}
+                        status={userBusiness.garage.status || 'PENDING'} // Default to PENDING if status is null
+                    />
+                ) : (
+                    <BusinessOption 
+                        title="Set Up a Garage"
+                        description="List your garage to offer repair, maintenance, and home services."
+                        icon="add-circle-outline"
+                        onPress={() => handleSetupPress('/(root)/(tabs)/settings/add-business/businesssetup/garage-setup/garage-sign')}
+                        status='SETUP'
+                    />
+                )}
+                
+                {/* Conditional UI for Tow Truck */}
+                {userBusiness?.towTruck ? (
+                     <BusinessOption
+                        title={userBusiness.towTruck.name}
+                        description="View your tow truck's status and manage its details."
+                        icon="car-sport"
+                        onPress={handleTowTruckPress}
+                        status={userBusiness.towTruck.status || 'PENDING'}
+                    />
+                ) : (
+                     <BusinessOption
+                        title="Register a Tow Truck"
+                        description="Provide roadside assistance and manage your live location."
+                        icon="add-circle-outline"
+                        onPress={() => handleSetupPress('/(root)/(tabs)/settings/add-business/businesssetup/towtruck-setup/towtruck-signup')}
+                        status='SETUP'
+                    />
+                )}
 
-         {/* Placeholder for Spare Parts */}
-         <BusinessOption
-            title="Spare Part Supply"
-            description="List spare parts for sale to garages and customers."
-            icon="build-outline"
-            onPress={() => router.push('/settings/add-business/businesssetup/spare-part')}
-            status='SETUP'
-        />
-    </ScrollView>
-);
+                 {/* Placeholder for Spare Parts */}
+                 <BusinessOption
+                    title="Spare Part Supply"
+                    description="List spare parts for sale to garages and customers."
+                    icon="build-outline"
+                    onPress={() => router.push('/settings/add-business/businesssetup/spare-part')}
+                    status='SETUP'
+                />
+            </ScrollView>
+        </>
+    );
 }
 
 const styles = StyleSheet.create({
+    customHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 15,
+        height: 60,
+        backgroundColor: 'white',
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+    },
+    headerBack: {
+        padding: 5,
+    },
+    customHeaderTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#333',
+    },
     container: {
         flex: 1,
         backgroundColor: "#f8f9fa",

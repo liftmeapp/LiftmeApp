@@ -26,7 +26,7 @@ const PartCard = ({ part, onDelete }: { part: any, onDelete: (id: string) => voi
     </View>
 );
 
-const OrderCard = ({ order, onAccept, onChat, isAccepting }: { order: any, onAccept: (id: string) => void, onChat: (bookingId: string) => void, isAccepting: boolean }) => (
+const OrderCard = ({ order, onAccept, onChat, onConfirmSale, isAccepting, isConfirming, ordersSubTab }: { order: any, onAccept: (id: string) => void, onChat: (bookingId: string) => void, onConfirmSale: (id: string) => void, isAccepting: boolean, isConfirming: boolean, ordersSubTab: string }) => (
     <View style={styles.bookingCard}>
         <View style={styles.bookingHeader}>
             <Text style={styles.bookingDate}>{new Date(order.bookedAt).toLocaleDateString()}</Text>
@@ -41,7 +41,7 @@ const OrderCard = ({ order, onAccept, onChat, isAccepting }: { order: any, onAcc
             <Text style={styles.bookingText}>{`${order.user.firstName} ${order.user.lastName}`}</Text>
         </View>
         <View style={styles.bookingActions}>
-            {order.status === 'PENDING_ACCEPTANCE' && (
+            {ordersSubTab === 'Pending' && order.status === 'PENDING_ACCEPTANCE' && (
                 <TouchableOpacity 
                     style={[styles.bookingButton, styles.acceptButton, isAccepting && styles.disabledButton]} 
                     onPress={() => onAccept(order.id)}
@@ -54,14 +54,29 @@ const OrderCard = ({ order, onAccept, onChat, isAccepting }: { order: any, onAcc
                     )}
                 </TouchableOpacity>
             )}
-            {['AWAITING_PAYMENT', 'CONFIRMED', 'COMPLETED'].includes(order.status) && (
-                 <TouchableOpacity 
-                    style={[styles.bookingButton, styles.chatButton]} 
-                    onPress={() => onChat(order.id)}
-                >
-                    <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
-                    <Text style={styles.bookingButtonText}>Chat with Buyer</Text>
-                </TouchableOpacity>
+            {ordersSubTab === 'Current' && (
+                <>
+                    <TouchableOpacity 
+                        style={[styles.bookingButton, styles.chatButton]} 
+                        onPress={() => onChat(order.id)}
+                    >
+                        <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
+                        <Text style={styles.bookingButtonText}>Chat</Text>
+                    </TouchableOpacity>
+                    {['CONFIRMED', 'IN_PROGRESS'].includes(order.status) && (
+                        <TouchableOpacity 
+                            style={[styles.bookingButton, styles.completeButton, isConfirming && styles.disabledButton]} 
+                            onPress={() => onConfirmSale(order.id)}
+                            disabled={isConfirming}
+                        >
+                            {isConfirming ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <Text style={styles.bookingButtonText}>Confirm Sale</Text>
+                            )}
+                        </TouchableOpacity>
+                    )}
+                </>
             )}
         </View>
     </View>
@@ -84,6 +99,7 @@ export default function SparePartDashboard() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [acceptingId, setAcceptingId] = useState<string | null>(null);
+    const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
     console.log(`[SparePartDashboard] mainTab: ${mainTab}, ordersSubTab: ${ordersSubTab}, loading: ${loading}`);
 
@@ -177,6 +193,27 @@ export default function SparePartDashboard() {
         }
     };
 
+    const handleConfirmSale = async (orderId: string) => {
+        setConfirmingId(orderId);
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${orderId}/complete-spare-part`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Failed to complete order.");
+            }
+            Alert.alert("Success", "Order marked as complete.");
+            fetchData(); // Refresh orders
+        } catch (error: any) {
+            Alert.alert("Error", error.message);
+        } finally {
+            setConfirmingId(null);
+        }
+    };
+
     const handleChat = async (bookingId: string) => {
         console.log(`[handleChat] Initiated for bookingId: ${bookingId}`);
         try {
@@ -265,7 +302,15 @@ export default function SparePartDashboard() {
                     renderItem={({ item }) => 
                         mainTab === 'Products' 
                             ? <PartCard part={item} onDelete={handleDeletePart} /> 
-                            : <OrderCard order={item} onAccept={handleAcceptOrder} onChat={handleChat} isAccepting={acceptingId === item.id} />
+                            : <OrderCard 
+                                order={item} 
+                                onAccept={handleAcceptOrder} 
+                                onChat={handleChat} 
+                                onConfirmSale={handleConfirmSale}
+                                isAccepting={acceptingId === item.id} 
+                                isConfirming={confirmingId === item.id}
+                                ordersSubTab={ordersSubTab}
+                              />
                     }
                     ListHeaderComponent={renderListHeader()}
                     ListEmptyComponent={renderEmptyComponent(mainTab === 'Products' ? 'products' : 'orders')}
@@ -333,6 +378,7 @@ const styles = StyleSheet.create({
     bookingButton: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 8, marginLeft: 10, minHeight: 50, justifyContent: 'center', alignItems: 'center' },
     acceptButton: { backgroundColor: '#27ae60' },
     chatButton: { backgroundColor: '#3498db' },
+    completeButton: { backgroundColor: '#9b59b6' },
     disabledButton: { backgroundColor: '#95a5a6' },
     bookingButtonText: { color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 16, width: '100%' },
 });
