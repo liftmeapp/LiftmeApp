@@ -205,10 +205,8 @@ export default function EditTowTruckDetailsScreen() {
             <View style={[styles.inputContainer, styles.halfInput]}>
                 <TextInput style={styles.input} placeholder="Year *" value={year} onChangeText={setYear} keyboardType="numeric" maxLength={4} />
             </View>
-            <View style={[styles.inputContainer, styles.halfInput, styles.pickerContainer]}>
-                <Picker selectedValue={make} onValueChange={(itemValue) => setMake(itemValue)} style={styles.picker} itemStyle={styles.pickerItem}>
-                    <Picker.Item label="Make *" value="" /><Picker.Item label="Ford" value="Ford" /><Picker.Item label="Chevrolet" value="Chevrolet" /><Picker.Item label="GMC" value="GMC" /><Picker.Item label="Freightliner" value="Freightliner" /><Picker.Item label="Peterbilt" value="Peterbilt" /><Picker.Item label="Other" value="Other" />
-                </Picker>
+            <View style={[styles.inputContainer, styles.halfInput]}>
+                <TextInput style={styles.input} placeholder="Truck Brand *" value={make} onChangeText={setMake} />
             </View>
           </View>
           

@@ -117,7 +117,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
         (booking.status === 'CONFIRMED' || booking.status === 'IN_PROGRESS') &&
         (booking.bookingType !== 'TOW_TO_GARAGE' ||
             (booking.bookingType === 'TOW_TO_GARAGE' &&
-                ['AWAITING_GARAGE_QUOTE', 'AWAITING_QUOTE_APPROVAL', 'SERVICE_IN_PROGRESS'].includes(booking.subStatus)));
+                ['AWAITING_QUOTE_APPROVAL', 'SERVICE_IN_PROGRESS'].includes(booking.subStatus)));
 
 
     return (
@@ -196,13 +196,15 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                     <Text style={styles.actionButtonText}>Chat</Text>
                 </TouchableOpacity>
                 
-                <TouchableOpacity 
-                    style={[styles.actionButton, styles.completeButton]}
-                    onPress={() => onComplete(booking.id)}
-                >
-                    <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
-                    <Text style={styles.actionButtonText}>Complete</Text>
-                </TouchableOpacity>
+                {((booking.bookingType !== 'TOW_TO_GARAGE') || (booking.subStatus === 'SERVICE_IN_PROGRESS')) && (
+                    <TouchableOpacity 
+                        style={[styles.actionButton, styles.completeButton]}
+                        onPress={() => onComplete(booking.id)}
+                    >
+                        <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                        <Text style={styles.actionButtonText}>Complete</Text>
+                    </TouchableOpacity>
+                )}
             </View>
         )}
 
@@ -332,11 +334,12 @@ const QuoteModal = ({ visible, onClose, vehicleStatus, setVehicleStatus, service
                             returnKeyType="next"
                         />
                         <TextInput
-                            style={[modalStyles.quoteInput, { height: 80, textAlignVertical: 'top' }]}
+                            style={modalStyles.quoteInput}
                             placeholder="Notes for customer (Est Days)"
-                            multiline
                             value={notes}
                             onChangeText={setNotes}
+                            returnKeyType="done"
+                            blurOnSubmit={true}
                         />
 
                         <TouchableOpacity 
@@ -857,7 +860,7 @@ export default function GarageDashboard() {
 
     return (
         <View style={styles.container}>
-            <Stack.Screen options={{ title: garage.name || 'Garage Dashboard' }} />
+            
             <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#b95528" />}>
                 {/* Header Card - Always visible */}
                 <View style={styles.headerCard}>

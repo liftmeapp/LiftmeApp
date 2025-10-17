@@ -59,9 +59,9 @@ vehiclesRouter.post(
             if (!userWithVehicleCount) {
                 return res.status(404).json({ error: 'User profile not found.' });
             }
-            if (!userWithVehicleCount.isPremium && userWithVehicleCount._count.vehicles >= 3) {
-                return res.status(403).json({ error: 'Vehicle limit reached. Please upgrade to a Premium account to add more vehicles.' });
-            }
+            // if (!userWithVehicleCount.isPremium && userWithVehicleCount._count.vehicles >= 3) {
+            //     return res.status(403).json({ error: 'Vehicle limit reached. Please upgrade to a Premium account to add more vehicles.' });
+            // }
             const newVehicle = await prisma.vehicle.create({
                 data: {
                     brand, name, model, plateNumber, color,

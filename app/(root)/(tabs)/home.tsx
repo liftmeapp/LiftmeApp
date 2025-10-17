@@ -37,7 +37,7 @@ export default function Index() {
   };
 
   const navigateToBusinessSetup = () => {
-    router.push('/(tabs)/settings/add-business/businesssetup/businesspage' as never);
+    router.push('/settings/add-business/businesssetup/businesspage' as never);
     setMenuVisible(false);
 };
 

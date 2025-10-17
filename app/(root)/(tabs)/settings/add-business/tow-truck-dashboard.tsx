@@ -632,7 +632,7 @@ export default function TowTruckDashboard() {
 
     return (
         <View style={styles.container}>
-            <Stack.Screen options={{ title: truck.name || 'Truck Dashboard' }} />
+            
             <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ed8b65" />}>
                 {/* Header Card */}
                 <View style={styles.headerCard}>

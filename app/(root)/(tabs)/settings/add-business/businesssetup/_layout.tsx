@@ -1,20 +1,5 @@
-import { Stack } from 'expo-router';
-import React from 'react';
+import { Slot } from 'expo-router';
 
-export default function BusinessSetupLayout() {
-    return (
-        <Stack screenOptions={{ headerShown: false }}>
-            {/* By default, all screens in this stack have no header */}
-            
-            {/* This screen is presented as a modal and needs a header */}
-            <Stack.Screen 
-                name="add-spare-part" 
-                options={{ 
-                    presentation: 'modal',
-                    headerShown: true,
-                    title: 'Add New Spare Part' 
-                }} 
-            />
-        </Stack>
-    );
+export default function BusinessSetupSlotLayout() {
+    return <Slot />;
 }

@@ -69,7 +69,7 @@ app.post(
             console.log("Processing 'user.created' event...");
             console.log("Webhook payload (evt.data):", JSON.stringify(evt.data, null, 2));
 
-            const { id, first_name, last_name, phone_numbers, email_addresses, unsafe_metadata, primary_email_address_id } = evt.data;
+            const { id, first_name, last_name, phone_numbers, email_addresses, unsafe_metadata, primary_email_address_id, firstName, lastName } = evt.data;
 
             if (!id) {
                 console.error('🔴 Error: Clerk user ID is missing from payload.');
@@ -88,8 +88,8 @@ app.post(
                 clerkId: id,
                 // Fallback to a placeholder if email is missing. Your schema requires it.
                 email: primaryEmail || (email_addresses?.[0]?.email_address) || `user_${id}@placeholder.email`,
-                firstName: first_name || (unsafe_metadata?.firstName as string) || 'New',
-                lastName: last_name || (unsafe_metadata?.lastName as string) || 'User',
+                firstName: firstName || first_name || (unsafe_metadata?.firstName as string) || 'New',
+                lastName: lastName || last_name || (unsafe_metadata?.lastName as string) || 'User',
                 // Fallback for phone. Your schema requires it.
                 phone: primaryPhoneNumber || 'pending_phone_verification',
                 role: [Role.CUSTOMER],
@@ -114,24 +114,31 @@ app.post(
             }
         } else if (eventType === 'user.updated') {
             console.log("Processing 'user.updated' event...");
-            const { id, first_name, last_name } = evt.data;
+            const { id, first_name, last_name, firstName, lastName, unsafe_metadata } = evt.data;
 
             if (!id) {
                 console.error('🔴 Error: Clerk user ID is missing from update payload.');
                 return res.status(200).json({ message: 'Error: Missing Clerk user ID' });
             }
 
-            const userDataForDb = {
-                firstName: first_name || undefined,
-                lastName: last_name || undefined,
+            const userDataForDb: { firstName?: string; lastName?: string | null } = {
+                firstName: firstName || first_name || (unsafe_metadata?.firstName as string),
+                lastName: lastName || last_name || (unsafe_metadata?.lastName as string),
             };
 
-            console.log("Attempting to update user in DB for Clerk ID:", id, "with data:", userDataForDb);
+            const cleanData = Object.fromEntries(Object.entries(userDataForDb).filter(([_, v]) => v !== undefined));
+
+            if (Object.keys(cleanData).length === 0) {
+                console.log("No name fields to update for user:", id);
+                return res.status(200).json({ message: 'Webhook processed, no data to update.' });
+            }
+
+            console.log("Attempting to update user in DB for Clerk ID:", id, "with data:", cleanData);
 
             try {
                 await prisma.user.update({
                     where: { clerkId: id },
-                    data: userDataForDb,
+                    data: cleanData,
                 });
                 console.log("✅ User successfully updated in database for Clerk ID:", id);
             } catch (dbError: any) {

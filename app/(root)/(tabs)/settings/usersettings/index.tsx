@@ -99,63 +99,68 @@ const UserSettingsScreen = () => {
   const router = useRouter();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [initialFirstName, setInitialFirstName] = useState('');
+  const [initialLastName, setInitialLastName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState<ModalType>(null);
 
-  useEffect(() => {
-    const fetchUserDataFromDb = async () => {
-      if (!isLoaded || !user) {
-        setIsLoadingProfile(false);
-        return;
-      }
-      setIsLoadingProfile(true);
+   useEffect(() => {
+        if (user) {
+            console.log('--- useEffect [user] triggered ---');
+            console.log('User data from Clerk:', { firstName: user.firstName, lastName: user.lastName });
+            // Update our local state to match the fresh data from the user object.
+            setFirstName(user.firstName || '');
+            setLastName(user.lastName || '');
+            
+            // Also update the 'initial' state to keep them in sync.
+            setInitialFirstName(user.firstName || '');
+            setInitialLastName(user.lastName || '');
+        }
+    }, [user]);
+
+    const onSaveName = async () => {
+      if (!firstName) { Alert.alert('First name is required.'); return; }
+      setIsSaving(true);
       try {
-        const token = await getToken();
-        if (!token) throw new Error("No auth token");
+       const updateData: { firstName?: string; lastName?: string | null } = {};
 
-        const response = await fetch(`${API_BASE_URL}/api/users/me`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
+      if (firstName !== initialFirstName) {
+          updateData.firstName = firstName || '';
+      }
+      if (lastName !== initialLastName) {
+         updateData.lastName = lastName || null;
+        }
 
-        if (!response.ok) throw new Error("Failed to fetch from DB");
-        
-        const dbUser = await response.json();
-        setFirstName(dbUser.firstName || '');
-        setLastName(dbUser.lastName || '');
+        if (Object.keys(updateData).length === 0) {
+          Alert.alert('No changes to save.');
+          setIsSaving(false);
+          return;
+        }
 
-      } catch (e) {
-        console.error("Error fetching user profile from DB:", e);
-        // If DB fails, fall back to Clerk data
-        setFirstName(user.firstName || '');
-        setLastName(user.lastName || '');
+        console.log('--- Attempting to update name ---');
+        console.log('Data being sent to user.update():', updateData);
+
+        await user?.update(updateData);
+        await user?.reload();
+
+
+        if (updateData.firstName) {
+            setInitialFirstName(updateData.firstName);
+        }
+        if (updateData.lastName !== undefined) {
+            setInitialLastName(updateData.lastName || '');
+        }
+
+        Alert.alert('Success', 'Your profile has been updated.');
+      } catch (error: any) {
+        console.error('--- Error updating name ---', error);
+        const errorMessage = error.errors?.[0]?.longMessage || error.errors?.[0]?.message || 'An unknown error occurred while updating your profile.';
+        Alert.alert('Error', errorMessage);
       } finally {
-        setIsLoadingProfile(false);
+        setIsSaving(false);
       }
     };
-
-    fetchUserDataFromDb();
-  }, [isLoaded, user]);
-
-  const onSaveName = async () => {
-    if (!firstName) { Alert.alert('First name is required.'); return; }
-    setIsSaving(true);
-    try {
-      const updateData: { firstName: string; lastName?: string } = { firstName };
-      if (lastName) {
-        updateData.lastName = lastName;
-      }
-      await user?.update(updateData);
-      Alert.alert('Success', 'Your profile has been updated.');
-    } catch (error: any) {
-      const errorMessage = error.errors?.[0]?.longMessage || error.errors?.[0]?.message || 'An unknown error occurred while updating your profile.';
-      Alert.alert('Error', errorMessage);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const onDeleteAccount = async () => {
     Alert.alert(
       "Delete Account",
@@ -209,17 +214,13 @@ const UserSettingsScreen = () => {
         <Stack.Screen options={{ title: 'Profile Settings' }} />
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Personal Information</Text>
-          {isLoadingProfile ? (
-            <ActivityIndicator style={{ marginVertical: 20 }} />
-          ) : (
-            <>
-              <TextInput style={styles.input} placeholder="First Name" value={firstName} onChangeText={setFirstName} />
-              <TextInput style={styles.input} placeholder="Last Name" value={lastName} onChangeText={setLastName} />
-              <TouchableOpacity style={styles.saveButton} onPress={onSaveName} disabled={isSaving}>
-                {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Update Name</Text>}
-              </TouchableOpacity>
-            </>
-          )}
+          <>
+            <TextInput style={styles.input} placeholder="First Name" value={firstName} onChangeText={setFirstName} />
+            <TextInput style={styles.input} placeholder="Last Name" value={lastName} onChangeText={setLastName} />
+            <TouchableOpacity style={styles.saveButton} onPress={onSaveName} disabled={isSaving}>
+              {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Update Name</Text>}
+            </TouchableOpacity>
+          </>
         </View>
 
         <View style={styles.section}>

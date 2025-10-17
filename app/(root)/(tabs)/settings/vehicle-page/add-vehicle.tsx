@@ -5,7 +5,7 @@ import { Picker } from '@react-native-picker/picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // CONFIGURATION
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -101,54 +101,59 @@ export default function AddVehicleScreen() {
                     ),
                 }}
             />
-            <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
-                <View style={styles.headerContainer}>
-                    <Text style={styles.header}>Add a New Vehicle</Text>
-                    <Text style={styles.subHeader}>Enter the details of your vehicle below.</Text>
-                </View>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+            >
+                <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
+                    <View style={styles.headerContainer}>
+                        <Text style={styles.header}>Add a New Vehicle</Text>
+                        <Text style={styles.subHeader}>Enter the details of your vehicle below.</Text>
+                    </View>
 
-                <IconInput icon="car-sport-outline" placeholder="Brand (e.g., Toyota) *" value={brand} onChangeText={setBrand} />
-                <IconInput icon="pricetag-outline" placeholder="Name (e.g., Camry) *" value={name} onChangeText={setName} />
-                <IconInput icon="information-circle-outline" placeholder="Model (e.g., XSE) (Optional)" value={model} onChangeText={setModel} />
-                <IconInput icon="calendar-outline" placeholder="Year (e.g., 2023) *" value={year} onChangeText={setYear} keyboardType="numeric" maxLength={4} />
-                <IconInput icon="id-card-outline" placeholder="Plate Number *" value={plateNumber} onChangeText={(text) => setPlateNumber(text.toUpperCase())} autoCapitalize="characters" />
-                <IconInput icon="color-palette-outline" placeholder="Color (Optional)" value={colorVal} onChangeText={setColorVal} />
-                
-                <Text style={styles.pickerLabel}>Vehicle Type *</Text>
-                <View style={styles.pickerContainer}>
-                    <Picker selectedValue={type} onValueChange={setType} style={styles.picker}>
-                        <Picker.Item label="Sedan" value="SEDAN" />
-                        <Picker.Item label="Hatchback" value="HATCHBACK" />
-                        <Picker.Item label="SUV" value="SUV" />
-                        <Picker.Item label="Luxury Car" value="LUXURY" />
-                        <Picker.Item label="Motorcycle / Bike" value="BIKE" />
-                        <Picker.Item label="Truck / Van" value="TRUCK" />
-                    </Picker>
-                </View>
+                    <IconInput icon="car-sport-outline" placeholder="Brand (e.g., Toyota) *" value={brand} onChangeText={setBrand} />
+                    <IconInput icon="pricetag-outline" placeholder="Name (e.g., Camry) *" value={name} onChangeText={setName} />
+                    <IconInput icon="information-circle-outline" placeholder="Model (e.g., XSE) (Optional)" value={model} onChangeText={setModel} />
+                    <IconInput icon="calendar-outline" placeholder="Year (e.g., 2023) *" value={year} onChangeText={setYear} keyboardType="numeric" maxLength={4} />
+                    <IconInput icon="id-card-outline" placeholder="Plate Number *" value={plateNumber} onChangeText={(text) => setPlateNumber(text.toUpperCase())} autoCapitalize="characters" />
+                    <IconInput icon="color-palette-outline" placeholder="Color (Optional)" value={colorVal} onChangeText={setColorVal} />
+                    
+                    <Text style={styles.pickerLabel}>Vehicle Type *</Text>
+                    <View style={styles.pickerContainer}>
+                        <Picker selectedValue={type} onValueChange={setType} style={styles.picker}>
+                            <Picker.Item label="Sedan" value="SEDAN" />
+                            <Picker.Item label="Hatchback" value="HATCHBACK" />
+                            <Picker.Item label="SUV" value="SUV" />
+                            <Picker.Item label="Luxury Car" value="LUXURY" />
+                            <Picker.Item label="Motorcycle / Bike" value="BIKE" />
+                            <Picker.Item label="Truck / Van" value="TRUCK" />
+                        </Picker>
+                    </View>
 
-                <TouchableOpacity onPress={handleAddVehicle} disabled={isLoading}>
-                    <LinearGradient
-                        colors={['#c3683c', '#b95528']}
-                        style={styles.button}
-                    >
-                        {isLoading ? (
-                            <RotatingLoader color="#fff" size={15}/>
-                        ) : (
-                            <>
-                                <Text style={styles.buttonText}>Save Vehicle</Text>
-                                <Ionicons name="add-circle" size={22} color="#fff" />
-                            </>
-                        )}
-                    </LinearGradient>
-                </TouchableOpacity>
-            </ScrollView>
+                    <TouchableOpacity onPress={handleAddVehicle} disabled={isLoading}>
+                        <LinearGradient
+                            colors={['#c3683c', '#b95528']}
+                            style={styles.button}
+                        >
+                            {isLoading ? (
+                                <RotatingLoader color="#fff" size={15}/>
+                            ) : (
+                                <>
+                                    <Text style={styles.buttonText}>Save Vehicle</Text>
+                                    <Ionicons name="add-circle" size={22} color="#fff" />
+                                </>
+                            )}
+                        </LinearGradient>
+                    </TouchableOpacity>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 };
 
 const styles = StyleSheet.create({
-    safeArea: { backgroundColor: '#f8f9fa',marginTop: 10 },
-    scrollContainer: { flexGrow: 1, padding: 20, marginTop: 50, paddingTop: 40 },
+    safeArea: { flex: 1, backgroundColor: '#f8f9fa',marginTop: 10 },
+    scrollContainer: { flexGrow: 1, padding: 20, marginTop: 10, paddingTop: 40 },
     headerContainer: { alignItems: 'center', marginBottom: 30 },
     header: { fontSize: 28, fontWeight: 'bold', color: '#333',marginBottom: 10 },
     subHeader: { fontSize: 16, color: '#666', marginTop: 8, textAlign: 'center' },

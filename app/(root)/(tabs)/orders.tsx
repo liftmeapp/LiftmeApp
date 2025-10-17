@@ -436,7 +436,7 @@ const OrderCard = ({ booking, onCancel, onViewQuote, onPaySparePart, onChat }: {
                                 </View>
                             </View>
                             <View style={styles.otpContainer}>
-                                <Text style={styles.otpLabel}>Share this OTP with tow truck on arrival:</Text>
+                                <Text style={styles.otpLabel}>Share this OTP towing service is Completed:</Text>
                                 <Text style={styles.otpCode}>{booking.otp}</Text>
                             </View>
                         </>
@@ -464,7 +464,7 @@ const OrderCard = ({ booking, onCancel, onViewQuote, onPaySparePart, onChat }: {
 
                     {booking.subStatus === 'SERVICE_IN_PROGRESS' && booking.otp && (
                         <View style={[styles.otpContainer, { backgroundColor: '#e9f5ff', borderColor: '#d0e7ff' }]}>
-                            <Text style={[styles.otpLabel, { color: '#1a5f99' }]}>Share this code with the garage to complete the service:</Text>
+                            <Text style={[styles.otpLabel, { color: '#1a5f99' }]}>Share this code with the Garage once service is completed:</Text>
                             <Text style={[styles.otpCode, { color: '#0d47a1' }]}>{booking.otp}</Text>
                         </View>
                     )}

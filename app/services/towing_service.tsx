@@ -44,7 +44,7 @@ const TowingServiceMapContent = () => {
     const [savedCards, setSavedCards] = useState<any[]>([]);
     const [selectedCard, setSelectedCard] = useState<string | null>(null);
     const [isFetchingCards, setIsFetchingCards] = useState(false);
-    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CARD');
+    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CASH');
 
     const {
         currentStage, setCurrentStage,
@@ -70,9 +70,7 @@ const TowingServiceMapContent = () => {
             if (!res.ok) throw new Error("Could not load your saved cards.");
             const cards = await res.json();
             setSavedCards(cards);
-            if (cards.length > 0) {
-                setSelectedCard(cards[0].id);
-            }
+            
         } catch (error: any) {
             Alert.alert("Error loading cards", error.message);
         } finally {

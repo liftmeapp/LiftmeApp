@@ -1,8 +1,8 @@
 
 // app/(root)/(tabs)/settings/help.tsx
+import { Stack } from 'expo-router';
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Stack } from 'expo-router';
 
 const HelpScreen = () => {
   return (
@@ -44,7 +44,7 @@ const HelpScreen = () => {
 
         <Text style={styles.subheader}>Contact Us</Text>
         <Text style={styles.paragraph}>
-          For any issues or feedback, please don't hesitate to reach out to our support team at <Text style={styles.link}>support@lift-me.app</Text>.
+          For any issues or feedback, please don't hesitate to reach out to our support team at <Text style={styles.link}>info@liftme.co.in</Text>.
         </Text>
       </ScrollView>
     </View>

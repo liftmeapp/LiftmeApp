@@ -2,7 +2,7 @@ import RotatingLoader from '@/components/RotatingLoader';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -292,7 +292,7 @@ export default function SparePartDashboard() {
 
     return (
         <SafeAreaView style={styles.container}>
-            <Stack.Screen options={{ title: 'My Spare Parts Store' }} />
+            
             {loading ? (
                 <View style={styles.centered}><RotatingLoader /></View>
             ) : (
@@ -338,7 +338,7 @@ export default function SparePartDashboard() {
 // ===================================================================
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#f8f9fa", marginTop:40 },
+    container: { flex: 1, backgroundColor: "#f8f9fa", marginTop:5 },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     // Main Tabs
     mainTabContainer: { flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: 15, borderRadius: 10, padding: 5, marginTop: 10, marginBottom: 10, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },

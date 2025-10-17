@@ -205,24 +205,24 @@ export default function ServicesHome() {
                  Alert.alert("Unknown Status", "Your business has an unknown status. Please contact support.");
         }
     };
-    return (
-        <>
-            <Stack.Screen
-                options={{
-                    header: () => (
-                        <SafeAreaView style={{ flex: 0, backgroundColor: 'white' }} edges={['top']}>
-                            <View style={styles.customHeader}>
-                                <TouchableOpacity onPress={() => router.back()} style={styles.headerBack}>
-                                    <Ionicons name="arrow-back" size={24} color="#333" />
-                                </TouchableOpacity>
-                                <Text style={styles.customHeaderTitle}>Business Hub</Text>
-                                <View style={{ width: 24 }} /> 
-                            </View>
-                        </SafeAreaView>
-                    ),
-                }}
-            />
-            <ScrollView
+        return (
+            <>
+                <Stack.Screen
+                    options={{
+                        header: () => (
+                            <SafeAreaView style={{ flex: 0, backgroundColor: 'white' }} edges={['top']}>
+                                <View style={styles.customHeader}>
+                                    <TouchableOpacity onPress={() => router.back()} style={styles.headerBack}>
+                                        <Ionicons name="arrow-back" size={24} color="#333" />
+                                    </TouchableOpacity>
+                                    <Text style={styles.customHeaderTitle}>Business Hub</Text>
+                                    <View style={{ width: 24 }} /> 
+                                </View>
+                            </SafeAreaView>
+                        ),
+                    }}
+                />
+                <ScrollView
                 style={styles.container}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             >

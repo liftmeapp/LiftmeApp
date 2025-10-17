@@ -1,13 +1,13 @@
 
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useAuth } from '@clerk/clerk-expo';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { useRouter, Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import InputField from '@/components/InputField';
 import CustomButton from '@/components/CustomButton';
+import InputField from '@/components/InputField';
 import { Colors } from '@/constants/Colors';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -120,18 +120,18 @@ export default function AddSparePartScreen() {
 
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-            <Stack.Screen options={{ title: 'List a New Part' }} />
+            
             <Text style={styles.header}>List a New Spare Part</Text>
             <Text style={styles.subHeader}>Enter the details of the part you want to sell.</Text>
 
-            <InputField placeholder="Part Name (e.g., Brake Pads)" value={partName} onChangeText={setPartName} />
-            <InputField placeholder="Description" value={description} onChangeText={setDescription} multiline />
-            <InputField placeholder="Price" value={price} onChangeText={setPrice} keyboardType="numeric" />
-            <InputField placeholder="Quantity" value={quantity} onChangeText={setQuantity} keyboardType="numeric" />
-            <InputField placeholder="Category (e.g., Brakes)" value={category} onChangeText={setCategory} />
-            <InputField placeholder="Brand (e.g., Brembo)" value={brand} onChangeText={setBrand} />
-            <InputField placeholder="Compatible Model (e.g., Honda Civic)" value={model} onChangeText={setModel} />
-            <InputField placeholder="Compatible Year (e.g., 2020)" value={year} onChangeText={setYear} keyboardType="numeric" />
+            <InputField label='Name' placeholder="Part Name (e.g., Brake Pads)" value={partName} onChangeText={setPartName} />
+            <InputField label='Description' placeholder="Description" value={description} onChangeText={setDescription} multiline />
+            <InputField label='Price' placeholder="Price" value={price} onChangeText={setPrice} keyboardType="numeric" />
+            <InputField label='Quantity' placeholder="Quantity" value={quantity} onChangeText={setQuantity} keyboardType="numeric" />
+            <InputField label='Category' placeholder="Category (e.g., Brakes)" value={category} onChangeText={setCategory} />
+            <InputField label='Brand' placeholder="Brand (e.g., Brembo)" value={brand} onChangeText={setBrand} />
+            <InputField label='Model' placeholder="Compatible Model (e.g., Honda Civic)" value={model} onChangeText={setModel} />
+            <InputField label='Year' placeholder="Compatible Year (e.g., 2020)" value={year} onChangeText={setYear} keyboardType="numeric" />
 
             <CustomButton title="Pick Images" onPress={handleImagePick} bgVariant='outline' className="my-2" />
             

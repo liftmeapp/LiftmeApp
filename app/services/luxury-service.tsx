@@ -255,7 +255,7 @@ export default function LuxuryService() {
 
 
 
-    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CARD');
+    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CASH');
 
     const handleConfirmBooking = () => {
         if (paymentMethod === 'CARD') {

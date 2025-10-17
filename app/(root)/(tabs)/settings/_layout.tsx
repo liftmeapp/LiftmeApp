@@ -22,8 +22,9 @@ export default function SettingsStackLayout() {
   return (
     <Stack screenOptions={{ headerShown: true }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="(admin)/admin-dashboard" options={{ title: 'Admin Dashboard' }}/>
        <Stack.Screen name="vehicle-page" />
-       <Stack.Screen name="add-business" />
+       <Stack.Screen name="add-business" options={{ headerShown: false }} />
        <Stack.Screen name="premium" />
        <Stack.Screen name="payments" />
        <Stack.Screen name="help" />

@@ -479,11 +479,6 @@ const renderContent = () => {
 
 return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Verification Dashboard</Text>
-        <Text style={styles.headerSubtitle}>Business Verification</Text>
-      </View>
 
       {/* Stats Cards */}
       <View style={styles.statsContainerWrapper}>

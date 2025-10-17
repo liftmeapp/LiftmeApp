@@ -34,7 +34,7 @@ export default function VehicleDashboard() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    const canAddVehicle = true;
+
 
     const fetchData = useCallback(async () => {
         try {
@@ -121,17 +121,11 @@ export default function VehicleDashboard() {
             />
 
             <View style={styles.fabContainer}>
-                {!canAddVehicle && (
-                    <Text style={styles.limitText}>
-                        Vehicle limit reached. Go Premium to add more.
-                    </Text>
-                )}
                 <TouchableOpacity
                     onPress={() => router.push('/settings/vehicle-page/add-vehicle')}
-                    disabled={!canAddVehicle}
                 >
                     <LinearGradient
-                        colors={canAddVehicle ? ['#c3683c', '#b95528'] : ['#b0b0b0', '#999999']}
+                        colors={['#c3683c', '#b95528']}
                         style={styles.fab}
                     >
                         <Ionicons name="add" size={28} color="#fff" />

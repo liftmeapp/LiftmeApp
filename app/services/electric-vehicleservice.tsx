@@ -173,9 +173,7 @@ export default function ElectricService() {
             if (!res.ok) throw new Error("Could not load your saved cards.");
             const cards = await res.json();
             setSavedCards(cards);
-            if (cards.length > 0) {
-                setSelectedCard(cards[0].id);
-            }
+           
         } catch (error: any) {
             Alert.alert("Error loading cards", error.message);
         } finally {
@@ -255,7 +253,7 @@ export default function ElectricService() {
 
 
 
-    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CARD');
+    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CASH');
 
     const handleConfirmBooking = () => {
         if (paymentMethod === 'CARD') {
