@@ -2,7 +2,7 @@ import { useGarageStore } from '@/store/garageStore';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { io } from "socket.io-client";
@@ -214,7 +214,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                     style={[styles.bookingButton, styles.acceptButton]} // Using acceptButton style for green color
                     onPress={() => onOpenQuoteModal(booking)}
                 >
-                    <Text style={styles.bookingButtonText}>Submit Quote</Text>
+                    <Text style={styles.bookingButtonText}>Job estimate</Text>
                 </TouchableOpacity>
             </View>
         )}

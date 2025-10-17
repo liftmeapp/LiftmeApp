@@ -98,12 +98,11 @@ const QuoteDetailsModal = ({ booking, visible, onClose, onPaymentSuccess, onReje
                 <View style={modalStyles.modalContent}>
                     <ScrollView showsVerticalScrollIndicator={false}>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-                            <Text style={modalStyles.modalTitle}>Service Quote</Text>
+                            <Text style={modalStyles.modalTitle}>Job Estimate</Text>
                             <TouchableOpacity onPress={onClose} style={[styles.bookingButton, styles.cancelButton, { marginLeft: 0, paddingHorizontal: 12, paddingVertical: 6 }]}>
                                 <Text style={styles.bookingButtonText}>Close</Text>
                             </TouchableOpacity>
                         </View>
-                        
                         <View style={modalStyles.quoteDetailRow}>
                             <Text style={modalStyles.quoteLabel}>Vehicle Status:</Text>
                             <Text style={modalStyles.quoteValue}>{booking.vehicleStatus || 'N/A'}</Text>
@@ -445,7 +444,7 @@ const OrderCard = ({ booking, onCancel, onViewQuote, onPaySparePart, onChat }: {
                     {booking.subStatus === 'AWAITING_GARAGE_QUOTE' && (
                         <View style={styles.inProgressContainer}>
                             <Ionicons name="build-outline" size={20} color="#2980b9" />
-                            <Text style={styles.inProgressText}>Your vehicle is at the garage. Awaiting service quote.</Text>
+                            <Text style={styles.inProgressText}>Your vehicle is at the garage. Awaiting Job Estimation.</Text>
                         </View>
                     )}
 

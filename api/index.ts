@@ -14,6 +14,7 @@ import { attachSocketServer } from './socket';
 import sparePartRoutes from './spareparts';
 import towTruckRoutes from './towtruck';
 import vehiclesRouter from './vehicles';
+import stripeRouter from './stripe';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -161,6 +162,7 @@ app.post(
 app.use(express.json({ limit: '50mb' }));
 app.use(garagesRouter); // Mount garagesRouter directly
 app.use(towTruckRoutes); // Mount towTruckRoutes directly
+app.use('/api/stripe', stripeRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/vehicles', vehiclesRouter);
 app.use('/api', bookingsRouter);

@@ -48,6 +48,7 @@ interface MapProps {
         category?: string | null;
         serviceId?: string | null;
     };
+    onGaragesFiltered?: (garages: any[]) => void; // Add this line
 }
 
 // --- HELPER FUNCTIONS ---
@@ -109,7 +110,7 @@ const CustomMapMarker = React.memo(
 });
 
 // --- MAIN COMPONENT ---
-export default function GarageMap({ isPinningLocation, onPinLocationChange, onMapReady, providerType = 'all', filters }: MapProps) {
+export default function GarageMap({ isPinningLocation, onPinLocationChange, onMapReady, providerType = 'all', filters, onGaragesFiltered }: MapProps) {
     console.log('[GarageMap] Filters prop received:', filters);
     const { getToken, isSignedIn } = useAuth();
     const mapRef = useRef<MapView>(null);
@@ -143,9 +144,9 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
         onPinLocationChange({ latitude: lat, longitude: lon, description: address });
     }, 500), [onPinLocationChange]);
 
-    const fetchProvidersForRegion = useCallback(debounce(async (currentRegion: Region) => {
+    const fetchProvidersForRegion = useCallback(debounce(async (currentRegion: Region, showLoading: boolean = true) => {
         if (!isSignedIn || !currentRegion) return;
-        setIsFetchingProviders(true);
+        if (showLoading) setIsFetchingProviders(true);
         console.log("[Map.tsx] Fetching providers for region:", currentRegion);
         try {
             const token = await getToken();
@@ -187,12 +188,16 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
             setGarages(Array.isArray(garagesData) ? garagesData : []);
             setTowTrucks(Array.isArray(towTrucksData) ? towTrucksData : []);
             setChargingStations(Array.isArray(evStationsData) ? evStationsData : []);
+
+            if (onGaragesFiltered) {
+                onGaragesFiltered(Array.isArray(garagesData) ? garagesData : []);
+            }
         } catch (error) {
             console.error("Failed to fetch nearby providers:", error);
         } finally {
-            setIsFetchingProviders(false);
+            if (showLoading) setIsFetchingProviders(false);
         }
-    }, 1000), [isSignedIn, providerType, filters]);
+    }, 1000), [isSignedIn, providerType, filters, onGaragesFiltered]);
 
     useEffect(() => {
         console.log("[Map.tsx] Initial useEffect is running...");
@@ -213,7 +218,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                     debouncedGetAddress(initialRegion.latitude, initialRegion.longitude);
                 } else {
                     console.log("[Map.tsx] Discovery mode is active, fetching initial providers.");
-                    fetchProvidersForRegion(initialRegion);
+                    fetchProvidersForRegion(initialRegion, true);
                 }
             } catch (error: any) {
                 console.error("🔴 [Map.tsx] Map Init Error:", error.message);
@@ -229,7 +234,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
 
     useEffect(() => {
         if (region && !isPinningLocation) {
-            fetchProvidersForRegion(region);
+            fetchProvidersForRegion(region, true);
         }
     }, [filters]);
 
@@ -248,7 +253,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
         if (isPinningLocation) {
             debouncedGetAddress(newRegion.latitude, newRegion.longitude);
         } else {
-            fetchProvidersForRegion(newRegion);
+            fetchProvidersForRegion(newRegion, false);
         }
     };
     
@@ -270,7 +275,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
     
     const handleRefresh = () => {
         if (region) {
-            fetchProvidersForRegion(region);
+            fetchProvidersForRegion(region, true);
         }
     };
 
@@ -305,7 +310,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
             if (isPinningLocation) {
                 debouncedGetAddress(lat, lng);
             } else {
-                fetchProvidersForRegion(newRegion);
+                fetchProvidersForRegion(newRegion, true);
             }
             
         } else if (data?.description) {
@@ -343,7 +348,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                 if (isPinningLocation) {
                     debouncedGetAddress(lat, lng);
                 } else {
-                    fetchProvidersForRegion(newRegion);
+                    fetchProvidersForRegion(newRegion, true);
                 }
             } else {
                 setSearchError('Location not found');
@@ -508,12 +513,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                     )}
                 </>
             </MapView>
-            {isFetchingProviders && (
-                <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color="#b95528" />
-                    <Text style={styles.loadingText}>Updating Garages...</Text>
-                </View>
-            )}
+
             {isPinningLocation && (
                 <>
                     <View style={styles.pinContainer} pointerEvents="none">
