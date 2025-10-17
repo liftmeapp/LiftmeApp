@@ -2,11 +2,13 @@
 import CustomButton from '@/components/CustomButton';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Order } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+
+type FilterStatus = 'ALL' | 'COMPLETED' | 'CANCELLED';
 
 export default function ProfileScreen() {
   const { isLoaded: isClerkLoaded, isSignedIn, user } = useUser();
@@ -16,6 +18,8 @@ export default function ProfileScreen() {
   const [orderHistory, setOrderHistory] = useState<Order[]>([]);
   const [dbUser, setDbUser] = useState<any>(null); // To store user data from our DB
   const [isLoading, setIsLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('ALL');
+  const [filteredOrderHistory, setFilteredOrderHistory] = useState<Order[]>([]);
   
   const isFetchingRef = useRef(false);
 
@@ -75,10 +79,19 @@ export default function ProfileScreen() {
     }, [isSignedIn, user?.id]) 
   );
 
-  // Determine the name to display. Prioritize our DB, then Clerk, then a fallback.
-  const displayName = dbUser?.firstName 
-    ? `${dbUser.firstName} ${dbUser.lastName || ''}`.trim() 
-    : (user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : 'User');
+  useEffect(() => {
+    if (filterStatus === 'ALL') {
+      setFilteredOrderHistory(orderHistory);
+    } else {
+      const filtered = orderHistory.filter(order => order.status === filterStatus);
+      setFilteredOrderHistory(filtered);
+    }
+  }, [orderHistory, filterStatus]);
+
+  // Determine the name to display. Prioritize Clerk's data, then our DB, then a fallback.
+  const displayName = user?.firstName 
+    ? `${user.firstName} ${user.lastName || ''}`.trim() 
+    : (dbUser?.firstName ? `${dbUser.firstName} ${dbUser.lastName || ''}`.trim() : 'User');
 
   if (!isClerkLoaded || isLoading) {
     return (
@@ -96,6 +109,22 @@ export default function ProfileScreen() {
       </View>
     );
   }
+
+  const renderFilterButtons = () => (
+    <View style={styles.filterContainer}>
+      {(['ALL', 'COMPLETED', 'CANCELLED'] as FilterStatus[]).map((status) => (
+        <TouchableOpacity
+          key={status}
+          style={[styles.filterButton, filterStatus === status && styles.activeFilter]}
+          onPress={() => setFilterStatus(status)}
+        >
+          <Text style={[styles.filterButtonText, filterStatus === status && styles.activeFilterText]}>
+            {status.charAt(0) + status.slice(1).toLowerCase()}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -126,19 +155,27 @@ export default function ProfileScreen() {
 
       <View style={styles.divider} />
 
-      <Text style={styles.sectionTitle}>Service Summary</Text>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Service Summary</Text>
+        {renderFilterButtons()}
+      </View>
+
       {isLoading ? (
         <ActivityIndicator size="large" color="#b95528" style={{ marginTop: 20 }} />
-      ) : orderHistory.length > 0 ? (
+      ) : filteredOrderHistory.length > 0 ? (
         <FlatList
-          data={orderHistory}
+          data={filteredOrderHistory}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => <OrderHistoryCard order={item} />}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={profileStyles.orderList}
         />
       ) : (
-        <Text style={styles.placeholderText}>You have no past orders.</Text>
+        <Text style={styles.placeholderText}>
+          {orderHistory.length === 0 
+            ? 'You have no past orders.' 
+            : `You have no ${filterStatus.toLowerCase()} orders.`}
+        </Text>
       )}
     </View>
   );
@@ -208,7 +245,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     color: '#333',
   },
-  contactInfo: {
+contactInfo: {
     color: '#555',
     fontSize: 14,
     marginBottom: 3,
@@ -235,11 +272,37 @@ const styles = StyleSheet.create({
     backgroundColor: '#ccc',
     marginVertical: 24,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   sectionTitle: {
     fontWeight: 'bold',
     fontSize: 18,
-    marginBottom: 12,
     color: '#333',
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+  },
+  filterButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  activeFilter: {
+    backgroundColor: '#b95528',
+  },
+  filterButtonText: {
+    color: '#333',
+    fontWeight: '500',
+    fontSize: 12,
+  },
+  activeFilterText: {
+    color: '#fff',
   },
   placeholderText: {
     fontSize: 14,
@@ -291,7 +354,7 @@ const profileStyles = StyleSheet.create({
     color: '#fff',
     paddingVertical: 4,
     paddingHorizontal: 8,
-    borderRadius: 5,
+borderRadius: 5,
     overflow: 'hidden',
     textTransform: 'uppercase',
   },
