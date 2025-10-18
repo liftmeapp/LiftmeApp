@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { debounce } from 'lodash';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import RotatingLoader from './RotatingLoader';
@@ -49,6 +49,8 @@ interface MapProps {
         serviceId?: string | null;
     };
     onGaragesFiltered?: (garages: any[]) => void; // Add this line
+    selectedGarageId?: string | null; // Add this line
+    onMarkerSelect?: (id: string | null) => void; // Add this line
 }
 
 // --- HELPER FUNCTIONS ---
@@ -87,38 +89,47 @@ const fetchNearbyEVStations = async (lat: number, lon: number) => {
         return [];
     }
 };
-
-
 // --- CHILD COMPONENTS ---
-const CustomMapMarker = React.memo(
-    ({ coordinate, name, type, onPress }: { 
+const CustomMapMarker = React.memo(React.forwardRef(
+    ({ coordinate, name, type, onPress, isSelected }: { 
         coordinate: {latitude: number, longitude: number},
         name: string, 
         type: 'garage' | 'truck' | 'ev',
-        onPress: () => void
-    }) => {
+        onPress: () => void,
+        isSelected: boolean
+    }, ref) => {
     const iconName = type === 'garage' ? 'build' : type === 'truck' ? 'car' : 'flash';
-    const markerColor = type === 'garage' ? '#b95528' : type === 'truck' ? '#2980b9' : '#27ae60';
+    const markerColor = isSelected ? '#e67e22' : (type === 'garage' ? '#b95528' : type === 'truck' ? '#2980b9' : '#27ae60');
+    const zIndex = isSelected ? 10 : 1;
 
     return (
-        <Marker coordinate={coordinate} title={name} onPress={onPress}>
+        <Marker
+            ref={ref}
+            coordinate={coordinate}
+            onPress={onPress}
+            zIndex={zIndex}
+            title={name}
+        >
             <View style={styles.markerContainer}>
-                <View style={[styles.markerPin, { backgroundColor: markerColor }]}><Ionicons name={iconName} size={16} color="white" /></View>
+                <View style={[styles.markerPin, { backgroundColor: markerColor }]}>
+                    <Ionicons name={iconName} size={18} color="white" />
+                </View>
             </View>
         </Marker>
     );
-});
+}));
 
 // --- MAIN COMPONENT ---
-export default function GarageMap({ isPinningLocation, onPinLocationChange, onMapReady, providerType = 'all', filters, onGaragesFiltered }: MapProps) {
+export default function GarageMap({ isPinningLocation, onPinLocationChange, onMapReady, providerType = 'all', filters, onGaragesFiltered,selectedGarageId,onMarkerSelect }: MapProps) {
     console.log('[GarageMap] Filters prop received:', filters);
     const { getToken, isSignedIn } = useAuth();
     const mapRef = useRef<MapView>(null);
+    const markerRefs = useRef<any>({});
     
     const [region, setRegion] = useState<Region | null>(null);
     const [isFetchingProviders, setIsFetchingProviders] = useState(true);
     const [garages, setGarages] = useState<any[]>([]);
-    const [towTrucks, setTowTrucks] = useState<any[]>([]);
+    const [towTrucks, setTowTrucks] = useState<any[]>([]);  
     const [chargingStations, setChargingStations] = useState<any[]>([]);
     const [searchError, setSearchError] = useState<string | null>(null);
 
@@ -126,17 +137,17 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
     const [isGeocoding, setIsGeocoding] = useState(false);
     const [pinnedLocation, setPinnedLocation] = useState<PinnedLocationData | null>(null);
 
-    const [selectedMarker, setSelectedMarker] = useState<{name: string, latitude: number, longitude: number} | null>(null);
-    const [isModalVisible, setIsModalVisible] = useState(false);
+
 
     const handleGetDirections = (latitude: number, longitude: number) => {
         const url = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
         Linking.openURL(url).catch(err => console.error('An error occurred opening maps', err));
     };
 
-    const handleMarkerPress = (markerData: {name: string, latitude: number, longitude: number}) => {
-        setSelectedMarker(markerData);
-        setIsModalVisible(true);
+    const handleMarkerPress = (markerId: string) => {
+        if (onMarkerSelect) {
+            onMarkerSelect(markerId);
+        }
     };
 
     const debouncedGetAddress = useCallback(debounce(async (lat: number, lon: number) => {
@@ -237,6 +248,43 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
             fetchProvidersForRegion(region, true);
         }
     }, [filters]);
+
+
+
+    useEffect(() => {
+        if (selectedGarageId) {
+            const allProviders = [...garages, ...towTrucks, ...chargingStations];
+            const provider = allProviders.find(p => p.name === selectedGarageId);
+            if (provider) {
+                let latitude, longitude;
+
+                if (provider.location?.coordinates) { // Garage or Tow Truck
+                    latitude = provider.location.coordinates[1];
+                    longitude = provider.location.coordinates[0];
+                } else if (provider.geometry?.location) { // EV Station
+                    latitude = provider.geometry.location.lat;
+                    longitude = provider.geometry.location.lng;
+                }
+
+                if (latitude && longitude) {
+                    const newRegion = {
+                        latitude,
+                        longitude,
+                        latitudeDelta: region?.latitudeDelta || 0.02, // Maintain current zoom level
+                        longitudeDelta: region?.longitudeDelta || 0.01,
+                    };
+                    mapRef.current?.animateToRegion(newRegion, 1000); // Animate over 1 second
+
+                    // Use a timeout to ensure the map has time to pan before showing the callout
+                    setTimeout(() => {
+                        if (markerRefs.current[selectedGarageId]) {
+                            markerRefs.current[selectedGarageId].showCallout();
+                        }
+                    }, 1100);
+                }
+            }
+        }
+    }, [selectedGarageId]);
 
     const [isProgrammaticChange, setIsProgrammaticChange] = useState(false);
 
@@ -475,40 +523,58 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                 rotateEnabled={!isPinningLocation}
             >
                 <>
-                    {garages.filter(g => g.location?.coordinates).map((g, index) => 
+                    {garages.filter(g => g.location?.coordinates).map((g) => 
                         <CustomMapMarker 
-                            key={`g-${g.id}-${index}`} 
+                            ref={(el) => {
+                                       if (el) {
+                                           markerRefs.current[g.name] = el;
+                                       }
+                                   }}            
+                        key={`g-${g.name}`} 
                             coordinate={{
                                 latitude: g.location.coordinates[1], 
                                 longitude: g.location.coordinates[0]
                             }} 
                             name={g.name} 
                             type="garage" 
-                            onPress={() => handleMarkerPress({name: g.name, latitude: g.location.coordinates[1], longitude: g.location.coordinates[0]})}
+                            onPress={() => handleMarkerPress(g.name)}
+                            isSelected={g.name === selectedGarageId}
                         />
                     )}
-                    {towTrucks.filter(t => t.location?.coordinates).map((t, index) => 
+                    {towTrucks.filter(t => t.location?.coordinates).map((t) => 
                         <CustomMapMarker 
-                            key={`t-${t.id}-${index}`} 
+                            ref={(el) => {
+                                       if (el) {
+                                           markerRefs.current[t.name] = el;
+                                       }
+                                   }}                          
+                            key={`t-${t.name}`} 
                             coordinate={{
                                 latitude: t.location.coordinates[1], 
                                 longitude: t.location.coordinates[0]
                             }} 
                             name={t.name} 
                             type="truck" 
-                            onPress={() => handleMarkerPress({name: t.name, latitude: t.location.coordinates[1], longitude: t.location.coordinates[0]})}
+                            onPress={() => handleMarkerPress(t.name)}
+                            isSelected={t.name === selectedGarageId}
                         />
                     )}
-                    {chargingStations.map((station, index) => 
+                    {chargingStations.map((station) => 
                         <CustomMapMarker 
-                            key={`ev-${station.place_id}-${index}`}
+                            ref={(el) => {
+                                       if (el) {
+                                           markerRefs.current[station.name] = el;
+                                       }
+                                   }}
+                            key={`ev-${station.name}`}
                             coordinate={{
                                 latitude: station.geometry.location.lat, 
                                 longitude: station.geometry.location.lng
                             }} 
                             name={station.name} 
                             type="ev" 
-                            onPress={() => handleMarkerPress({name: station.name, latitude: station.geometry.location.lat, longitude: station.geometry.location.lng})}
+                            onPress={() => handleMarkerPress(station.name)}
+                            isSelected={station.name === selectedGarageId}
                         />
                     )}
                 </>
@@ -528,36 +594,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                 </>
             )}
 
-            <Modal
-                animationType="slide"
-                transparent={true}
-                visible={isModalVisible}
-                onRequestClose={() => setIsModalVisible(false)}
-            >
-                <View style={styles.modalContainer}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>{selectedMarker?.name}</Text>
-                        <Text style={styles.modalSubtitle}>Would you like to get directions to this location?</Text>
-                        <TouchableOpacity 
-                            style={styles.directionsButton} 
-                            onPress={() => {
-                                if (selectedMarker) {
-                                    handleGetDirections(selectedMarker.latitude, selectedMarker.longitude);
-                                }
-                                setIsModalVisible(false);
-                            }}
-                        >
-                            <Text style={styles.directionsButtonText}>Get Directions</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={styles.cancelButton} 
-                            onPress={() => setIsModalVisible(false)}
-                        >
-                            <Text style={styles.cancelButtonText}>Cancel</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
+
         </View>
     );
 }
@@ -771,5 +808,18 @@ const styles = StyleSheet.create({
         color: '#333',
         fontSize: 18,
         fontWeight: '500',
+    },
+    calloutBubble: {
+        backgroundColor: 'white',
+        borderRadius: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        marginBottom: 5,
+        borderColor: '#e67e22',
+        borderWidth: 1,
+    },
+    calloutText: {
+        fontWeight: 'bold',
+        color: '#333',
     },
 });

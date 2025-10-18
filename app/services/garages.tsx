@@ -95,6 +95,8 @@ const GaragesScreen = () => {
     const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
     const [mapFilters, setMapFilters] = useState<{ category: string | null; serviceId: string | null }>({ category: null, serviceId: null });
 
+    const [selectedGarageId, setSelectedGarageId] = useState<string | null>(null);
+
     // --- Bottom Sheet Configuration ---
     const snapPoints = useMemo(() => ['10%', '50%', '85%'], []);
 
@@ -158,32 +160,67 @@ const GaragesScreen = () => {
         Linking.openURL(url).catch(err => console.error('An error occurred opening maps', err));
     };
 
+    const handleCall = (phoneNumber: string) => {
+        if (phoneNumber) {
+            Linking.openURL(`tel:${phoneNumber}`);
+        } else {
+            Alert.alert("No Phone Number", "This garage has not provided a contact number.");
+        }
+    };
+
     const handleGaragesFiltered = (garages: any[]) => {
         setFilteredGarages(garages);
     };
 
+    const getGarageId = (item: any) => item?.name;
+
     // --- Render Garage Item for Bottom Sheet ---
-    const renderGarageItem = ({ item }: { item: any }) => {
+    const GarageListItem = React.memo(({ item, userLocation, selectedGarageId, onSelect, onGetDirections, onCall }: any) => {
         const distance = userLocation
             ? calculateDistance(userLocation.latitude, userLocation.longitude, item.location.coordinates[1], item.location.coordinates[0]).toFixed(2)
             : null;
+        const isSelected = getGarageId(item) === selectedGarageId;
 
         return (
-            <View style={bottomSheetStyles.itemContainer}>
+            <TouchableOpacity
+                style={[bottomSheetStyles.itemContainer, isSelected && bottomSheetStyles.selectedItemContainer]}
+                onPress={() => onSelect(getGarageId(item))}
+            >
                 <View style={bottomSheetStyles.itemDetails}>
                     <Text style={bottomSheetStyles.itemName}>{item.name}</Text>
                     <Text style={bottomSheetStyles.itemAddress}>{item.address}</Text>
                     {distance && <Text style={bottomSheetStyles.itemDistance}>{distance} km away</Text>}
                 </View>
-                <TouchableOpacity
-                    style={bottomSheetStyles.directionButton}
-                    onPress={() => handleGetDirections(item.location.coordinates[1], item.location.coordinates[0])}
-                >
-                    <Text style={bottomSheetStyles.directionButtonText}>Directions</Text>
-                </TouchableOpacity>
-            </View>
+                <View style={bottomSheetStyles.itemActions}>
+                    <TouchableOpacity
+                        style={bottomSheetStyles.directionButton}
+                        onPress={() => onGetDirections(item.location.coordinates[1], item.location.coordinates[0])}
+                    >
+                        <Ionicons name="map-outline" size={20} color="#fff" />
+                        <Text style={bottomSheetStyles.directionButtonText}>Directions</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[bottomSheetStyles.callButton, !item.contactPhone && styles.disabledButton]}
+                        onPress={() => onCall(item.contactPhone)}
+                        disabled={!item.contactPhone}
+                    >
+                        <Ionicons name="call-outline" size={20} color="#fff" />
+                    </TouchableOpacity>
+                </View>
+            </TouchableOpacity>
         );
-    };
+    });
+
+    const renderGarageItem = ({ item }: { item: any }) => (
+        <GarageListItem
+            item={item}
+            userLocation={userLocation}
+            selectedGarageId={selectedGarageId}
+            onSelect={setSelectedGarageId}
+            onGetDirections={handleGetDirections}
+            onCall={handleCall}
+        />
+    );
 
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
@@ -194,6 +231,8 @@ const GaragesScreen = () => {
                     isPinningLocation={false}
                     onPinLocationChange={() => { }}
                     onGaragesFiltered={handleGaragesFiltered} // Pass the callback here
+                    selectedGarageId={selectedGarageId}
+                    onMarkerSelect={setSelectedGarageId}
                 />
                 <View style={styles.scrollViewContainer}>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContainer}>
@@ -238,11 +277,12 @@ const GaragesScreen = () => {
                 >
                     <BottomSheetFlatList
                         data={filteredGarages}
-                        keyExtractor={(item) => item.id}
+                        keyExtractor={(item : any) => getGarageId(item)}
                         renderItem={renderGarageItem}
                         contentContainerStyle={bottomSheetStyles.contentContainer}
                         ListHeaderComponent={<Text style={bottomSheetStyles.headerText}>Nearby Garages</Text>}
                         ListEmptyComponent={<Text style={bottomSheetStyles.emptyText}>No garages found for this category.</Text>}
+                        extraData={selectedGarageId}
                     />
                 </BottomSheet>
 
@@ -324,6 +364,9 @@ const styles = StyleSheet.create({
     },
     activeFilterButtonText: {
         color: '#fff',
+    },
+    disabledButton: {
+        backgroundColor: '#a5a5a5',
     },
 });
 
@@ -416,9 +459,18 @@ const bottomSheetStyles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#e9ecef',
+        padding: 12,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        marginBottom: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
+    },
+    selectedItemContainer: {
+        backgroundColor: '#fff8f2',
     },
     itemDetails: {
         flex: 1,
@@ -440,15 +492,28 @@ const bottomSheetStyles = StyleSheet.create({
         fontWeight: '500',
         marginTop: 4,
     },
+    itemActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
     directionButton: {
+        flexDirection: 'row',
         backgroundColor: '#b95528',
-        paddingHorizontal: 16,
+        paddingHorizontal: 12,
         paddingVertical: 10,
         borderRadius: 8,
+        alignItems: 'center',
     },
     directionButtonText: {
         color: '#fff',
         fontWeight: '600',
+        marginLeft: 6,
+    },
+    callButton: {
+        backgroundColor: '#27ae60',
+        padding: 10,
+        borderRadius: 8,
+        marginLeft: 8,
     },
     emptyText: {
         textAlign: 'center',

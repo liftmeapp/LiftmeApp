@@ -929,6 +929,372 @@ bookingsRouter.post('/bookings/:id/verify-otp-tow', async (req: Request, res: Re
     }
 });
 
+bookingsRouter.post('/bookings/:id/submit-quote', async (req: Request, res: Response) => {
+    const { id: bookingId } = req.params;
+    const { vehicleStatus, servicesRequired, servicesEstimate, jobEstimate, notes } = req.body;
+    const garageOwnerId = req.auth.userId;
+
+    if (!jobEstimate || !servicesRequired) {
+        return res.status(400).json({ error: "Job estimate and services required are mandatory." });
+    }
+
+    try {
+        const garage = await prisma.garage.findFirst({ where: { owner: { clerkId: garageOwnerId } } });
+        if (!garage) return res.status(403).json({ error: "Garage profile not found." });
+
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, garageId: garage.id },
+            include: { user: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: "Booking not found or not assigned to this garage." });
+
+        const validStatuses = ['AWAITING_GARAGE_QUOTE', 'QUOTE_REJECTED'];
+        if (booking.status !== 'IN_PROGRESS' || !validStatuses.includes(booking.subStatus as any)) {
+            return res.status(409).json({ error: "This booking is not awaiting a quote." });
+        }
+
+        const quoteData = {
+            vehicleStatus,
+            servicesRequired,
+            servicesEstimate,
+            jobEstimate: parseFloat(jobEstimate),
+            notes,
+            quotedAt: new Date()
+        };
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                vehicleStatus: vehicleStatus,
+                servicesRequired: servicesRequired,
+                servicesEstimate: servicesEstimate,
+                jobEstimate: parseFloat(jobEstimate),
+                initialEstimateAmount: parseFloat(jobEstimate),
+                notes: notes,
+                subStatus: 'AWAITING_QUOTE_APPROVAL',
+                quoteRejectionReason: null, // Clear any previous rejection reason
+                quoteHistory: {
+                    push: quoteData
+                }
+            }
+        });
+
+        // Notify customer
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('garage_quote_ready', {
+                bookingId: updatedBooking.id,
+                ...quoteData
+            });
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to submit quote:", error);
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
+
+bookingsRouter.post('/bookings/:id/reject-quote', async (req: Request, res: Response) => {
+    const { id: bookingId } = req.params;
+    const { reason } = req.body;
+    const customerClerkId = req.auth.userId;
+
+    if (!reason) return res.status(400).json({ error: "A reason for rejection is required." });
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { garage: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: "Booking not found." });
+
+        if (booking.status !== 'IN_PROGRESS' || booking.subStatus !== 'AWAITING_QUOTE_APPROVAL') {
+            return res.status(409).json({ error: "This booking is not awaiting quote approval." });
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                subStatus: 'QUOTE_REJECTED',
+                quoteRejectionReason: reason,
+            }
+        });
+
+        // Notify garage
+        if (booking.garageId) {
+            const garageSocketId = providerSockets[booking.garageId];
+            if (garageSocketId) {
+                io.to(garageSocketId).emit('quote_rejected_by_customer', {
+                    bookingId: updatedBooking.id,
+                    reason: reason
+                });
+            }
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to reject quote:", error);
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
+
+bookingsRouter.post('/bookings/:id/create-garage-payment-intent', async (req: Request, res: Response) => {
+    const { id: bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { user: true, garage: true }
+        });
+
+        if (!booking || !booking.garage || !booking.jobEstimate) return res.status(404).json({ error: 'Booking not found or missing required data.' });
+        if (!booking.garage.stripeAccountId) return res.status(400).json({ error: 'Provider is not set up to receive payments.' });
+        if (!booking.user.stripeCustomerId) return res.status(400).json({ error: 'User has no payment profile.' });
+
+        const amountInCents = Math.round(booking.jobEstimate * 100);
+        const applicationFee = Math.round(amountInCents * 0.10);
+
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amountInCents,
+            currency: 'inr',
+            customer: booking.user.stripeCustomerId,
+            application_fee_amount: applicationFee,
+            transfer_data: { destination: booking.garage.stripeAccountId },
+            capture_method: 'manual',
+            metadata: { bookingId: booking.id, type: 'garage_service' },
+        });
+
+        await prisma.booking.update({ where: { id: bookingId }, data: { garagePaymentIntentId: paymentIntent.id } });
+
+        return res.status(200).json({ clientSecret: paymentIntent.client_secret });
+
+    } catch (error: any) {
+        console.error("Failed to create garage payment intent:", error);
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
+
+bookingsRouter.post('/bookings/:id/confirm-garage-payment', async (req: Request, res: Response) => {
+    const { id: bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { garage: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+        if (booking.status !== 'IN_PROGRESS' || booking.subStatus !== 'AWAITING_QUOTE_APPROVAL') {
+            return res.status(409).json({ error: 'This booking is not awaiting quote approval.' });
+        }
+        if (!booking.garagePaymentIntentId) return res.status(400).json({ error: 'Payment has not been initiated.' });
+
+        const intent = await stripe.paymentIntents.retrieve(booking.garagePaymentIntentId);
+        if (intent.status !== 'requires_capture') {
+            return res.status(400).json({ error: 'Payment could not be authorized.' });
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                subStatus: 'SERVICE_IN_PROGRESS',
+                garagePaymentStatus: 'authorized',
+            }
+        });
+
+        // Notify garage
+        if (booking.garageId) {
+            const garageSocketId = providerSockets[booking.garageId];
+            if (garageSocketId) {
+                io.to(garageSocketId).emit('initial_quote_accepted', { bookingId: updatedBooking.id });
+            }
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to confirm garage payment:", error);
+        return res.status(500).json({ error: 'An internal server error occurred' });
+    }
+});
+
+bookingsRouter.post('/bookings/:id/confirm-garage-cash', async (req: Request, res: Response) => {
+    const { id: bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { garage: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+        if (booking.status !== 'IN_PROGRESS' || booking.subStatus !== 'AWAITING_QUOTE_APPROVAL') {
+            return res.status(409).json({ error: 'This booking is not awaiting quote approval.' });
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                subStatus: 'SERVICE_IN_PROGRESS',
+                garagePaymentStatus: 'pending_cash',
+            }
+        });
+
+        // Notify garage
+        if (booking.garageId) {
+            const garageSocketId = providerSockets[booking.garageId];
+            if (garageSocketId) {
+                io.to(garageSocketId).emit('initial_quote_accepted', { bookingId: updatedBooking.id });
+            }
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to confirm garage cash payment:", error);
+        return res.status(500).json({ error: 'An internal server error occurred' });
+    }
+});
+
+bookingsRouter.post('/bookings/:id/submit-final-quote', async (req: Request, res: Response) => {
+    const { id: bookingId } = req.params;
+    const { jobEstimate, notes } = req.body;
+    const garageOwnerId = req.auth.userId;
+
+    if (!jobEstimate) return res.status(400).json({ error: "A final job estimate is required." });
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, garage: { owner: { clerkId: garageOwnerId } } },
+            include: { user: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: "Booking not found." });
+        if (booking.status !== 'IN_PROGRESS' || booking.subStatus !== 'SERVICE_IN_PROGRESS') {
+            return res.status(409).json({ error: "Booking is not in a state to accept a final quote." });
+        }
+
+        const finalAmount = parseFloat(jobEstimate);
+        const quoteData = {
+            jobEstimate: finalAmount,
+            notes,
+            quotedAt: new Date()
+        };
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                finalEstimateAmount: finalAmount,
+                notes: notes, // Overwrite notes with final notes
+                subStatus: 'AWAITING_FINAL_APPROVAL',
+                quoteHistory: {
+                    push: quoteData
+                }
+            }
+        });
+
+        // Notify customer
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('final_quote_ready', {
+                bookingId: updatedBooking.id,
+                finalEstimateAmount: finalAmount,
+                notes: notes
+            });
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+
+    } catch (error: any) {
+        console.error("Failed to submit final quote:", error);
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
+
+bookingsRouter.post('/bookings/:id/confirm-final-payment', async (req: Request, res: Response) => {
+    const { id: bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { garage: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+        if (booking.subStatus !== 'AWAITING_FINAL_APPROVAL') {
+            return res.status(409).json({ error: 'This booking is not awaiting final payment.' });
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                subStatus: 'SERVICE_IN_PROGRESS', 
+                jobEstimate: booking.finalEstimateAmount, 
+                garagePaymentStatus: 'paid_final', 
+            }
+        });
+
+        if (booking.garageId) {
+            const garageSocketId = providerSockets[booking.garageId];
+            if (garageSocketId) {
+                io.to(garageSocketId).emit('final_quote_accepted', { bookingId: updatedBooking.id });
+            }
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+    } catch (error: any) {
+        console.error("Failed to confirm final payment:", error);
+        return res.status(500).json({ error: 'An internal server error occurred' });
+    }
+});
+
+bookingsRouter.post('/bookings/:id/confirm-final-cash', async (req: Request, res: Response) => {
+    const { id: bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { garage: true }
+        });
+
+        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+        if (booking.subStatus !== 'AWAITING_FINAL_APPROVAL') {
+            return res.status(409).json({ error: 'This booking is not awaiting final payment.' });
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                subStatus: 'SERVICE_IN_PROGRESS',
+                jobEstimate: booking.finalEstimateAmount,
+                garagePaymentStatus: 'pending_final_cash',
+            }
+        });
+
+        if (booking.garageId) {
+            const garageSocketId = providerSockets[booking.garageId];
+            if (garageSocketId) {
+                io.to(garageSocketId).emit('final_quote_accepted', { bookingId: updatedBooking.id });
+            }
+        }
+
+        return res.status(200).json({ success: true, booking: updatedBooking });
+    } catch (error: any) {
+        console.error("Failed to confirm final cash payment:", error);
+        return res.status(500).json({ error: 'An internal server error occurred' });
+    }
+});
+
 bookingsRouter.get('/bookings/active', async (req: Request, res: Response) => {
     const customerClerkId = req.auth.userId;
     if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
@@ -1345,6 +1711,70 @@ bookingsRouter.post('/bookings/:bookingId/create-payment-intent', async (req: Re
         if (booking && error.type === 'StripeInvalidRequestError' && error.param === 'transfer_data[destination]') {
             const provider = booking.garage || booking.towTruck;
             console.error(`CRITICAL: Invalid Stripe destination account ID for provider. Provider Type: ${booking.garage ? 'Garage' : 'TowTruck'}, Provider ID: ${provider?.id}, Stripe Account ID: ${provider?.stripeAccountId}`);
+            return res.status(400).json({ error: 'This service provider is not currently set up to receive payments. Please contact support and reference this booking.' });
+        }
+         console.error("Payment Intent Error:", error);
+        return res.status(500).json({ error: 'An error occurred while processing your payment.' });
+    }
+});
+
+bookingsRouter.post('/bookings/:id/create-final-payment-intent', async (req: Request, res: Response) => {
+    const { id: bookingId } = req.params;
+    const customerClerkId = req.auth.userId;
+
+    if (!customerClerkId) return res.status(401).json({ error: 'Unauthorized' });
+    let booking;
+    try {
+        booking = await prisma.booking.findUnique({
+            where: { id: bookingId },
+            include: { garage: true, user: true },
+        });
+
+        if (!booking || booking.user.clerkId !== customerClerkId) {
+            return res.status(404).json({ error: 'Booking not found or not owned by user.' });
+        }
+
+        const provider = booking.garage;
+        if (!provider || !provider.stripeAccountId) {
+            return res.status(400).json({ error: 'Provider is not set up to receive payments.' });
+        }
+
+        let stripeCustomerId = booking.user.stripeCustomerId;
+        if (!stripeCustomerId) {
+            const customer = await stripe.customers.create({ email: booking.user.email, name: `${booking.user.firstName} ${booking.user.lastName}` });
+            stripeCustomerId = customer.id;
+            await prisma.user.update({ where: { id: booking.user.id }, data: { stripeCustomerId } });
+        }
+
+        if (!booking.finalEstimateAmount) return res.status(400).json({ error: 'Final estimate amount not set.' });
+
+        const amountInCents = Math.round(booking.finalEstimateAmount * 100);
+        const applicationFee = Math.round(amountInCents * 0.10);
+
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amountInCents,
+            currency: 'inr',
+            customer: stripeCustomerId,
+            application_fee_amount: applicationFee,
+            transfer_data: {
+                destination: provider.stripeAccountId,
+            },
+            capture_method: 'manual',
+            metadata: {
+                bookingId: booking.id,
+                userId: booking.user.id,
+                type: 'final_garage_service',
+            }
+        });
+
+        await prisma.booking.update({ where: { id: bookingId }, data: { garagePaymentIntentId: paymentIntent.id }});
+
+        return res.status(200).json({ clientSecret: paymentIntent.client_secret });
+
+    } catch (error: any) {
+        if (booking && error.type === 'StripeInvalidRequestError' && error.param === 'transfer_data[destination]') {
+            const provider = booking.garage;
+            console.error(`CRITICAL: Invalid Stripe destination account ID for provider. Provider Type: Garage, Provider ID: ${provider?.id}, Stripe Account ID: ${provider?.stripeAccountId}`);
             return res.status(400).json({ error: 'This service provider is not currently set up to receive payments. Please contact support and reference this booking.' });
         }
          console.error("Payment Intent Error:", error);

@@ -5,7 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { io } from "socket.io-client";
+import io from "socket.io-client";
 
 // --- CONFIGURATION ---
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -85,7 +85,7 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
     ) : null
 );
 
-const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onOpenQuoteModal, onChat, isAccepting, isDeclining = false, garageLocation, currentTab }: { booking: any, onAccept: (booking: any) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onOpenQuoteModal: (booking: any) => void, onChat: (bookingId: string) => void, isAccepting: boolean, isDeclining?: boolean, garageLocation?: any, currentTab: 'Pending' | 'Current' | 'History' }) => {
+const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onOpenQuoteModal, onOpenFinalQuoteModal, onChat, isAccepting, isDeclining = false, garageLocation, currentTab }: { booking: any, onAccept: (booking: any) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onOpenQuoteModal: (booking: any) => void, onOpenFinalQuoteModal: (booking: any) => void, onChat: (bookingId: string) => void, isAccepting: boolean, isDeclining?: boolean, garageLocation?: any, currentTab: 'Pending' | 'Current' | 'History' }) => {
     const getBadge = () => {
         if (booking.bookingType === 'TOW_TO_GARAGE') {
             if (booking.subStatus === 'AWAITING_TOW_TRUCK_ACCEPTANCE') {
@@ -97,6 +97,9 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
              if (booking.subStatus === 'AWAITING_QUOTE_APPROVAL') {
                 return <View style={[styles.badge, styles.badgeWaiting]}><Text style={styles.badgeText}>QUOTE PENDING</Text></View>;
             }
+            if (booking.subStatus === 'QUOTE_REJECTED') {
+                return <View style={[styles.badge, styles.badgeRejected]}><Text style={styles.badgeText}>EST. REJECTED</Text></View>;
+            }
         }
         return null;
     };
@@ -105,10 +108,16 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
         (booking.status === 'CONFIRMED' && booking.bookingType !== 'TOW_TO_GARAGE') ||
         (booking.status === 'IN_PROGRESS' && booking.subStatus === 'SERVICE_IN_PROGRESS');
 
-    const showSubmitQuoteButton =
-        booking.bookingType === 'TOW_TO_GARAGE' &&
-        booking.status === 'IN_PROGRESS' &&
-        booking.subStatus === 'AWAITING_GARAGE_QUOTE';
+        const showSubmitQuoteButton = 
+            booking.bookingType === 'TOW_TO_GARAGE' &&
+            booking.status === 'IN_PROGRESS' &&
+            (booking.subStatus === 'AWAITING_GARAGE_QUOTE' || booking.subStatus === 'QUOTE_REJECTED');
+
+        const showSubmitFinalQuoteButton = 
+            booking.bookingType === 'TOW_TO_GARAGE' &&
+            booking.status === 'IN_PROGRESS' &&
+            booking.subStatus === 'SERVICE_IN_PROGRESS' &&
+            !booking.finalEstimateAmount;
 
     const showChatButton = ['CONFIRMED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status);
 
@@ -117,7 +126,10 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
         (booking.status === 'CONFIRMED' || booking.status === 'IN_PROGRESS') &&
         (booking.bookingType !== 'TOW_TO_GARAGE' ||
             (booking.bookingType === 'TOW_TO_GARAGE' &&
-                ['AWAITING_QUOTE_APPROVAL', 'SERVICE_IN_PROGRESS'].includes(booking.subStatus)));
+                (booking.subStatus === 'AWAITING_QUOTE_APPROVAL' ||
+                (booking.subStatus === 'SERVICE_IN_PROGRESS' && !!booking.finalEstimateAmount))
+            )
+        );
 
 
     return (
@@ -149,6 +161,13 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
              <View style={[styles.bookingDetails, { backgroundColor: '#eaf5ff', padding: 5, borderRadius: 5, marginTop: 5 }]}>
                 <Ionicons name="location-outline" size={20} color="#3498db" />
                 <Text style={[styles.bookingText, {color: '#2980b9', fontWeight: 'bold', flexShrink: 1}]}>LOCATION: {booking.pickupLocation.description}</Text>
+            </View>
+        )}
+
+        {booking.subStatus === 'QUOTE_REJECTED' && booking.quoteRejectionReason && (
+            <View style={[styles.bookingDetails, { backgroundColor: '#ffebee', padding: 10, borderRadius: 5, marginTop: 5 }]}>
+                <Ionicons name="information-circle-outline" size={20} color="#c62828" />
+                <Text style={[styles.bookingText, {color: '#c62828', fontWeight: 'bold', flexShrink: 1}]}>Reason: {booking.quoteRejectionReason}</Text>
             </View>
         )}
 
@@ -196,7 +215,7 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                     <Text style={styles.actionButtonText}>Chat</Text>
                 </TouchableOpacity>
                 
-                {((booking.bookingType !== 'TOW_TO_GARAGE') || (booking.subStatus === 'SERVICE_IN_PROGRESS')) && (
+                {((booking.bookingType !== 'TOW_TO_GARAGE') || (booking.subStatus === 'SERVICE_IN_PROGRESS' && !!booking.finalEstimateAmount)) && (
                     <TouchableOpacity 
                         style={[styles.actionButton, styles.completeButton]}
                         onPress={() => onComplete(booking.id)}
@@ -209,12 +228,57 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
         )}
 
         {showSubmitQuoteButton && (
-            <View style={styles.bookingActions}>
+            <View style={styles.buttonRow}>
+                <TouchableOpacity 
+                    style={[styles.actionButton, styles.cancelButton]}
+                    onPress={() => onCancel(booking.id)}
+                >
+                    <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                    style={[styles.actionButton, styles.chatButton]}
+                    onPress={() => onChat(booking.id)}
+                >
+                    <Ionicons name="chatbubble-ellipses-outline" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>Chat</Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity
-                    style={[styles.bookingButton, styles.acceptButton]} // Using acceptButton style for green color
+                    style={[styles.actionButton, styles.acceptButton]} // Using acceptButton style for green color
                     onPress={() => onOpenQuoteModal(booking)}
                 >
-                    <Text style={styles.bookingButtonText}>Job estimate</Text>
+                    <Ionicons name="document-text-outline" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>{booking.subStatus === 'QUOTE_REJECTED' ? 'Resubmit Quote' : 'Job Estimate'}</Text>
+                </TouchableOpacity>
+            </View>
+        )}
+
+        {showSubmitFinalQuoteButton && (
+            <View style={styles.buttonRow}>
+                 <TouchableOpacity 
+                    style={[styles.actionButton, styles.cancelButton]}
+                    onPress={() => onCancel(booking.id)}
+                >
+                    <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                    style={[styles.actionButton, styles.chatButton]}
+                    onPress={() => onChat(booking.id)}
+                >
+                    <Ionicons name="chatbubble-ellipses-outline" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>Chat</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[styles.actionButton, styles.acceptButton]} // Using acceptButton style for green color
+                    onPress={() => onOpenFinalQuoteModal(booking)} // We need a new modal handler for this
+                >
+                    <Ionicons name="document-text-outline" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>Submit Final Price</Text>
                 </TouchableOpacity>
             </View>
         )}
@@ -349,7 +413,7 @@ const QuoteModal = ({ visible, onClose, vehicleStatus, setVehicleStatus, service
                         >
                             {isSubmitting 
                                 ? <ActivityIndicator color="#fff" /> 
-                                : <Text style={styles.bookingButtonText}>Submit Quote to Customer</Text>}
+                                : <Text style={styles.bookingButtonText}>Job Estimate for Customer</Text>}
                         </TouchableOpacity>
                         <TouchableOpacity style={{marginTop: 10}} onPress={onClose}>
                             <Text style={{textAlign: 'center', color: '#7f8c8d'}}>Cancel</Text>
@@ -361,6 +425,59 @@ const QuoteModal = ({ visible, onClose, vehicleStatus, setVehicleStatus, service
     </Modal>
 );
 
+
+const FinalQuoteModal = ({ visible, onClose, jobEstimate, setJobEstimate, notes, setNotes, onSubmit, isSubmitting }: any) => (
+    <Modal
+        animationType="slide"
+        transparent={true}
+        visible={visible}
+        onRequestClose={onClose}
+    >
+        <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+        >
+            <View style={modalStyles.modalOverlay}>
+                <View style={modalStyles.modalContent}>
+                    <ScrollView showsVerticalScrollIndicator={false}>
+                        <Text style={modalStyles.modalTitle}>Submit Final Amount</Text>
+                        <Text style={modalStyles.modalSubtitle}>Enter the final amount for the service. The customer will be notified to approve and pay.</Text>
+                        
+                        <TextInput
+                            style={modalStyles.quoteInput}
+                            placeholder="Final Job Amount (Total Amount in INR)"
+                            keyboardType="numeric"
+                            value={jobEstimate}
+                            onChangeText={setJobEstimate}
+                            returnKeyType="next"
+                        />
+                        <TextInput
+                            style={modalStyles.quoteInput}
+                            placeholder="Final notes for customer"
+                            value={notes}
+                            onChangeText={setNotes}
+                            returnKeyType="done"
+                            blurOnSubmit={true}
+                        />
+
+                        <TouchableOpacity 
+                            style={[styles.bookingButton, styles.acceptButton, isSubmitting && styles.disabledButton]} 
+                            onPress={onSubmit} 
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting 
+                                ? <ActivityIndicator color="#fff" /> 
+                                : <Text style={styles.bookingButtonText}>Submit Final Price</Text>}
+                        </TouchableOpacity>
+                        <TouchableOpacity style={{marginTop: 10}} onPress={onClose}>
+                            <Text style={{textAlign: 'center', color: '#7f8c8d'}}>Cancel</Text>
+                        </TouchableOpacity>
+                    </ScrollView>
+                </View>
+            </View>
+        </KeyboardAvoidingView>
+    </Modal>
+);
 
 // --- Main Dashboard Component ---
 
@@ -397,6 +514,14 @@ export default function GarageDashboard() {
     const [quoteJobEstimate, setQuoteJobEstimate] = useState('');
     const [quoteNotes, setQuoteNotes] = useState(''); // General notes
     const [isSubmittingQuote, setIsSubmittingQuote] = useState(false);
+
+    // State for the final quote modal
+    const [finalQuoteModalVisible, setFinalQuoteModalVisible] = useState(false);
+    const [bookingToFinalQuote, setBookingToFinalQuote] = useState<any>(null);
+    const [finalQuoteJobEstimate, setFinalQuoteJobEstimate] = useState('');
+    const [finalQuoteNotes, setFinalQuoteNotes] = useState('');
+    const [isSubmittingFinalQuote, setIsSubmittingFinalQuote] = useState(false);
+
 
     const handleChat = async (bookingId: string) => {
         console.log(`[handleChat] Initiated for bookingId: ${bookingId}`);
@@ -515,6 +640,43 @@ export default function GarageDashboard() {
             setIsSubmittingQuote(false);
         }
     };
+
+    const handleOpenFinalQuoteModal = (booking: any) => {
+        setBookingToFinalQuote(booking);
+        setFinalQuoteJobEstimate('');
+        setFinalQuoteNotes('');
+        setFinalQuoteModalVisible(true);
+    };
+
+    const handleSubmitFinalQuote = async () => {
+        if (!bookingToFinalQuote || !finalQuoteJobEstimate) {
+            Alert.alert("Invalid Input", "Please provide a Final Job Estimate.");
+            return;
+        }
+        setIsSubmittingFinalQuote(true);
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingToFinalQuote.id}/submit-final-quote`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    jobEstimate: parseFloat(finalQuoteJobEstimate),
+                    notes: finalQuoteNotes,
+                }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to submit final quote.');
+
+            Alert.alert('Final Quote Submitted!', 'The customer has been notified to approve the final payment.');
+            setFinalQuoteModalVisible(false);
+            fetchData(); // Refresh dashboard
+        } catch (error: any) {
+            Alert.alert('Submission Error', error.message);
+        } finally {
+            setIsSubmittingFinalQuote(false);
+        }
+    };
+
 
     const BookingDetailsModal = ({ booking, onClose }: { booking: any, onClose: () => void }) => {
         if (!booking) return null;
@@ -675,13 +837,19 @@ export default function GarageDashboard() {
             fetchData();
         });
 
+        socket.on('quote_rejected_by_customer', (data: { bookingId: string; reason: string }) => {
+            console.log(`❌ [Socket.IO] Quote for booking ${data.bookingId} rejected by customer: ${data.reason}`);
+            Alert.alert("Quote Rejected", `A customer has rejected your quote. Reason: ${data.reason}`);
+            fetchData();
+        });
+
         socket.on('booking_cancelled_by_customer', (data: { bookingId: string; reason: string }) => {
             console.log(`❌ [Socket.IO] Booking ${data.bookingId} cancelled by customer: ${data.reason}`);
             Alert.alert("Booking Cancelled", `A booking has been cancelled by the customer.`);
             fetchData(); // Refresh data to update the booking list
         });
 
-        socket.on('disconnect', (reason) => {
+        socket.on('disconnect', (reason : any) => {
             console.log(`--- [Socket.IO] Disconnected: ${reason} ---`);
         });
 
@@ -910,6 +1078,7 @@ export default function GarageDashboard() {
                                 onCancel={handleCancel}
                                 onComplete={handleOpenOtpModal}
                                 onOpenQuoteModal={handleOpenQuoteModal}
+                                onOpenFinalQuoteModal={handleOpenFinalQuoteModal}
                                 onChat={handleChat}
                                 onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
                                 isAccepting={acceptingId === booking.id}
@@ -988,6 +1157,16 @@ export default function GarageDashboard() {
                 setNotes={setQuoteNotes}
                 onSubmit={handleSubmitQuote}
                 isSubmitting={isSubmittingQuote}
+            />
+            <FinalQuoteModal
+                visible={finalQuoteModalVisible}
+                onClose={() => setFinalQuoteModalVisible(false)}
+                jobEstimate={finalQuoteJobEstimate}
+                setJobEstimate={setFinalQuoteJobEstimate}
+                notes={finalQuoteNotes}
+                setNotes={setFinalQuoteNotes}
+                onSubmit={handleSubmitFinalQuote}
+                isSubmitting={isSubmittingFinalQuote}
             />
         </View>
     );
@@ -1146,6 +1325,9 @@ const styles = StyleSheet.create({
     },
     badgeReceived: {
         backgroundColor: '#27ae60', // Green for received
+    },
+    badgeRejected: {
+        backgroundColor: '#c0392b', // Red for rejected
     },
     badgeText: {
         color: '#fff',

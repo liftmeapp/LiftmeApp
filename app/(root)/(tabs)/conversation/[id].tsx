@@ -4,7 +4,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GiftedChat, IMessage } from 'react-native-gifted-chat';
-import { io, Socket } from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
+import io from 'socket.io-client';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -20,7 +21,7 @@ export default function ConversationScreen() {
 
     const [messages, setMessages] = useState<AppMessage[]>([]);
     const [loading, setLoading] = useState(true);
-    const [socket, setSocket] = useState<Socket | null>(null);
+    const [socket, setSocket] = useState<typeof Socket | null>(null);
     const [chatRoomDetails, setChatRoomDetails] = useState<any>(null);
 
     // Combined effect for fetching history and setting up socket
@@ -101,7 +102,7 @@ export default function ConversationScreen() {
                 newSocket.emit('join_chat', { chatId });
             });
 
-            newSocket.on('disconnect', (reason) => {
+            newSocket.on('disconnect', (reason : any) => {
                 console.log(`[ConversationScreen] Socket disconnected: ${reason}`);
             });
 
@@ -130,7 +131,7 @@ export default function ConversationScreen() {
             return newSocket; // Return socket for cleanup
         };
 
-        let socketConnection: Socket | undefined;
+        let socketConnection: typeof Socket | undefined;
         fetchHistoryAndConnect().then(socket => {
             if (socket) socketConnection = socket;
         });

@@ -104,6 +104,9 @@
     VEHICLE_DELIVERED
     AWAITING_GARAGE_QUOTE
     AWAITING_QUOTE_APPROVAL
+    QUOTE_REJECTED
+    AWAITING_FINAL_QUOTE
+    AWAITING_FINAL_APPROVAL
     SERVICE_IN_PROGRESS
     SERVICE_COMPLETED
   }
@@ -360,6 +363,11 @@
     jobEstimate       Float?
     garagePaymentStatus   String?   @default("pending")
     garagePaymentIntentId String?
+
+    quoteRejectionReason  String?
+    initialEstimateAmount Float?
+    finalEstimateAmount   Float?
+    quoteHistory          Json[]
 
     userRating      Int?
     userReview      String?

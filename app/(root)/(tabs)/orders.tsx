@@ -4,7 +4,7 @@ import { StripeProvider, useStripe } from '@stripe/stripe-react-native';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { io } from 'socket.io-client';
+import io from 'socket.io-client';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 const STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
@@ -22,74 +22,44 @@ interface Booking {
 const QuoteDetailsModal = ({ booking, visible, onClose, onPaymentSuccess, onReject }: { booking: any, visible: boolean, onClose: () => void, onPaymentSuccess: () => void, onReject: () => void }) => {
     if (!visible || !booking) return null;
 
-    const { initPaymentSheet, presentPaymentSheet } = useStripe();
     const { getToken } = useAuth();
-    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CARD');
     const [isPaying, setIsPaying] = useState(false);
 
-    const handleCardPayment = async () => {
-        setIsPaying(true);
-        try {
-            const token = await getToken();
-            // 1. Create a payment intent on the server
-            const response = await fetch(`${API_BASE_URL}/api/bookings/${booking.id}/create-garage-payment-intent`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            const { clientSecret, error: intentError } = await response.json();
-            if (intentError) throw new Error(intentError);
 
-            // 2. Initialize the payment sheet
-            const { error: initError } = await initPaymentSheet({ 
-                paymentIntentClientSecret: clientSecret,
-                merchantDisplayName: 'Afthuliftme Inc.',
-             });
-            if (initError) throw new Error(initError.message);
+    const handleAgree = async () => {
+        Alert.alert(
+            "Disclaimer!",
+            `The amount of INR ${booking.jobEstimate} is an estimate based on initial diagnosis. The amount is subject to change upon further inspection, which will be updated on the app. By clicking “Confirm” you are agreeing to pay INR ${booking.jobEstimate} as the estimated amount for the services provided by the garage..`,
+            [
+                {
+                    text: "Cancel",
+                    onPress: () => console.log("Agreement cancelled"),
+                    style: "cancel"
+                },
+                {
+                    text: "Confirm",
+                    onPress: async () => {
+                        setIsPaying(true);
+                        try {
+                            const token = await getToken();
+                            // We use the existing endpoint to signal agreement and move to the next state.
+                            const response = await fetch(`${API_BASE_URL}/api/bookings/${booking.id}/confirm-garage-cash`, {
+                                method: 'POST',
+                                headers: { 'Authorization': `Bearer ${token}` },
+                            });
+                            if (!response.ok) throw new Error('Failed to confirm agreement.');
 
-            // 3. Present the payment sheet
-            const { error: presentError } = await presentPaymentSheet();
-            if (presentError) {
-                if (presentError.code !== 'Canceled') {
-                    throw new Error(presentError.message);
+                            Alert.alert("Agreement Confirmed", "The garage has been notified and will provide a final quote shortly.");
+                            onPaymentSuccess();
+                        } catch (error: any) {
+                            Alert.alert("Confirmation Failed", error.message);
+                        } finally {
+                            setIsPaying(false);
+                        }
+                    }
                 }
-                setIsPaying(false);
-                return; // User cancelled
-            }
-
-            // 4. Confirm payment on the server
-            const confirmRes = await fetch(`${API_BASE_URL}/api/bookings/${booking.id}/confirm-garage-payment`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (!confirmRes.ok) throw new Error('Failed to confirm payment on server.');
-
-            Alert.alert("Payment Successful", "The garage has been notified to start the service.");
-            onPaymentSuccess();
-
-        } catch (error: any) {
-            Alert.alert("Payment Failed", error.message);
-        } finally {
-            setIsPaying(false);
-        }
-    };
-
-    const handleCashPayment = async () => {
-        setIsPaying(true);
-        try {
-            const token = await getToken();
-            const response = await fetch(`${API_BASE_URL}/api/bookings/${booking.id}/confirm-garage-cash`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (!response.ok) throw new Error('Failed to confirm cash payment.');
-
-            Alert.alert("Booking Confirmed", "The garage has been notified to start the service. Please pay the amount in cash.");
-            onPaymentSuccess();
-        } catch (error: any) {
-            Alert.alert("Confirmation Failed", error.message);
-        } finally {
-            setIsPaying(false);
-        }
+            ]
+        );
     };
 
     return (
@@ -124,6 +94,117 @@ const QuoteDetailsModal = ({ booking, visible, onClose, onPaymentSuccess, onReje
                             <Text style={modalStyles.notesText}>{booking.notes || 'No notes provided.'}</Text>
                         </View>
 
+                        <TouchableOpacity 
+                            style={[modalStyles.confirmButton, isPaying && { backgroundColor: '#95a5a6' }]} 
+                            onPress={handleAgree}
+                            disabled={isPaying}
+                        >
+                            {isPaying ? <ActivityIndicator color="#fff" /> : <Text style={modalStyles.confirmButtonText}>Agree & Proceed</Text>}
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[modalStyles.cancelButton, isPaying && { backgroundColor: '#95a5a6' }]}
+                            onPress={onReject}
+                            disabled={isPaying}
+                        >
+                            <Text style={modalStyles.confirmButtonText}>Reject Order</Text>
+                        </TouchableOpacity>
+                    </ScrollView>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+const FinalQuoteDetailsModal = ({ booking, visible, onClose, onPaymentSuccess, onCancel }: { booking: any, visible: boolean, onClose: () => void, onPaymentSuccess: () => void, onCancel: () => void }) => {
+    if (!visible || !booking) return null;
+
+    const { initPaymentSheet, presentPaymentSheet } = useStripe();
+    const { getToken } = useAuth();
+    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CARD');
+    const [isPaying, setIsPaying] = useState(false);
+
+    const handleCardPayment = async () => {
+        setIsPaying(true);
+        try {
+            const token = await getToken();
+            // You would need a new endpoint to create a payment intent for the final quote
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${booking.id}/create-final-payment-intent`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const { clientSecret, error: intentError } = await response.json();
+            if (intentError) throw new Error(intentError);
+
+            const { error: initError } = await initPaymentSheet({ 
+                paymentIntentClientSecret: clientSecret,
+                merchantDisplayName: 'Afthuliftme Inc.',
+             });
+            if (initError) throw new Error(initError.message);
+
+            const { error: presentError } = await presentPaymentSheet();
+            if (presentError) {
+                if (presentError.code !== 'Canceled') {
+                    throw new Error(presentError.message);
+                }
+                setIsPaying(false);
+                return; // User cancelled
+            }
+
+            const confirmRes = await fetch(`${API_BASE_URL}/api/bookings/${booking.id}/confirm-final-payment`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (!confirmRes.ok) throw new Error('Failed to confirm final payment on server.');
+
+            Alert.alert("Payment Successful", "The final payment has been made.");
+            onPaymentSuccess();
+
+        } catch (error: any) {
+            Alert.alert("Payment Failed", error.message);
+        } finally {
+            setIsPaying(false);
+        }
+    };
+
+    const handleCashPayment = async () => {
+        setIsPaying(true);
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${booking.id}/confirm-final-cash`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (!response.ok) throw new Error('Failed to confirm final cash payment.');
+
+            Alert.alert("Booking Confirmed", "Please pay the final amount in cash.");
+            onPaymentSuccess();
+        } catch (error: any) {
+            Alert.alert("Confirmation Failed", error.message);
+        } finally {
+            setIsPaying(false);
+        }
+    };
+
+    return (
+        <Modal visible={visible} transparent={true} animationType="slide" onRequestClose={onClose}>
+            <View style={modalStyles.modalOverlay}>
+                <View style={modalStyles.modalContent}>
+                    <ScrollView showsVerticalScrollIndicator={false}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                            <Text style={modalStyles.modalTitle}>Final Job Price</Text>
+                            <TouchableOpacity onPress={onClose} style={[styles.bookingButton, styles.cancelButton, { marginLeft: 0, paddingHorizontal: 12, paddingVertical: 6 }]}>
+                                <Text style={styles.bookingButtonText}>Close</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <View style={modalStyles.quoteDetailRow}>
+                            <Text style={modalStyles.quoteLabel}>Final Job Estimate:</Text>
+                            <Text style={modalStyles.quoteValue}>INR {booking.finalEstimateAmount?.toFixed(2)}</Text>
+                        </View>
+                        <View style={modalStyles.notesContainer}>
+                            <Text style={modalStyles.quoteLabel}>Note:</Text>
+                            <Text style={modalStyles.notesText}>{booking.notes || 'No notes provided.'}</Text>
+                        </View>
+
                         <Text style={modalStyles.paymentHeader}>Select Payment Method</Text>
                         <TouchableOpacity style={[modalStyles.paymentOption, paymentMethod === 'CASH' && modalStyles.selectedPaymentOption]} onPress={() => setPaymentMethod('CASH')}>
                             <Ionicons name="cash-outline" size={24} color="#27ae60" />
@@ -142,11 +223,11 @@ const QuoteDetailsModal = ({ booking, visible, onClose, onPaymentSuccess, onReje
                             {isPaying ? <ActivityIndicator color="#fff" /> : <Text style={modalStyles.confirmButtonText}>Confirm & Proceed</Text>}
                         </TouchableOpacity>
                         <TouchableOpacity 
-                            style={[modalStyles.cancelButton, isPaying && { backgroundColor: '#95a5a6' }]}
-                            onPress={onReject}
+                            style={[modalStyles.cancelButton, isPaying && { backgroundColor: '#95a5a6' }]} 
+                            onPress={onCancel}
                             disabled={isPaying}
                         >
-                            <Text style={modalStyles.confirmButtonText}>Reject Order</Text>
+                            <Text style={modalStyles.confirmButtonText}>Cancel Booking</Text>
                         </TouchableOpacity>
                     </ScrollView>
                 </View>
@@ -283,7 +364,7 @@ const SparePartPaymentModal = ({ booking, visible, onClose, onPaymentSuccess }: 
 //  ORDER CARD COMPONENT
 // ===================================================================
 
-const OrderCard = ({ booking, onCancel, onViewQuote, onPaySparePart, onChat }: { booking: any, onCancel: (bookingId: string) => void, onViewQuote: (booking: any) => void, onPaySparePart: (booking: any) => void, onChat: (bookingId: string) => void }) => {
+const OrderCard = ({ booking, onCancel, onViewQuote, onPaySparePart, onChat, onViewFinalQuote }: { booking: any, onCancel: (bookingId: string) => void, onViewQuote: (booking: any) => void, onPaySparePart: (booking: any) => void, onChat: (bookingId: string) => void, onViewFinalQuote: (booking: any) => void }) => {
     console.log('Rendering OrderCard for booking:', booking.id, 'Status:', booking.status);
     let provider;
     let serviceName;
@@ -452,20 +533,50 @@ const OrderCard = ({ booking, onCancel, onViewQuote, onPaySparePart, onChat }: {
                         <View style={[styles.quoteContainer, { backgroundColor: '#fff8e1', borderColor: '#ffecb3' }]}>
                             <Ionicons name="document-text-outline" size={24} color="#f57f17" />
                             <View style={{flex: 1, marginLeft: 10}}>
-                                <Text style={[styles.quoteText, { color: '#f57f17' }]}>Quote Received!</Text>
+                                <Text style={[styles.quoteText, { color: '#f57f17' }]}>Estimate Received!</Text>
                                 <Text style={styles.quoteAmount}>INR {booking.jobEstimate?.toFixed(2)}</Text>
                             </View>
                             <TouchableOpacity style={styles.viewQuoteButton} onPress={() => onViewQuote(booking)}>
+                                <Text style={styles.viewQuoteButtonText}>View</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
+                    {booking.subStatus === 'QUOTE_REJECTED' && (
+                        <View style={[styles.quoteContainer, { backgroundColor: '#ffebee', borderColor: '#ffcdd2' }]}>
+                            <Ionicons name="close-circle-outline" size={24} color="#c62828" />
+                            <View style={{flex: 1, marginLeft: 10}}>
+                                <Text style={[styles.quoteText, { color: '#c62828' }]}>Quote Rejected</Text>
+                                <Text style={styles.quoteAmount}>Waiting for garage to submit a new quote.</Text>
+                            </View>
+                        </View>
+                    )}
+
+                    {booking.subStatus === 'AWAITING_FINAL_APPROVAL' && (
+                        <View style={[styles.quoteContainer, { backgroundColor: '#e8f5e9', borderColor: '#c8e6c9' }]}>
+                            <Ionicons name="checkmark-circle-outline" size={24} color="#2e7d32" />
+                            <View style={{flex: 1, marginLeft: 10}}>
+                                <Text style={[styles.quoteText, { color: '#2e7d32' }]}>Final Quote Received!</Text>
+                                <Text style={styles.quoteAmount}>INR {booking.finalEstimateAmount?.toFixed(2)}</Text>
+                            </View>
+                            <TouchableOpacity style={styles.viewQuoteButton} onPress={() => onViewFinalQuote(booking)}>      
                                 <Text style={styles.viewQuoteButtonText}>View & Pay</Text>
                             </TouchableOpacity>
                         </View>
                     )}
 
-                    {booking.subStatus === 'SERVICE_IN_PROGRESS' && booking.otp && (
-                        <View style={[styles.otpContainer, { backgroundColor: '#e9f5ff', borderColor: '#d0e7ff' }]}>
-                            <Text style={[styles.otpLabel, { color: '#1a5f99' }]}>Share this code with the Garage once service is completed:</Text>
-                            <Text style={[styles.otpCode, { color: '#0d47a1' }]}>{booking.otp}</Text>
-                        </View>
+                    {booking.subStatus === 'SERVICE_IN_PROGRESS' && (
+                        booking.bookingType === 'TOW_TO_GARAGE' && !booking.finalEstimateAmount ? (
+                            <View style={styles.inProgressContainer}>
+                                <Ionicons name="hourglass-outline" size={20} color="#2980b9" />
+                                <Text style={styles.inProgressText}>Awaiting Final Pricing and Confirmation..</Text>
+                            </View>
+                        ) : booking.otp ? (
+                            <View style={[styles.otpContainer, { backgroundColor: '#e9f5ff', borderColor: '#d0e7ff' }]}>
+                                <Text style={[styles.otpLabel, { color: '#1a5f99' }]}>Share this code with the Garage once service is completed:</Text>
+                                <Text style={[styles.otpCode, { color: '#0d47a1' }]}>{booking.otp}</Text>
+                            </View>
+                        ) : null
                     )}
                 </View>
             )}
@@ -501,6 +612,9 @@ export default function OrdersScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [quoteModalVisible, setQuoteModalVisible] = useState(false);
     const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+
+    const [finalQuoteModalVisible, setFinalQuoteModalVisible] = useState(false);
+    const [selectedFinalQuoteBooking, setSelectedFinalQuoteBooking] = useState<any>(null);
 
     const [sparePartPaymentModalVisible, setSparePartPaymentModalVisible] = useState(false);
     const [selectedSparePartBooking, setSelectedSparePartBooking] = useState(null);
@@ -573,9 +687,10 @@ export default function OrdersScreen() {
             } else if (eventName === 'spare_part_order_confirmed') {
                 alertTitle = "Order Confirmed!";
                 alertMessage = "Your cash spare part order has been confirmed by the seller.";
-            } else if (eventName === 'spare_part_order_rejected') {
-                alertTitle = "Order Rejected";
-                alertMessage = "Your spare part order has been rejected by the seller.";
+            } else if (eventName === 'final_quote_ready') {
+                alertTitle = "Final Quote Ready!";
+                alertMessage = "A final quote has been submitted for your vehicle service. Please review and make payment.";
+                fetchActiveBookings();
             }
 
             Alert.alert(alertTitle, alertMessage);
@@ -589,6 +704,14 @@ export default function OrdersScreen() {
         socket.on('spare_part_order_accepted', (data:any) => handleEvent('spare_part_order_accepted', data));
         socket.on('spare_part_order_confirmed', (data:any) => handleEvent('spare_part_order_confirmed', data));
         socket.on('spare_part_order_rejected', (data:any) => handleEvent('spare_part_order_rejected', data));
+        socket.on('final_quote_ready', (data:any) => {
+            handleEvent('final_quote_ready', data);
+            const finalQuoteBooking = bookings.find(b => b.id === data.bookingId);
+            if (finalQuoteBooking) {
+                setSelectedFinalQuoteBooking({ ...finalQuoteBooking, finalEstimateAmount: data.finalEstimateAmount, notes: data.notes });
+                setFinalQuoteModalVisible(true);
+            }
+        });
 
         return () => {
             console.log('[OrdersScreen] Socket disconnecting');
@@ -598,30 +721,70 @@ export default function OrdersScreen() {
 
     const handleRejectQuote = async (bookingId: string | undefined) => {
         if (!bookingId) return;
-        Alert.alert(
-            "Reject Quote",
-            "Are you sure you want to reject this quote and cancel the booking? This action cannot be undone.",
+
+        Alert.prompt(
+            'Reject Quote',
+            'Please provide a reason for rejecting this quote. This will be sent to the garage.',
             [
-                { text: "No", style: "cancel" },
+                { text: 'Cancel', style: 'cancel' },
                 {
-                    text: "Yes, Reject",
-                    style: "destructive",
-                    onPress: async () => {
+                    text: 'Submit Rejection',
+                    style: 'destructive',
+                    onPress: async (reason:any) => {
+                        if (!reason) {
+                            Alert.alert("Error", "A reason is required to reject a quote.");
+                            return;
+                        }
                         try {
                             const token = await getToken();
                             const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/reject-quote`, {
                                 method: 'POST',
-                                headers: { 'Authorization': `Bearer ${token}` },
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                body: JSON.stringify({ reason }),
                             });
                             if (!response.ok) {
                                 const data = await response.json();
                                 throw new Error(data.error || "Failed to reject quote.");
                             }
-                            Alert.alert("Quote Rejected", "The booking has been cancelled.");
+                            Alert.alert("Quote Rejected", "The garage has been notified.");
                             setQuoteModalVisible(false);
                             fetchActiveBookings();
                         } catch (error: any) {
                             Alert.alert("Error", error.message);
+                        }
+                    }
+                }
+            ],
+            'plain-text'
+        );
+    };
+
+    const handleCancelFinalQuote = async (bookingId: string | undefined) => {
+        if (!bookingId) return;
+        Alert.alert(
+            "Cancel Final Quote",
+            "Are you sure you want to cancel this booking? This action cannot be undone.",
+            [
+                { text: "No", style: "cancel" },
+                {
+                    text: "Yes, Cancel",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            const token = await getToken();
+                            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/cancel-by-user`, { // Re-using existing cancel endpoint
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                            });
+                            if (!response.ok) {
+                                const data = await response.json();
+                                throw new Error(data.error || "Failed to cancel booking.");
+                            }
+                            Alert.alert("Success", "Your booking has been cancelled.");
+                            setFinalQuoteModalVisible(false);
+                            fetchActiveBookings();
+                        } catch (error: any) {
+                            Alert.alert("Cancellation Failed", error.message);
                         }
                     }
                 }
@@ -665,6 +828,11 @@ export default function OrdersScreen() {
         setQuoteModalVisible(true);
     };
 
+    const handleViewFinalQuote = (booking: any) => {
+        setSelectedFinalQuoteBooking(booking);
+        setFinalQuoteModalVisible(true);
+    };
+
     const handlePaySparePart = (booking: any) => {
         setSelectedSparePartBooking(booking);
         setSparePartPaymentModalVisible(true);
@@ -673,6 +841,7 @@ export default function OrdersScreen() {
     const handlePaymentSuccess = () => {
         setQuoteModalVisible(false);
         setSparePartPaymentModalVisible(false);
+        setFinalQuoteModalVisible(false);
         fetchActiveBookings();
     };
 
@@ -742,7 +911,7 @@ export default function OrdersScreen() {
                     <FlatList
                         data={bookings}
                         keyExtractor={(item) => item.id}
-                        renderItem={({ item }) => <OrderCard booking={item} onCancel={handleCancelBooking} onViewQuote={handleViewQuote} onPaySparePart={handlePaySparePart} onChat={handleChat} />}
+                        renderItem={({ item }) => <OrderCard booking={item} onCancel={handleCancelBooking} onViewQuote={handleViewQuote} onPaySparePart={handlePaySparePart} onChat={handleChat} onViewFinalQuote={handleViewFinalQuote} />}
                         contentContainerStyle={styles.listContent}
                         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
                         ListEmptyComponent={
@@ -766,6 +935,13 @@ export default function OrdersScreen() {
                     visible={sparePartPaymentModalVisible}
                     onClose={() => setSparePartPaymentModalVisible(false)}
                     onPaymentSuccess={handlePaymentSuccess}
+                />
+                <FinalQuoteDetailsModal
+                    booking={selectedFinalQuoteBooking}
+                    visible={finalQuoteModalVisible}
+                    onClose={() => setFinalQuoteModalVisible(false)}
+                    onPaymentSuccess={handlePaymentSuccess}
+                    onCancel={() => handleCancelFinalQuote(selectedFinalQuoteBooking?.id)}
                 />
             </View>
         </StripeProvider>
