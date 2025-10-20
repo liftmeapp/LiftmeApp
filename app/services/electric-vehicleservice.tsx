@@ -103,6 +103,11 @@ export default function ElectricService() {
         [services]
     );
 
+    const filteredVehicles = useMemo(
+        () => vehicles.filter(vehicle => vehicle.type === 'EV'),
+        [vehicles]
+    );
+
     // --- Initial Effect ---
     useEffect(() => {
         const timer = setTimeout(() => setIsBottomSheetReady(true), 100);
@@ -386,7 +391,7 @@ export default function ElectricService() {
                         
                         <View style={styles.contentArea}>
                             <FlatList
-                                data={vehicles}
+                                data={filteredVehicles}
                                 renderItem={renderVehicleItem}
                                 keyExtractor={item => item.id}
                                 ListHeaderComponent={() => (

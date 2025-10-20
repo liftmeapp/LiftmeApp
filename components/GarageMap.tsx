@@ -378,9 +378,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
             const json = await response.json();
             
             if (json.results && json.results.length > 0) {
-                const { lat, lng } = json.results[0].geometry.location;
-                console.log(`📍 [Map.tsx] Geocoded coordinates: ${lat}, ${lng}`);
-                
+                const { lat, lng } = json.results[0].geometry.location;                
                 setIsProgrammaticChange(true);
                 
                 const newRegion = {
@@ -525,12 +523,8 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                 <>
                     {garages.filter(g => g.location?.coordinates).map((g) => 
                         <CustomMapMarker 
-                            ref={(el) => {
-                                       if (el) {
-                                           markerRefs.current[g.name] = el;
-                                       }
-                                   }}            
-                        key={`g-${g.name}`} 
+                            ref={el => markerRefs.current[g.name] = el}
+                            key={g.id} 
                             coordinate={{
                                 latitude: g.location.coordinates[1], 
                                 longitude: g.location.coordinates[0]
@@ -543,12 +537,8 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                     )}
                     {towTrucks.filter(t => t.location?.coordinates).map((t) => 
                         <CustomMapMarker 
-                            ref={(el) => {
-                                       if (el) {
-                                           markerRefs.current[t.name] = el;
-                                       }
-                                   }}                          
-                            key={`t-${t.name}`} 
+                            ref={el => markerRefs.current[t.name] = el}
+                            key={t.id} 
                             coordinate={{
                                 latitude: t.location.coordinates[1], 
                                 longitude: t.location.coordinates[0]
@@ -561,12 +551,8 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                     )}
                     {chargingStations.map((station) => 
                         <CustomMapMarker 
-                            ref={(el) => {
-                                       if (el) {
-                                           markerRefs.current[station.name] = el;
-                                       }
-                                   }}
-                            key={`ev-${station.name}`}
+                            ref={el => markerRefs.current[station.name] = el}
+                            key={station.place_id}
                             coordinate={{
                                 latitude: station.geometry.location.lat, 
                                 longitude: station.geometry.location.lng

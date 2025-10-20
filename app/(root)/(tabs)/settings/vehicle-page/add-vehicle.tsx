@@ -124,7 +124,7 @@ export default function AddVehicleScreen() {
                             <Picker.Item label="Sedan" value="SEDAN" />
                             <Picker.Item label="Hatchback" value="HATCHBACK" />
                             <Picker.Item label="SUV" value="SUV" />
-                            <Picker.Item label="Luxury Car" value="LUXURY" />
+                            <Picker.Item label="Electric Vehicle (EV)" value="EV" />
                             <Picker.Item label="Motorcycle / Bike" value="BIKE" />
                             <Picker.Item label="Truck / Van" value="TRUCK" />
                         </Picker>

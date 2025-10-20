@@ -363,8 +363,8 @@ const QuoteModal = ({ visible, onClose, vehicleStatus, setVehicleStatus, service
             <View style={modalStyles.modalOverlay}>
                 <View style={modalStyles.modalContent}>
                     <ScrollView showsVerticalScrollIndicator={false}>
-                        <Text style={modalStyles.modalTitle}>Submit Service Quote</Text>
-                        <Text style={modalStyles.modalSubtitle}>Enter the details for the required service. The customer will be notified to approve and pay.</Text>
+                        <Text style={modalStyles.modalTitle}>Job Estimate</Text>
+                        <Text style={modalStyles.modalSubtitle}>Enter Initial estiamtes after diagnosis. The customer will be notified to approve and pay.</Text>
                         
                         <TextInput
                             style={modalStyles.quoteInput}
@@ -629,7 +629,7 @@ export default function GarageDashboard() {
                 }),
             });
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Failed to submit quote.');
+            if (!response.ok) throw new Error(data.error || 'Failed to submit Estimate.');
 
             Alert.alert('Quote Submitted!', 'The customer has been notified and is awaiting to approve the payment.');
             setQuoteModalVisible(false);

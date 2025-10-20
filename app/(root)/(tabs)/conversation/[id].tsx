@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GiftedChat, IMessage } from 'react-native-gifted-chat';
 import type { Socket } from 'socket.io-client';
@@ -21,10 +21,15 @@ export default function ConversationScreen() {
 
     const [messages, setMessages] = useState<AppMessage[]>([]);
     const [loading, setLoading] = useState(true);
-    const [socket, setSocket] = useState<typeof Socket | null>(null);
     const [chatRoomDetails, setChatRoomDetails] = useState<any>(null);
+    const socketRef = useRef<Socket | null>(null);
 
-    // Combined effect for fetching history and setting up socket
+    // This pattern prevents a re-render loop if getToken is not a stable function reference
+    const getTokenRef = useRef(getToken);
+    useEffect(() => {
+        getTokenRef.current = getToken;
+    }, [getToken]);
+
     useEffect(() => {
         if (!chatId || !userId) {
             console.log('[ConversationScreen] Missing chatId or userId. Aborting.');
@@ -37,7 +42,7 @@ export default function ConversationScreen() {
         const fetchHistoryAndConnect = async () => {
             try {
                 console.log('[ConversationScreen] Getting token...');
-                const token = await getToken();
+                const token = await getTokenRef.current();
                 if (!token) throw new Error("Authentication failed: Token is null.");
                 console.log('[ConversationScreen] Token retrieved.');
 
@@ -60,7 +65,6 @@ export default function ConversationScreen() {
                 if (!isMounted) return;
                 console.log(`[ConversationScreen] History received with ${history.length} messages.`);
 
-                // Find the other participant from the new participants list for the header
                 const otherParticipant = participants.find((p: any) => p.clerkId !== userId);
                 if (otherParticipant) {
                     setChatRoomDetails({ otherParticipantName: `${otherParticipant.firstName || 'Unknown'} ${otherParticipant.lastName || ''}`.trim() });
@@ -82,31 +86,37 @@ export default function ConversationScreen() {
             } catch (error: any) {
                 console.error('[ConversationScreen] CATCH block: Error fetching history:', error);
                 Alert.alert('Error Loading Chat', error.message);
-                return; // Stop if history fails
+                return;
             } finally {
                 if (isMounted) setLoading(false);
             }
 
-            // Now, set up the socket connection
+            if (!isMounted) return;
+
+            // Disconnect any existing socket before creating a new one
+            if (socketRef.current) {
+                socketRef.current.disconnect();
+            }
+
             console.log('[ConversationScreen] Setting up socket...');
-            const newSocket = io(API_BASE_URL!, {
+            socketRef.current = io(API_BASE_URL!, {
                 reconnection: true,
                 transports: ['websocket'],
                 query: { clerkId: userId, chatId },
             });
 
-            setSocket(newSocket);
+            const socket = socketRef.current;
 
-            newSocket.on('connect', () => {
-                console.log(`[ConversationScreen] Socket connected with ID: ${newSocket.id}`);
-                newSocket.emit('join_chat', { chatId });
+            socket.on('connect', () => {
+                console.log(`[ConversationScreen] Socket connected with ID: ${socket.id}`);
+                socket.emit('join_chat', { chatId });
             });
 
-            newSocket.on('disconnect', (reason : any) => {
+            socket.on('disconnect', (reason: any) => {
                 console.log(`[ConversationScreen] Socket disconnected: ${reason}`);
             });
 
-            newSocket.on('new_message', (message: any) => {
+            socket.on('new_message', (message: any) => {
                 console.log('[ConversationScreen] Received new message:', message);
                 const newMessage: AppMessage = {
                     _id: message.id,
@@ -123,27 +133,23 @@ export default function ConversationScreen() {
                 }
             });
 
-            newSocket.on('error', (error: any) => {
+            socket.on('error', (error: any) => {
                 console.error('[ConversationScreen] Socket error:', error);
                 Alert.alert('Connection Error', 'Could not connect to the chat service.');
             });
-
-            return newSocket; // Return socket for cleanup
         };
 
-        let socketConnection: typeof Socket | undefined;
-        fetchHistoryAndConnect().then(socket => {
-            if (socket) socketConnection = socket;
-        });
+        fetchHistoryAndConnect();
 
         return () => {
             isMounted = false;
-            if (socketConnection) {
+            if (socketRef.current) {
                 console.log('[ConversationScreen] Socket disconnecting');
-                socketConnection.disconnect();
+                socketRef.current.disconnect();
+                socketRef.current = null;
             }
         };
-    }, [chatId, userId, getToken, router]);
+    }, [chatId, userId]);
 
     const onSend = useCallback((newMessages: IMessage[] = []) => {
         const messageToSend = newMessages[0];
@@ -151,14 +157,13 @@ export default function ConversationScreen() {
 
         const messagesWithClerkId = newMessages.map(message => ({
             ...message,
-            clerkId: userId  // Add the clerkId to each message
+            clerkId: userId,
         }));
 
-        // Optimistically update the UI
-        setMessages(previousMessages => 
+        setMessages(previousMessages =>
             GiftedChat.append(previousMessages, messagesWithClerkId) as AppMessage[]
         );
-        
+
         const sendMessageToServer = async () => {
             try {
                 const token = await getToken();
@@ -172,7 +177,6 @@ export default function ConversationScreen() {
                 });
             } catch (error) {
                 console.error("Failed to send message:", error);
-                // Optionally, handle the error e.g., show an error icon on the message
             }
         };
 
