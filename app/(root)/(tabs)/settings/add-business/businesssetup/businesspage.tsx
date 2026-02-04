@@ -4,9 +4,8 @@ import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useRef, useState } from 'react';
-import { Alert, RefreshControl, StyleSheet, Text, TouchableOpacity, View, Platform } from "react-native";
+import { Alert, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ScrollView } from 'react-native-gesture-handler';
-import { SafeAreaView } from "react-native-safe-area-context";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -26,9 +25,9 @@ interface BusinessOptionProps {
 
 // A reusable component for our dashboard/setup links
 const BusinessOption = ({ title, description, icon, onPress, status }: BusinessOptionProps) => {
-    
+
     const getBadgeStyle = () => {
-        switch(status) {
+        switch (status) {
             case 'APPROVED': return styles.approvedBadge;
             case 'PENDING': return styles.pendingBadge;
             case 'REJECTED': return styles.rejectedBadge;
@@ -36,7 +35,7 @@ const BusinessOption = ({ title, description, icon, onPress, status }: BusinessO
         }
     };
     const getBadgeText = () => {
-        switch(status) {
+        switch (status) {
             case 'APPROVED': return 'MANAGE';
             case 'PENDING': return 'UNDER REVIEW';
             case 'REJECTED': return 'REJECTED';
@@ -47,7 +46,7 @@ const BusinessOption = ({ title, description, icon, onPress, status }: BusinessO
     return (
         <TouchableOpacity style={styles.card} onPress={onPress}>
             <View style={styles.iconContainer}>
-                <Ionicons name={icon} size={30} color="#b95528" />
+                <Ionicons name={icon} size={30} color="#005C70" />
             </View>
             <View style={styles.cardTextContainer}>
                 <Text style={styles.cardTitle}>{title}</Text>
@@ -77,7 +76,7 @@ export default function ServicesHome() {
             const token = await getToken();
             if (!token) throw new Error("Not authenticated");
             const response = await fetch(`${API_BASE_URL}/api/users/my-business`, {
-                headers: { 
+                headers: {
                     'Authorization': `Bearer ${token}`,
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
                     'Pragma': 'no-cache',
@@ -105,7 +104,7 @@ export default function ServicesHome() {
             fetchData();
         }, [fetchData])
     );
-    
+
     const onRefresh = useCallback(() => {
         setRefreshing(true);
         fetchData();
@@ -115,16 +114,16 @@ export default function ServicesHome() {
     if (initialLoading) {
         return (
             <View style={styles.centered}>
-                <RotatingLoader  
-                    iconName="navigate-circle-outline" 
-                    message="Loading Your Business Profile" 
-                    color="#ed8b65"
+                <RotatingLoader
+                    iconName="navigate-circle-outline"
+                    message="Loading Your Business Profile"
+                    color="#005C70"
                     size={50}
                 />
             </View>
         );
     }
-    
+
     const handleSetupPress = (setupRoute: string) => {
         Alert.alert(
             "Heads Up!",
@@ -156,18 +155,20 @@ export default function ServicesHome() {
             case 'REJECTED':
                 Alert.alert(
                     "Application Rejected",
-                    `Your garage application was rejected for the following reason: ${garage.rejectionReason || 'No reason provided.'}`, 
+                    `Your garage application was rejected for the following reason: ${garage.rejectionReason || 'No reason provided.'}`,
                     [
                         { text: "OK", style: "cancel" },
-                        { text: "Re-apply", onPress: () => router.push({
-                            pathname: '/settings/add-business/businesssetup/edit-garage/edit-details',
-                            params: { garageId: garage.id }
-                        } as any) }
+                        {
+                            text: "Re-apply", onPress: () => router.push({
+                                pathname: '/settings/add-business/businesssetup/edit-garage/edit-details',
+                                params: { garageId: garage.id }
+                            } as any)
+                        }
                     ]
                 );
                 break;
             default:
-                 Alert.alert("Unknown Status", "Your business has an unknown status. Please contact support.");
+                Alert.alert("Unknown Status", "Your business has an unknown status. Please contact support.");
         }
     };
 
@@ -191,46 +192,38 @@ export default function ServicesHome() {
             case 'REJECTED':
                 Alert.alert(
                     "Application Rejected",
-                    `Your tow truck application was rejected for the following reason: ${towTruck.rejectionReason || 'No reason provided.'}`, 
+                    `Your tow truck application was rejected for the following reason: ${towTruck.rejectionReason || 'No reason provided.'}`,
                     [
                         { text: "OK", style: "cancel" },
-                        { text: "Re-apply", onPress: () => router.push({
-                            pathname: '/settings/add-business/businesssetup/edit-tow-truck/edit-tow-truck-details',
-                            params: { towTruckId: towTruck.id }
-                        } as any) }
+                        {
+                            text: "Re-apply", onPress: () => router.push({
+                                pathname: '/settings/add-business/businesssetup/edit-tow-truck/edit-tow-truck-details',
+                                params: { towTruckId: towTruck.id }
+                            } as any)
+                        }
                     ]
                 );
                 break;
             default:
-                 Alert.alert("Unknown Status", "Your business has an unknown status. Please contact support.");
+                Alert.alert("Unknown Status", "Your business has an unknown status. Please contact support.");
         }
     };
-        return (
-            <>
-                <Stack.Screen
-                    options={{
-                        header: () => (
-                            <SafeAreaView style={{ flex: 0, backgroundColor: 'white' }} edges={['top']}>
-                                <View style={styles.customHeader}>
-                                    <TouchableOpacity onPress={() => router.back()} style={styles.headerBack}>
-                                        <Ionicons name="arrow-back" size={24} color="#333" />
-                                    </TouchableOpacity>
-                                    <Text style={styles.customHeaderTitle}>Business Hub</Text>
-                                    <View style={{ width: 24 }} /> 
-                                </View>
-                            </SafeAreaView>
-                        ),
-                    }}
-                />
-                <ScrollView
+    return (
+        <>
+            <Stack.Screen
+                options={{
+                    headerShown: true, // Let layout handle options, just ensure shown
+                }}
+            />
+            <ScrollView
                 style={styles.container}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#005C70" />}
             >
                 <View style={styles.header}>
                     <Text style={styles.heading}>Your Business Hub</Text>
                     <Text style={styles.subheading}>Manage your existing services or add new ones.</Text>
                 </View>
-                
+
                 {/* Conditional UI for Garage */}
                 {userBusiness?.garage ? (
                     <BusinessOption
@@ -241,7 +234,7 @@ export default function ServicesHome() {
                         status={userBusiness.garage.status || 'PENDING'} // Default to PENDING if status is null
                     />
                 ) : (
-                    <BusinessOption 
+                    <BusinessOption
                         title="Set Up a Garage"
                         description="List your garage to offer repair, maintenance, and home services."
                         icon="add-circle-outline"
@@ -249,10 +242,10 @@ export default function ServicesHome() {
                         status='SETUP'
                     />
                 )}
-                
+
                 {/* Conditional UI for Tow Truck */}
                 {userBusiness?.towTruck ? (
-                     <BusinessOption
+                    <BusinessOption
                         title={userBusiness.towTruck.name}
                         description="View your tow truck's status and manage its details."
                         icon="car-sport"
@@ -260,7 +253,7 @@ export default function ServicesHome() {
                         status={userBusiness.towTruck.status || 'PENDING'}
                     />
                 ) : (
-                     <BusinessOption
+                    <BusinessOption
                         title="Register a Tow Truck"
                         description="Provide roadside assistance and manage your live location."
                         icon="add-circle-outline"
@@ -269,8 +262,8 @@ export default function ServicesHome() {
                     />
                 )}
 
-                 {/* Placeholder for Spare Parts */}
-                 <BusinessOption
+                {/* Placeholder for Spare Parts */}
+                <BusinessOption
                     title="Spare Part Supply"
                     description="List spare parts for sale to garages and customers."
                     icon="build-outline"
@@ -345,11 +338,11 @@ const styles = StyleSheet.create({
         shadowRadius: 5,
         elevation: 3,
         borderLeftWidth: 5,
-        borderLeftColor: '#b95528',
+        borderLeftColor: '#005C70',
     },
     iconContainer: {
         marginRight: 15,
-        backgroundColor: '#fdf0e7',
+        backgroundColor: '#E0F2F1',
         padding: 12,
         borderRadius: 50,
     },

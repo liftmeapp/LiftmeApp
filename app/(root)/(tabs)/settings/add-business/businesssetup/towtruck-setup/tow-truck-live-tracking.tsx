@@ -1,13 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Switch, Alert, TouchableOpacity } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import * as Location from 'expo-location';
-import { useAuth } from '@clerk/clerk-expo';
-import { Stack, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import RotatingLoader from '@/components/RotatingLoader'; // Assuming you have this custom loader
+import { useAuth } from '@clerk/clerk-expo';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useLocalSearchParams } from 'expo-router'; // <-- ADD THIS
+import * as Location from 'expo-location';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 
 
 // --- CONFIGURATION ---
@@ -26,11 +25,11 @@ export default function TowTruckLiveTrackingScreen() {
     const updateLocationOnServer = async (location: Location.LocationObject, availability: boolean) => {
         if (isUpdating.current) return;
         isUpdating.current = true;
-        
+
         try {
             const token = await getToken();
             if (!token) return console.warn("Auth token not available, skipping location update.");
-            
+
             fetch(`${API_BASE_URL}/api/tow-trucks/location`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -90,20 +89,20 @@ export default function TowTruckLiveTrackingScreen() {
 
     return (
         <View style={styles.container}>
-            <Stack.Screen 
-                options={{ 
+            <Stack.Screen
+                options={{
                     title: 'Live Driver Mode',
                     headerLeft: () => (
                         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-                            <Ionicons name="chevron-back" size={28} color="#ed8b65" />
+                            <Ionicons name="chevron-back" size={28} color="#005C70" />
                         </TouchableOpacity>
                     ),
                     headerTitleAlign: 'center',
-                }} 
+                }}
             />
             {currentLocation ? (
-                <MapView 
-                    style={styles.map} 
+                <MapView
+                    style={styles.map}
                     provider={PROVIDER_GOOGLE}
                     region={{
                         latitude: currentLocation.coords.latitude,
@@ -120,10 +119,10 @@ export default function TowTruckLiveTrackingScreen() {
                     </Marker>
                 </MapView>
             ) : (
-                <RotatingLoader 
-                    iconName="navigate-circle-outline" 
-                    message="Waiting for GPS Signal..." 
-                    color="#ed8b65"
+                <RotatingLoader
+                    iconName="navigate-circle-outline"
+                    message="Waiting for GPS Signal..."
+                    color="#005C70"
                     size={50}
                 />
             )}
@@ -131,11 +130,11 @@ export default function TowTruckLiveTrackingScreen() {
                 <Text style={styles.statusText}>Your Status</Text>
                 <View style={styles.toggleContainer}>
                     <Text style={[styles.availabilityText, !isAvailable && styles.unavailable]}>Offline</Text>
-                    <Switch 
-                        value={isAvailable} 
-                        onValueChange={handleAvailabilityChange} 
-                        trackColor={{ false: "#767577", true: "#2ecc71" }} 
-                        thumbColor={"#f4f3f4"} 
+                    <Switch
+                        value={isAvailable}
+                        onValueChange={handleAvailabilityChange}
+                        trackColor={{ false: "#767577", true: "#2ecc71" }}
+                        thumbColor={"#f4f3f4"}
                         ios_backgroundColor="#3e3e3e"
                     />
                     <Text style={[styles.availabilityText, isAvailable && styles.available]}>Online</Text>
@@ -149,7 +148,7 @@ export default function TowTruckLiveTrackingScreen() {
                     params: { towTruckId, towTruckName }
                 })}>
                     <LinearGradient
-                        colors={['#4c669f', '#3b5998', '#192f6a']}
+                        colors={['#005C70', '#004252']}
                         style={styles.dashboardButton}
                     >
                         <Ionicons name="speedometer-outline" size={22} color="#fff" />
@@ -166,21 +165,21 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f0f2f5' },
     map: { flex: 1 },
     headerButton: { marginLeft: 10, padding: 5 },
-    statusBanner: { 
-        position: 'absolute', top: 20, left: 15, right: 15, 
-        backgroundColor: 'rgba(44, 62, 80, 0.9)', borderRadius: 15, 
-        paddingVertical: 12, paddingHorizontal: 20, flexDirection: 'row', 
-        alignItems: 'center', justifyContent: 'space-between', 
-        shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, 
-        shadowOpacity: 0.2, shadowRadius: 4, elevation: 10 
+    statusBanner: {
+        position: 'absolute', top: 20, left: 15, right: 15,
+        backgroundColor: 'rgba(44, 62, 80, 0.9)', borderRadius: 15,
+        paddingVertical: 12, paddingHorizontal: 20, flexDirection: 'row',
+        alignItems: 'center', justifyContent: 'space-between',
+        shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2, shadowRadius: 4, elevation: 10
     },
     statusText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
     toggleContainer: { flexDirection: 'row', alignItems: 'center' },
     availabilityText: { color: '#bdc3c7', fontSize: 16, fontWeight: '500', marginHorizontal: 10 },
     available: { color: '#2ecc71', fontWeight: 'bold' },
     unavailable: { color: '#e74c3c', fontWeight: 'bold' },
-    truckMarker: { 
-        backgroundColor: '#e67e22', padding: 10, borderRadius: 25, 
+    truckMarker: {
+        backgroundColor: '#005C70', padding: 10, borderRadius: 25,
         borderWidth: 3, borderColor: 'white', elevation: 5,
         shadowColor: '#000', shadowOpacity: 0.3,
         shadowRadius: 5, shadowOffset: { width: 0, height: 3 },

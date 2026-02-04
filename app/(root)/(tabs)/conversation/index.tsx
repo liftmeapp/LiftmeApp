@@ -1,19 +1,20 @@
+import { useSocket } from '@/context/SocketContext';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState, useEffect } from 'react'; // Added useEffect
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { io } from 'socket.io-client'; // Added socket.io-client
-import * as Notifications from 'expo-notifications'; // Added expo-notifications
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
-// --- NOTIFICATION HANDLER ---
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    shouldShowBanner: true,  // Add this line
+    shouldShowList: true     // Add this line
   }),
 });
 
@@ -32,7 +33,7 @@ interface Chat {
     }[];
 }
 
-const ChatListItem = ({ chat, onPress }: { chat: Chat; onPress: () => void }) => {
+const ChatListItem = ({ chat, onPress, onDelete }: { chat: Chat; onPress: () => void; onDelete: () => void }) => {
     const otherParticipant = chat.participants[0];
 
     let participantName = 'Unknown User';
@@ -53,7 +54,12 @@ const ChatListItem = ({ chat, onPress }: { chat: Chat; onPress: () => void }) =>
             <View style={styles.chatDetails}>
                 <View style={styles.chatHeader}>
                     <Text style={styles.participantName}>{participantName}</Text>
-                    <Text style={styles.lastMessageTime}>{lastMessageTime}</Text>
+                    <View style={styles.chatHeaderActions}>
+                        <Text style={styles.lastMessageTime}>{lastMessageTime}</Text>
+                        <TouchableOpacity onPress={onDelete} style={styles.deleteButton}>
+                            <Ionicons name="trash-outline" size={18} color="#b95528" />
+                        </TouchableOpacity>
+                    </View>
                 </View>
                 <Text style={styles.lastMessage} numberOfLines={1}>{lastMessage}</Text>
             </View>
@@ -64,6 +70,7 @@ const ChatListItem = ({ chat, onPress }: { chat: Chat; onPress: () => void }) =>
 export default function ConversationsScreen() {
     const { getToken } = useAuth();
     const router = useRouter();
+    const { socket } = useSocket();
     const [chats, setChats] = useState<Chat[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -91,28 +98,12 @@ export default function ConversationsScreen() {
         }
     }, []);
 
-    const { userId } = useAuth(); // Get userId here
-
+    // Effect to listen for new messages on the global socket
     useEffect(() => {
-        if (!API_BASE_URL || !userId) { // Check userId here
-            console.error("API_BASE_URL or userId is not defined.");
-            return;
-        }
+        if (!socket) return;
 
-        const socket = io(API_BASE_URL, {
-            reconnection: true,
-            reconnectionAttempts: 5,
-            transports: ['websocket']
-        });
-
-        socket.on('connect', () => {
-            console.log(`--- [Socket.IO] Connected to chat with ID: ${socket.id} ---`);
-            // Register the customer with the socket
-            socket.emit('register_customer', userId);
-        });
-
-        socket.on('new_message', async (message: any) => {
-            console.log('Received new message:', message);
+        const handleNewMessage = async (message: any) => {
+            console.log('[ConversationsScreen] Received new message notification:', message);
             // Schedule a local notification
             await Notifications.scheduleNotificationAsync({
                 content: {
@@ -122,19 +113,18 @@ export default function ConversationsScreen() {
                 },
                 trigger: null, // Show immediately
             });
-            // Optionally, refresh chats to show the new message
+            // Refresh the chat list to show the new message preview
             fetchChats();
-        });
+        };
 
-        socket.on('disconnect', (reason) => {
-            console.log(`--- [Socket.IO] Disconnected from chat: ${reason} ---`);
-        });
+        console.log('[ConversationsScreen] Attaching global new_message listener');
+        socket.on('new_message', handleNewMessage);
 
         return () => {
-            console.log("--- [Socket.IO] Disconnecting chat socket... ---");
-            socket.disconnect();
+            console.log('[ConversationsScreen] Removing global new_message listener');
+            socket.off('new_message', handleNewMessage);
         };
-    }, [API_BASE_URL, userId, fetchChats]); // Dependencies for useEffect
+    }, [socket, fetchChats]);
 
     useFocusEffect(
         useCallback(() => {
@@ -147,6 +137,42 @@ export default function ConversationsScreen() {
         setRefreshing(true);
         fetchChats();
     }, [fetchChats]);
+
+    const handleDeleteChat = useCallback((chatId: string) => {
+        Alert.alert(
+            'Delete Conversation',
+            'Are you sure you want to delete this conversation? This action cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            const token = await getToken();
+                            if (!token) throw new Error('User not authenticated');
+
+                            const response = await fetch(`${API_BASE_URL}/api/chat/${chatId}`, {
+                                method: 'DELETE',
+                                headers: { 'Authorization': `Bearer ${token}` },
+                            });
+
+                            if (!response.ok) {
+                                const errorBody = await response.json().catch(() => ({}));
+                                throw new Error(errorBody.error || 'Failed to delete conversation.');
+                            }
+
+                            setChats((prev) => prev.filter((chat) => chat.id !== chatId));
+                        } catch (error: any) {
+                            console.error('Error deleting chat:', error);
+                            Alert.alert('Delete Failed', error.message || 'Could not delete conversation.');
+                        }
+                    },
+                },
+            ],
+            { cancelable: true }
+        );
+    }, [getToken]);
 
     const handleChatPress = (chatId: string) => {
         router.push(`/conversation/${chatId}`);
@@ -169,7 +195,13 @@ export default function ConversationsScreen() {
             <FlatList
                 data={chats}
                 keyExtractor={(item) => item.id}
-                renderItem={({ item }) => <ChatListItem chat={item} onPress={() => handleChatPress(item.id)} />}
+                renderItem={({ item }) => (
+                    <ChatListItem
+                        chat={item}
+                        onPress={() => handleChatPress(item.id)}
+                        onDelete={() => handleDeleteChat(item.id)}
+                    />
+                )}
                 ListEmptyComponent={
                     <View style={styles.centered}>
                         <Ionicons name="chatbubbles-outline" size={60} color="#ccc" />
@@ -231,6 +263,11 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         marginBottom: 4,
     },
+    chatHeaderActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
     participantName: {
         fontSize: 16,
         fontWeight: 'bold',
@@ -243,5 +280,8 @@ const styles = StyleSheet.create({
     lastMessage: {
         fontSize: 14,
         color: '#666',
+    },
+    deleteButton: {
+        padding: 4,
     },
 });

@@ -1,8 +1,8 @@
 // /app/(tabs)/settings/index.tsx
 import RotatingLoader from '@/components/RotatingLoader';
 import { useAuth, useUser } from '@clerk/clerk-expo';
-import { router } from 'expo-router'; // <--- CHANGE: Removed useFocusEffect
-import React, { useEffect, useState } from 'react'; // <--- CHANGE: Import useEffect
+import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -11,74 +11,57 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-// The API base URL from your environment variables
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 const AccountScreen = () => {
-  // Get user info and authentication methods from Clerk
   const { user } = useUser();
-  // --- CHANGE: Destructure isSignedIn as well ---
   const { signOut, getToken, isSignedIn } = useAuth();
+  const insets = useSafeAreaInsets();
 
-  // State to hold the user's roles fetched from your API
   const [userRoles, setUserRoles] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-useEffect(() => {
-  console.log('🔍 Debug Info:');
-  console.log('API_BASE_URL:', API_BASE_URL);
-  console.log('isSignedIn:', isSignedIn);
-  console.log('user exists:', !!user);
-  
-  const fetchRoles = async () => {
-    if (!isSignedIn) {
-      console.log('❌ User not signed in');
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const token = await getToken();
-      
-      if (!token) {
-        console.log('❌ No token available');
+  useEffect(() => {
+    const fetchRoles = async () => {
+      if (!isSignedIn) {
+        setIsLoading(false);
         return;
       }
+      setIsLoading(true);
+      try {
+        const token = await getToken();
+        if (!token) return;
 
-      const response = await fetch(`${API_BASE_URL}/api/users/my-roles`, {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-      });
-      if (!response.ok) {
-        const errorBody = await response.text();
-        console.error(`❌ API Error: Status ${response.status}, Body: ${errorBody}`);
-        throw new Error(`Failed to fetch roles: ${response.status}`);
+        const response = await fetch(`${API_BASE_URL}/api/users/my-roles`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+        });
+        if (!response.ok) throw new Error('Failed to fetch roles');
+
+        const data = await response.json();
+        setUserRoles(data.roles || []);
+      } catch (error) {
+        console.error('Fetch roles error:', error);
+        setUserRoles([]);
+      } finally {
+        setIsLoading(false);
       }
-      const data = await response.json();
-      setUserRoles(data.roles || []);
-    } catch (error) {
-      console.error('💥 Fetch roles error:', error);
-      setUserRoles([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  fetchRoles();
-}, [isSignedIn]);
+    };
+    fetchRoles();
+  }, [isSignedIn]);
 
-  // Logout handler with a confirmation dialog
   const handleSignOut = () => {
     Alert.alert(
       "Confirm Logout",
       "Are you sure you want to log out?",
       [
         { text: "Cancel", style: "cancel" },
-        { 
+        {
           text: "Logout",
           onPress: async () => {
             try {
@@ -99,7 +82,7 @@ useEffect(() => {
     { icon: 'domain', label: 'Your Business Profile', subtitle: 'Set up your Lift-Me business profile', link: "/settings/add-business/businesssetup/businesspage" },
     { icon: 'car-outline', label: 'Manage Vehicles', link: '/settings/vehicle-page/vehicle-board' },
     { icon: 'wallet-outline', label: 'Manage Payment Methods', link: '/settings/payments' },
-    { icon: 'car-outline', label: 'Premium Account', subtitle: 'Get more features ', link: "/settings/premium" },
+    { icon: 'star-outline', label: 'Premium Account', subtitle: 'Get more features', link: "/settings/premium" },
     { icon: 'logout', label: 'Logout' },
   ];
 
@@ -115,31 +98,31 @@ useEffect(() => {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.name}>Settings</Text>
+          <Text style={styles.headerTitle}>Settings</Text>
         </View>
 
         <View style={styles.quickActions}>
           <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(root)/(tabs)/settings/help')}>
-            <Icon name="lifebuoy" size={24} color="#fff" />
+            <Icon name="lifebuoy" size={28} color="#fff" />
             <Text style={styles.actionLabel}>Help</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(root)/(tabs)/settings/payments')}>
-            <Icon name="wallet-outline" size={24} color="#fff" />
+            <Icon name="wallet-outline" size={28} color="#fff" />
             <Text style={styles.actionLabel}>Wallet</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(root)/(tabs)/profile')}>
-            <Icon name="history" size={24} color="#fff" />
+            <Icon name="history" size={28} color="#fff" />
             <Text style={styles.actionLabel}>Activity</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
           {isLoading ? (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 80 }}>
-              <RotatingLoader size={30} color="#000000" />
+            <View style={styles.loadingContainer}>
+              <RotatingLoader size={40} color="#005C70" />
             </View>
           ) : (
             settingsOptions.map((item, index) => (
@@ -154,11 +137,14 @@ useEffect(() => {
                   }
                 }}
               >
-                <Icon name={item.icon} size={22} color="#000" style={styles.rowIcon} />
+                <View style={styles.iconContainer}>
+                  <Icon name={item.icon} size={20} color="#005C70" />
+                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowLabel}>{item.label}</Text>
                   {item.subtitle && <Text style={styles.rowSubtitle}>{item.subtitle}</Text>}
                 </View>
+                <Icon name="chevron-right" size={20} color="#ccc" />
               </TouchableOpacity>
             ))
           )}
@@ -173,19 +159,99 @@ useEffect(() => {
 export default AccountScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingTop: 20, marginTop: 50, },
-  content: { padding: 16, },
-  header: { marginBottom: 20, },
-  name: { fontSize: 24, color: '#000', fontWeight: 'bold', },
-  ratingBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2d2d2d', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 5, marginTop: 4, alignSelf: 'flex-start', },
-  rating: { color: '#fff', marginLeft: 4, },
-  quickActions: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24, },
-  actionBtn: { backgroundColor: '#1e1e1e', padding: 16, borderRadius: 12, alignItems: 'center', flex: 1, marginHorizontal: 4, },
-  actionLabel: { color: '#fff', marginTop: 8, fontSize: 12, },
-  section: { marginBottom: 32,marginTop:22 },
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomColor: '#e0e0e0', borderBottomWidth: 1, },
-  rowIcon: { marginRight: 16, },
-  rowLabel: { color: '#000', fontSize: 16, },
-  rowSubtitle: { color: '#666', fontSize: 12, marginTop: 2, },
-  version: { textAlign: 'center', color: '#555', fontSize: 12, marginBottom: 20, },
+  container: {
+    flex: 1,
+    backgroundColor: '#e0e0e0', // Light gray background matching other pages
+  },
+  content: {
+    padding: 20,
+    paddingBottom: 100,
+  },
+  header: {
+    marginBottom: 20,
+    marginTop: 10,
+  },
+  headerTitle: {
+    fontSize: 34,
+    color: '#005C70',
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    gap: 12, // Increased gap slightly
+  },
+  actionBtn: {
+    backgroundColor: '#005C70', // Teal Background
+    paddingVertical: 15,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    shadowColor: '#005C70',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  actionLabel: {
+    color: '#fff',
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '600'
+  },
+  section: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 32,
+    minHeight: 200, // Ensure min height for loader
+    justifyContent: 'center', // Center content vertically if needed (mostly for loader)
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  loadingContainer: {
+    paddingVertical: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // List Row Style
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#E0F2F1', // Light teal background
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  rowLabel: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '500'
+  },
+  rowSubtitle: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  version: {
+    textAlign: 'center',
+    color: '#888',
+    fontSize: 12,
+    marginBottom: 20,
+  },
 });

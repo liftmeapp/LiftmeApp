@@ -524,7 +524,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                     {garages.filter(g => g.location?.coordinates).map((g) => 
                         <CustomMapMarker 
                             ref={el => markerRefs.current[g.name] = el}
-                            key={g.id} 
+                            key={`garage-${g.id || g.name}`}
                             coordinate={{
                                 latitude: g.location.coordinates[1], 
                                 longitude: g.location.coordinates[0]
@@ -538,7 +538,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                     {towTrucks.filter(t => t.location?.coordinates).map((t) => 
                         <CustomMapMarker 
                             ref={el => markerRefs.current[t.name] = el}
-                            key={t.id} 
+                            key={`tow-${t.id || t.name}`}
                             coordinate={{
                                 latitude: t.location.coordinates[1], 
                                 longitude: t.location.coordinates[0]
@@ -552,7 +552,7 @@ export default function GarageMap({ isPinningLocation, onPinLocationChange, onMa
                     {chargingStations.map((station) => 
                         <CustomMapMarker 
                             ref={el => markerRefs.current[station.name] = el}
-                            key={station.place_id}
+                            key={`ev-${station.place_id || station.name}`}
                             coordinate={{
                                 latitude: station.geometry.location.lat, 
                                 longitude: station.geometry.location.lng

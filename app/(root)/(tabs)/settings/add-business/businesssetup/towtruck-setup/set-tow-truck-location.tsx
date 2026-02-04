@@ -1,15 +1,15 @@
 // /app/settings/add-business/businesssetup/set-tow-truck-location.tsx
 
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import MapView, { PROVIDER_GOOGLE, Region } from 'react-native-maps';
-import { Stack, useRouter } from 'expo-router';
-import * as Location from 'expo-location';
+import RotatingLoader from '@/components/RotatingLoader';
 import { useTowTruckStore } from '@/store/towtruckStore'; // Use the correct store
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import RotatingLoader from '@/components/RotatingLoader';
+import * as Location from 'expo-location';
+import { Stack, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { PROVIDER_GOOGLE, Region } from 'react-native-maps';
 
 // --- CONFIGURATION ---
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -56,13 +56,13 @@ export default function SetTowTruckLocationScreen() {
 
   const reverseGeocode = async ({ latitude, longitude }: { latitude: number; longitude: number }) => {
     try {
-        const result = await Location.reverseGeocodeAsync({ latitude, longitude });
-        if (result.length > 0) {
-            const { name, street, city } = result[0];
-            setGeocodedAddress([name, street, city].filter(Boolean).join(', '));
-        }
+      const result = await Location.reverseGeocodeAsync({ latitude, longitude });
+      if (result.length > 0) {
+        const { name, street, city } = result[0];
+        setGeocodedAddress([name, street, city].filter(Boolean).join(', '));
+      }
     } catch (e) {
-        setGeocodedAddress('Address details unavailable');
+      setGeocodedAddress('Address details unavailable');
     }
   }
 
@@ -70,7 +70,7 @@ export default function SetTowTruckLocationScreen() {
     if (!currentRegion) {
       return Alert.alert('Location Not Set', 'Please wait for the map to load.');
     }
-    
+
     setIsSubmitting(true);
     // Persist the final chosen location to the store before submitting
     setLocation({ latitude: currentRegion.latitude, longitude: currentRegion.longitude });
@@ -103,26 +103,30 @@ export default function SetTowTruckLocationScreen() {
       const newTowTruck = await response.json();
 
       Alert.alert('Registration Complete!', 'Your tow truck is now listed. You will now be taken to the live driver dashboard.', [
-          { text: 'Go to Dashboard', onPress: () => {
-              reset();
-              // Use router.replace to go to the live screen, but pass the new data as params
-              router.replace({
-                  pathname: '/settings/add-business/businesssetup/towtruck-setup/tow-truck-live-tracking',
-                  params: { 
-                      towTruckId: newTowTruck.id,
-                      towTruckName: newTowTruck.name 
-                  }
-              }); 
-          }},
+        {
+          text: 'Go to Dashboard', onPress: () => {
+            reset();
+            // Use router.replace to go to the live screen, but pass the new data as params
+            router.replace({
+              pathname: '/settings/add-business/businesssetup/towtruck-setup/tow-truck-live-tracking',
+              params: {
+                towTruckId: newTowTruck.id,
+                towTruckName: newTowTruck.name
+              }
+            });
+          }
+        },
       ]);
       Alert.alert(
         'Registration Complete!',
         'Your tow truck is now listed. You will now be taken to the live driver dashboard.',
-        [{ text: 'Go to Dashboard', onPress: () => {
+        [{
+          text: 'Go to Dashboard', onPress: () => {
             reset(); // Clear the store
             // Navigate to the live tracking screen
             router.replace('/settings/add-business/businesssetup/towtruck-setup/tow-truck-live-tracking');
-        }}]
+          }
+        }]
       );
 
     } catch (e: any) {
@@ -134,13 +138,13 @@ export default function SetTowTruckLocationScreen() {
 
   if (!currentRegion) {
     return <View style={styles.centered}>
-      <RotatingLoader  
-        iconName="navigate-circle-outline" 
-        message="Loading Your Business Profile" 
-        color="#ed8b65"
+      <RotatingLoader
+        iconName="navigate-circle-outline"
+        message="Loading Your Business Profile"
+        color="#005C70"
         size={50}
       />
-      </View>;
+    </View>;
   }
 
   return (
@@ -156,13 +160,13 @@ export default function SetTowTruckLocationScreen() {
         }}
       />
       <View style={styles.pinContainer}>
-        <Ionicons name="location-sharp" size={50} color="#ed8b65" style={styles.pinShadow} />
+        <Ionicons name="location-sharp" size={50} color="#005C70" style={styles.pinShadow} />
       </View>
       <View style={styles.overlay}>
         <Text style={styles.overlayTitle}>Set Your Base of Operations</Text>
         <Text style={styles.overlaySubtitle} numberOfLines={2}>{geocodedAddress}</Text>
         <TouchableOpacity onPress={handleCreateTruck} disabled={isSubmitting}>
-          <LinearGradient colors={['#F2994A', '#F2C94C']} style={styles.button}>
+          <LinearGradient colors={['#005C70', '#004252']} style={styles.button}>
             {isSubmitting ? (
               <ActivityIndicator color="#fff" />
             ) : (
@@ -179,33 +183,33 @@ export default function SetTowTruckLocationScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    map: { flex: 1 },
-    centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    loadingText: { marginTop: 15, fontSize: 16, color: '#666' },
-    pinContainer: {
-        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        justifyContent: 'center', alignItems: 'center', marginBottom: 25,
-        pointerEvents: 'none',
-    },
-    pinShadow: {
-        textShadowColor: 'rgba(0,0,0,0.3)',
-        textShadowOffset: { width: 0, height: 3 },
-        textShadowRadius: 4,
-    },
-    overlay: {
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: 'white',
-        borderTopLeftRadius: 20, borderTopRightRadius: 20,
-        padding: 20, paddingTop: 25, paddingBottom: 40,
-        shadowColor: "#000", shadowOffset: { width: 0, height: -3 },
-        shadowOpacity: 0.1, shadowRadius: 5, elevation: 20,
-    },
-    overlayTitle: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', color: '#333' },
-    overlaySubtitle: { fontSize: 14, color: '#666', textAlign: 'center', marginTop: 8, marginBottom: 20, minHeight: 30 },
-    button: {
-        flexDirection: 'row', padding: 15, borderRadius: 12,
-        alignItems: 'center', justifyContent: 'center',
-    },
-    buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginRight: 10 },
+  container: { flex: 1 },
+  map: { flex: 1 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 15, fontSize: 16, color: '#666' },
+  pinContainer: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 25,
+    pointerEvents: 'none',
+  },
+  pinShadow: {
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 4,
+  },
+  overlay: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 20, paddingTop: 25, paddingBottom: 40,
+    shadowColor: "#000", shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.1, shadowRadius: 5, elevation: 20,
+  },
+  overlayTitle: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', color: '#333' },
+  overlaySubtitle: { fontSize: 14, color: '#666', textAlign: 'center', marginTop: 8, marginBottom: 20, minHeight: 30 },
+  button: {
+    flexDirection: 'row', padding: 15, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginRight: 10 },
 });

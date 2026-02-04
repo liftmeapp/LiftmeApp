@@ -22,15 +22,15 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 // --- STYLING & CONSTANTS ---
 const color = {
-  lightGray: "#f4f4f8",
-  primary: "#b95528",
-  success: "#27ae60",
-  darkGray: "#333",
-  mediumGray: "#6c757d",
-  border: "#e0e0e0",
-  white: "#fff",
-  black: "#000",
-  danger: '#c0392b'
+    lightGray: "#f4f4f8",
+    primary: "#005C70",
+    success: "#27ae60",
+    darkGray: "#333",
+    mediumGray: "#6c757d",
+    border: "#e0e0e0",
+    white: "#fff",
+    black: "#000",
+    danger: '#c0392b'
 };
 
 // --- MAIN COMPONENT ---
@@ -48,7 +48,7 @@ const TowingServiceMapContent = () => {
 
     const {
         currentStage, setCurrentStage,
-        vehicles, 
+        vehicles,
         selectedVehicle, setSelectedVehicle,
         pickupLocation, setPickupLocation,
         destinationLocation, setDestinationLocation,
@@ -60,7 +60,7 @@ const TowingServiceMapContent = () => {
         resetTowingBookingFlow,
         searchCountdown, eligibleTruckCount
     } = useTowingBooking();
-            
+
     const fetchSavedCards = useCallback(async () => {
         setIsFetchingCards(true);
         try {
@@ -70,36 +70,36 @@ const TowingServiceMapContent = () => {
             if (!res.ok) throw new Error("Could not load your saved cards.");
             const cards = await res.json();
             setSavedCards(cards);
-            
+
         } catch (error: any) {
             Alert.alert("Error loading cards", error.message);
         } finally {
             setIsFetchingCards(false);
         }
     }, []);
-        
+
     useEffect(() => {
         if (!bottomSheetRef.current) return;
-        const snap = (index: number) => { try { bottomSheetRef.current?.snapToIndex(index); } catch (e) {} };
-        
+        const snap = (index: number) => { try { bottomSheetRef.current?.snapToIndex(index); } catch (e) { } };
+
         if (currentStage === TowingBookingStage.CONFIRMED) {
             router.replace('/(root)/(tabs)/orders');
             resetTowingBookingFlow();
             return;
         }
 
-        switch(currentStage) {
+        switch (currentStage) {
             case TowingBookingStage.PICKUP_SELECTION:
             case TowingBookingStage.DESTINATION_SELECTION:
             case TowingBookingStage.VEHICLE_SELECTION:
-                snap(1); 
+                snap(1);
                 break;
             case TowingBookingStage.PAYMENT:
-                snap(1); 
+                snap(1);
                 fetchSavedCards();
                 break;
             case TowingBookingStage.SEARCHING_FOR_PROVIDER:
-                snap(0); 
+                snap(0);
                 break;
         }
     }, [currentStage, fetchSavedCards, router]);
@@ -108,7 +108,7 @@ const TowingServiceMapContent = () => {
         if (currentStage === TowingBookingStage.PICKUP_SELECTION) setPickupLocation(location);
         if (currentStage === TowingBookingStage.DESTINATION_SELECTION) setDestinationLocation(location);
     };
-    
+
     const handleConfirmLocation = () => {
         if (currentStage === TowingBookingStage.PICKUP_SELECTION && pickupLocation) {
             setCurrentStage(TowingBookingStage.DESTINATION_SELECTION);
@@ -126,7 +126,7 @@ const TowingServiceMapContent = () => {
     };
 
     const handleGoBack = () => {
-        switch(currentStage) {
+        switch (currentStage) {
             case TowingBookingStage.VEHICLE_SELECTION: router.back(); break;
             case TowingBookingStage.PICKUP_SELECTION: setCurrentStage(TowingBookingStage.VEHICLE_SELECTION); break;
             case TowingBookingStage.DESTINATION_SELECTION: setCurrentStage(TowingBookingStage.PICKUP_SELECTION); break;
@@ -162,14 +162,14 @@ const TowingServiceMapContent = () => {
 
         return (
             <BottomSheetView style={styles.contentContainer}>
-                 <View style={styles.headerWithBack}>
+                <View style={styles.headerWithBack}>
                     <TouchableOpacity onPress={handleGoBack}>
                         <Ionicons name="arrow-back-circle-outline" size={30} color={color.primary} />
                     </TouchableOpacity>
                     <Text style={styles.headerText}>{title}</Text>
-                    <View style={{width: 30}} />
-                 </View>
-                 <View style={styles.addressDisplayBox}>
+                    <View style={{ width: 30 }} />
+                </View>
+                <View style={styles.addressDisplayBox}>
                     <Ionicons name="location-sharp" size={24} color={color.primary} />
                     <Text style={styles.addressDisplayText} numberOfLines={2}>
                         {location?.description || "Move the map to set location..."}
@@ -182,8 +182,8 @@ const TowingServiceMapContent = () => {
                     </View>
                 )}
 
-                <TouchableOpacity 
-                    style={[styles.confirmButton, buttonDisabled && styles.disabledButton]} 
+                <TouchableOpacity
+                    style={[styles.confirmButton, buttonDisabled && styles.disabledButton]}
                     onPress={handleConfirmLocation}
                     disabled={buttonDisabled}
                 >
@@ -198,8 +198,8 @@ const TowingServiceMapContent = () => {
                             <View style={styles.separatorLine} />
                         </View>
 
-                        <TouchableOpacity 
-                            style={styles.garageButton} 
+                        <TouchableOpacity
+                            style={styles.garageButton}
                             onPress={handleFindNearbyGarage}
                         >
                             <Ionicons name="business-outline" size={22} color={color.primary} />
@@ -212,16 +212,16 @@ const TowingServiceMapContent = () => {
     };
 
     const renderVehicleContent = () => {
-         if (isInitialLoading) return <ActivityIndicator style={{marginTop: 50}} size="large" color={color.primary} />;
+        if (isInitialLoading) return <ActivityIndicator style={{ marginTop: 50 }} size="large" color={color.primary} />;
 
-         return (
-             <BottomSheetView style={styles.contentContainer}>
+        return (
+            <BottomSheetView style={styles.contentContainer}>
                 <View style={styles.headerWithBack}>
                     <TouchableOpacity onPress={handleGoBack}>
                         <Ionicons name="arrow-back-circle-outline" size={30} color={color.primary} />
                     </TouchableOpacity>
                     <Text style={styles.headerText}>Which vehicle to tow?</Text>
-                    <View style={{width: 30}} />
+                    <View style={{ width: 30 }} />
                 </View>
                 <FlatList
                     data={vehicles}
@@ -234,7 +234,7 @@ const TowingServiceMapContent = () => {
                                 onPress={() => setSelectedVehicle(item)}
                             >
                                 <Ionicons name="car-sport-outline" size={30} color={isSelected ? color.primary : color.darkGray} />
-                                <View style={{flex: 1, marginLeft: 15}}>
+                                <View style={{ flex: 1, marginLeft: 15 }}>
                                     <Text style={styles.vehicleName}>{item.brand} {item.name}</Text>
                                     <Text style={styles.vehicleInfo}>{item.plateNumber} • {item.type}</Text>
                                 </View>
@@ -245,25 +245,25 @@ const TowingServiceMapContent = () => {
                     ListEmptyComponent={<Text style={styles.subHeaderText}>No vehicles found. Please add a vehicle in settings.</Text>}
                 />
                 {selectedVehicle && (
-                    <TouchableOpacity 
-                        style={styles.confirmButton} 
+                    <TouchableOpacity
+                        style={styles.confirmButton}
                         onPress={handleConfirmVehicle}
                     >
                         <Text style={styles.confirmButtonText}>Confirm Vehicle & Set Pickup</Text>
                     </TouchableOpacity>
                 )}
-                 <TouchableOpacity style={styles.addVehicleButton} onPress={() => router.push('/(root)/(tabs)/settings/vehicle-page/add-vehicle')}>
+                <TouchableOpacity style={styles.addVehicleButton} onPress={() => router.push('/(root)/(tabs)/settings/vehicle-page/add-vehicle')}>
                     <Ionicons name="add-circle-outline" size={22} color={color.white} />
                     <Text style={styles.addVehicleButtonText}>Add a New Vehicle</Text>
                 </TouchableOpacity>
             </BottomSheetView>
         );
-    };    
+    };
     const renderSearchingContent = () => {
-         const minutes = Math.floor(searchCountdown / 60);
-         const seconds = searchCountdown % 60;
+        const minutes = Math.floor(searchCountdown / 60);
+        const seconds = searchCountdown % 60;
 
-        const isTowToGarage = !destinationLocation; 
+        const isTowToGarage = !destinationLocation;
 
         let headerText = "Finding Nearby Trucks...";
         let subHeaderText = "Broadcasting your request to all available tow trucks in the area. Please wait for one to accept.";
@@ -277,52 +277,52 @@ const TowingServiceMapContent = () => {
             }
         }
 
-         if (searchError) {
-             return (
-                 <BottomSheetView style={[styles.contentContainer, styles.centered]}>
-                     <Ionicons name="alert-circle-outline" size={60} color={color.danger} />
-                     <Text style={styles.headerText}>Search Failed</Text>
-                     <Text style={styles.subHeaderText}>{searchError}</Text>
-                     <TouchableOpacity style={styles.confirmButton} onPress={handleGoBack}>
-                         <Text style={styles.confirmButtonText}>Go Back</Text>
-                     </TouchableOpacity>
-                 </BottomSheetView>
-             );
-         }
+        if (searchError) {
+            return (
+                <BottomSheetView style={[styles.contentContainer, styles.centered]}>
+                    <Ionicons name="alert-circle-outline" size={60} color={color.danger} />
+                    <Text style={styles.headerText}>Search Failed</Text>
+                    <Text style={styles.subHeaderText}>{searchError}</Text>
+                    <TouchableOpacity style={styles.confirmButton} onPress={handleGoBack}>
+                        <Text style={styles.confirmButtonText}>Go Back</Text>
+                    </TouchableOpacity>
+                </BottomSheetView>
+            );
+        }
 
-         if (currentStage === TowingBookingStage.CONFIRMED && selectedProvider) {
-              return (
-                 <BottomSheetView style={[styles.contentContainer, styles.centered]}>
-                     <Ionicons name="checkmark-circle" size={60} color={color.success} />
-                     <Text style={styles.headerText}>Truck Confirmed!</Text>
-                     <Text style={styles.subHeaderText}>{selectedProvider.name} is on the way.</Text>
-                 </BottomSheetView>
-              );
-         }
+        if (currentStage === TowingBookingStage.CONFIRMED && selectedProvider) {
+            return (
+                <BottomSheetView style={[styles.contentContainer, styles.centered]}>
+                    <Ionicons name="checkmark-circle" size={60} color={color.success} />
+                    <Text style={styles.headerText}>Truck Confirmed!</Text>
+                    <Text style={styles.subHeaderText}>{selectedProvider.name} is on the way.</Text>
+                </BottomSheetView>
+            );
+        }
 
-         return (
-             <BottomSheetView style={[styles.contentContainer, styles.centered]}>
-                 <RotatingLoader color={color.primary} size={50} />
-                 <Text style={styles.headerText}>{headerText}</Text>
-                 <Text style={styles.subHeaderText}>{subHeaderText}</Text>
-                 <View style={styles.countdownBox}>
-                     <Ionicons name="timer-outline" size={24} color={color.primary} />
-                     <Text style={styles.countdownText}>
-                         {`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`}
-                     </Text>
-                 </View>
-                 <TouchableOpacity
-                     style={[styles.confirmButton, {backgroundColor: color.danger, marginTop: 20}]}
-                     onPress={cancelTowingBooking}
-                 >
-                     <Text style={styles.confirmButtonText}>Cancel Search</Text>
-                 </TouchableOpacity>
-             </BottomSheetView>
-         );
+        return (
+            <BottomSheetView style={[styles.contentContainer, styles.centered]}>
+                <RotatingLoader color={color.primary} size={50} />
+                <Text style={styles.headerText}>{headerText}</Text>
+                <Text style={styles.subHeaderText}>{subHeaderText}</Text>
+                <View style={styles.countdownBox}>
+                    <Ionicons name="timer-outline" size={24} color={color.primary} />
+                    <Text style={styles.countdownText}>
+                        {`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`}
+                    </Text>
+                </View>
+                <TouchableOpacity
+                    style={[styles.confirmButton, { backgroundColor: color.danger, marginTop: 20 }]}
+                    onPress={cancelTowingBooking}
+                >
+                    <Text style={styles.confirmButtonText}>Cancel Search</Text>
+                </TouchableOpacity>
+            </BottomSheetView>
+        );
     };
 
     const renderContent = () => {
-        switch(currentStage) {
+        switch (currentStage) {
             case TowingBookingStage.VEHICLE_SELECTION:
                 return renderVehicleContent();
             case TowingBookingStage.PICKUP_SELECTION:
@@ -333,14 +333,14 @@ const TowingServiceMapContent = () => {
                 return (
                     <BottomSheetView style={styles.contentContainer}>
                         <Text style={styles.headerText}>Confirm & Pay</Text>
-                        
+
                         <View style={styles.confirmationBanner}>
                             <Ionicons name="checkmark-circle" size={20} color={color.success} />
                             <Text style={styles.confirmationBannerText}>
                                 {selectedProvider?.name || 'A provider'} has accepted your request!
                             </Text>
                         </View>
-                        
+
                         <View style={styles.contentArea}>
                             <Text style={styles.paymentMethodHeader}>Select Payment Method</Text>
                             {isFetchingCards ? (
@@ -355,14 +355,14 @@ const TowingServiceMapContent = () => {
                                         }}
                                     >
                                         <Ionicons name={paymentMethod === 'CASH' ? "radio-button-on" : "radio-button-off"} size={24} color={color.primary} />
-                                        <Ionicons name="cash-outline" size={24} color="#555" style={{marginHorizontal: 15}} />
+                                        <Ionicons name="cash-outline" size={24} color="#555" style={{ marginHorizontal: 15 }} />
                                         <Text style={styles.cardText}>Pay with Cash</Text>
                                     </TouchableOpacity>
 
                                     <FlatList
                                         data={savedCards}
                                         renderItem={({ item }) => (
-                                            <TouchableOpacity 
+                                            <TouchableOpacity
                                                 style={[styles.cardItem, selectedCard === item.id && styles.selectedCardItem]}
                                                 onPress={() => {
                                                     setPaymentMethod('CARD');
@@ -370,7 +370,7 @@ const TowingServiceMapContent = () => {
                                                 }}
                                             >
                                                 <Ionicons name={selectedCard === item.id ? "radio-button-on" : "radio-button-off"} size={24} color={color.primary} />
-                                                <Ionicons name="card" size={24} color="#555" style={{marginHorizontal: 15}} />
+                                                <Ionicons name="card" size={24} color="#555" style={{ marginHorizontal: 15 }} />
                                                 <Text style={styles.cardText}>{item.brand.toUpperCase()} ending in {item.last4}</Text>
                                             </TouchableOpacity>
                                         )}
@@ -405,9 +405,9 @@ const TowingServiceMapContent = () => {
                                 *Price is calculated based on your vehicle type's rate per kilometer.
                             </Text>
                         </View>
-    
-                        <TouchableOpacity 
-                            style={[styles.confirmButton, (isConfirmingPayment || (paymentMethod === 'CARD' && !selectedCard)) && {backgroundColor: color.darkGray}]} 
+
+                        <TouchableOpacity
+                            style={[styles.confirmButton, (isConfirmingPayment || (paymentMethod === 'CARD' && !selectedCard)) && { backgroundColor: color.darkGray }]}
                             onPress={() => {
                                 if (paymentMethod === 'CARD') {
                                     if (!selectedCard) {
@@ -418,19 +418,19 @@ const TowingServiceMapContent = () => {
                                 } else {
                                     confirmCashBooking();
                                 }
-                            }} 
+                            }}
                             disabled={isConfirmingPayment || (paymentMethod === 'CARD' && !selectedCard)}
                         >
                             {isConfirmingPayment ? (
-                                <ActivityIndicator color={color.white}/>
+                                <ActivityIndicator color={color.white} />
                             ) : (
                                 <Text style={styles.confirmButtonText}>
                                     {paymentMethod === 'CASH' ? 'Confirm Booking' : `Pay INR ${finalPrice.toFixed(2)} & Confirm`}
                                 </Text>)}
                         </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.cancelBookingButton, isConfirmingPayment && styles.disabledButton]} 
-                            onPress={cancelTowingBooking} 
+                        <TouchableOpacity
+                            style={[styles.cancelBookingButton, isConfirmingPayment && styles.disabledButton]}
+                            onPress={cancelTowingBooking}
                             disabled={isConfirmingPayment}
                         >
                             <Text style={styles.cancelBookingButtonText}>Cancel Booking</Text>
@@ -446,7 +446,7 @@ const TowingServiceMapContent = () => {
                 return null;
         }
     };
-    
+
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <View style={styles.container}>
@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
     },
     addressDisplayText: { flex: 1, marginLeft: 10, fontSize: 16, color: color.darkGray },
-    confirmButton: { backgroundColor: color.primary, padding: 15, borderRadius: 10, alignItems: 'center' },
+    confirmButton: { backgroundColor: color.primary, padding: 15, borderRadius: 30, alignItems: 'center' },
     disabledButton: { backgroundColor: color.mediumGray },
     confirmButtonText: { color: color.white, fontSize: 18, fontWeight: 'bold' },
     vehicleCard: {
@@ -520,17 +520,17 @@ const styles = StyleSheet.create({
     selectedCardItem: { borderColor: color.primary, backgroundColor: '#f8f9ff', borderWidth: 1.5 },
     cardText: { fontSize: 15, color: color.darkGray, flex: 1 },
     centeredMessageContainer: { padding: 20, alignItems: 'center', justifyContent: 'center' },
-    addCardButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, borderWidth: 1, borderColor: color.primary, borderRadius: 10, marginVertical: 10, borderStyle: 'dashed' },
+    addCardButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, borderWidth: 1, borderColor: color.primary, borderRadius: 30, marginVertical: 10, borderStyle: 'dashed' },
     addCardButtonText: { color: color.primary, fontSize: 15, fontWeight: '500', marginLeft: 8 },
     countdownBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8f9ff', padding: 12, borderRadius: 8, marginVertical: 15, borderWidth: 1, borderColor: '#e0e5ff' },
     countdownText: { fontSize: 24, fontWeight: 'bold', color: color.primary, marginLeft: 8, fontVariant: ['tabular-nums'] },
     orSeparator: { flexDirection: 'row', alignItems: 'center', marginVertical: 15 },
     separatorLine: { flex: 1, height: 1, backgroundColor: color.border },
     orText: { marginHorizontal: 10, color: color.mediumGray, fontWeight: '600' },
-    garageButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff8f2', padding: 15, borderRadius: 10, borderWidth: 1.5, borderColor: color.primary, borderStyle: 'solid' },
+    garageButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff8f2', padding: 15, borderRadius: 30, borderWidth: 1.5, borderColor: color.primary, borderStyle: 'solid' },
     garageButtonText: { color: color.primary, fontSize: 18, fontWeight: 'bold', marginLeft: 10 },
-    cancelBookingButton: { alignItems: 'center', justifyContent: 'center', backgroundColor: color.danger, paddingVertical: 15, borderRadius: 10, marginTop: 10 },
-    cancelBookingButtonText: { color: color.white, fontSize: 16, fontWeight: '600',paddingBottom: 10 },
+    cancelBookingButton: { alignItems: 'center', justifyContent: 'center', backgroundColor: color.danger, paddingVertical: 15, borderRadius: 30, marginTop: 10 },
+    cancelBookingButtonText: { color: color.white, fontSize: 16, fontWeight: '600', paddingBottom: 10 },
     pricingExplanation: {
         fontSize: 12,
         color: color.mediumGray,
@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         backgroundColor: '#27ae60',
         paddingVertical: 14,
-        borderRadius: 10,
+        borderRadius: 30,
         marginTop: 5,
         marginBottom: 4,
     },

@@ -1,7 +1,5 @@
-// /app/settings/add-business/businesssetup/garage-setup/location-picker.tsx
-
-import RotatingLoader from '@/components/RotatingLoader';
 import { useGarageStore } from '@/store/garageStore';
+import { useSparePartStore } from '@/store/sparePartStore'; // Import the new store
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,282 +22,181 @@ const BANGALORE_COORDS: Region = {
 
 export default function LocationPickerScreen() {
   const router = useRouter();
-  const { garageId } = useLocalSearchParams<{ garageId?: string }>();
+  const { mode = 'garage', garageId } = useLocalSearchParams<{ mode?: string, garageId?: string }>();
 
-  const { getToken, isSignedIn, isLoaded } = useAuth();
-  const { details, services, location: storedLocation, supportedVehicleTypes, setLocation, reset } = useGarageStore();
+  const { getToken } = useAuth();
+
+  // Conditional hook usage is not allowed, so we call both and decide which data to use based on mode.
+  const garageStore = useGarageStore();
+  const sparePartStore = useSparePartStore();
+
   const mapRef = useRef<MapView>(null);
 
   const [currentRegion, setCurrentRegion] = useState<Region | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [locationError, setLocationError] = useState<string | null>(null);
-  const [searchError, setSearchError] = useState<string | null>(null);
   const [geocodedAddress, setGeocodedAddress] = useState<string>('Move the map to set location...');
-  const [currentGarageData, setCurrentGarageData] = useState<any>(null);
-  const [isLoadingGarage, setIsLoadingGarage] = useState(false);
 
   useEffect(() => {
     (async () => {
-      if (!isLoaded || !isSignedIn) return;
-
-      let shouldSetLoadingFalse = false;
-      if (garageId) {
-        setIsLoadingGarage(true); // Set to true at the very beginning if garageId exists
-        shouldSetLoadingFalse = true;
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Permission to access location was denied.');
+        setCurrentRegion(BANGALORE_COORDS);
+        return;
       }
 
       try {
-        let initialMapRegion: Region = BANGALORE_COORDS; // Default to Bangalore
-
-        // 1. Prioritize stored location if available
-        if (storedLocation?.latitude && storedLocation?.longitude) {
-            initialMapRegion = {
-                latitude: storedLocation.latitude,
-                longitude: storedLocation.longitude,
-                latitudeDelta: 0.002,
-                longitudeDelta: 0.002,
-            };
-            setCurrentRegion(initialMapRegion);
-            reverseGeocode(initialMapRegion);
-        } else { // 2. Try to get user's GPS location
-            let { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-              setLocationError('Permission denied. Please enable location services to find your position.');
-              setCurrentRegion(BANGALORE_COORDS);
-              reverseGeocode(BANGALORE_COORDS); // Still call reverseGeocode for fallback region
-              // Do not return here, let the finally block execute
-            } else { // Only try to get current position if permission is granted
-              console.log(`[LocationPicker] --- Am I in Edit Mode? garageId = ${garageId}`);
-              try {
-                let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-                const region = {
-                  latitude: location.coords.latitude,
-                  longitude: location.coords.longitude,
-                  latitudeDelta: 0.002,
-                  longitudeDelta: 0.002,
-                };
-                initialMapRegion = region;
-                setCurrentRegion(region);
-                reverseGeocode(region); // Only call reverseGeocode if location is successfully obtained
-              } catch (error) {
-                  setLocationError("Could not fetch your current location. Please move the map manually.");
-                  setCurrentRegion(BANGALORE_COORDS);
-                  reverseGeocode(BANGALORE_COORDS); // Still call reverseGeocode for fallback region
-              }
-            }
-        }
-
-        if (garageId) {
-          // This inner try/catch is for fetching garage data
-          try {
-            const token = await getToken();
-            const response = await fetch(`${API_BASE_URL}/api/garages/${garageId}`, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!response.ok) throw new Error("Failed to fetch garage details.");
-            const data = await response.json();
-            setCurrentGarageData(data);
-          } catch (error) {
-            console.error("Error fetching garage details:", error);
-            Alert.alert("Error", "Could not load existing garage details.");
-          }
-        }
-      } finally {
-        if (shouldSetLoadingFalse) { // Only set to false if it was set to true
-          setIsLoadingGarage(false);
-        }
+        let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const region = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        };
+        setCurrentRegion(region);
+        reverseGeocode(region);
+      } catch (error) {
+        Alert.alert("Location Error", "Could not fetch your current location. Please move the map manually.");
+        setCurrentRegion(BANGALORE_COORDS);
       }
     })();
-  }, [garageId, isSignedIn, isLoaded]);
+  }, []);
 
   const reverseGeocode = async ({ latitude, longitude }: { latitude: number; longitude: number }) => {
     try {
-        const result = await Location.reverseGeocodeAsync({ latitude, longitude });
-        if (result.length > 0) {
-            const { name, street, city, postalCode, country } = result[0];
-            setGeocodedAddress([name, street, city, postalCode, country].filter(Boolean).join(', '));
-        }
+      const result = await Location.reverseGeocodeAsync({ latitude, longitude });
+      if (result.length > 0) {
+        const { name, street, city, postalCode, country } = result[0];
+        setGeocodedAddress([name, street, city, postalCode, country].filter(Boolean).join(', '));
+      }
     } catch (e) {
-        console.warn("Reverse geocode error", e);
-        setGeocodedAddress('Address details unavailable');
+      setGeocodedAddress('Address details unavailable');
     }
   }
 
   const handleLocationSelect = (data: any, details: any = null) => {
     if (details?.geometry?.location) {
-        const { lat, lng } = details.geometry.location;
-        const newRegion = {
-            latitude: lat,
-            longitude: lng,
-            latitudeDelta: 0.005,
-            longitudeDelta: 0.005,
-        };
-        mapRef.current?.animateToRegion(newRegion, 1000);
-    } else {
-        console.warn("No details found for selected location");
+      const { lat, lng } = details.geometry.location;
+      const newRegion = {
+        latitude: lat,
+        longitude: lng,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      };
+      mapRef.current?.animateToRegion(newRegion, 1000);
     }
   };
 
   const handleFinalSubmit = async () => {
     if (!currentRegion) {
-        return Alert.alert('Location Not Set', 'Please wait for the map to load.');
+      return Alert.alert('Location Not Set', 'Please wait for the map to load.');
     }
-    
+
     setIsSubmitting(true);
-    setLocation({ latitude: currentRegion.latitude, longitude: currentRegion.longitude });
-
-    const payload: any = {
-        details: { ...details },
-        services: services,
-        location: {
-            type: 'Point',
-            coordinates: [currentRegion.longitude, currentRegion.latitude],
-        },
-        supportedVehicleTypes: supportedVehicleTypes, // <--- ADDED THIS LINE
-    };
-
-
-    if (currentGarageData && currentGarageData.status === 'REJECTED') {
-        payload.details.status = 'PENDING';
-    }
-
-    console.log(`Submitting in ${garageId ? 'EDIT' : 'CREATE'} mode.`);
-    console.log("Final Payload for Garage:", JSON.stringify(payload, null, 2));
 
     try {
-        const token = await getToken();
-        if (!token) throw new Error("Authentication session expired. Please log in again.");
+      const token = await getToken();
+      if (!token) throw new Error("Authentication session expired.");
 
-        const isEditMode = !!garageId;
-        const url = isEditMode 
-            ? `${API_BASE_URL}/api/garages/${garageId}` 
-            : `${API_BASE_URL}/api/garages`;
-        
-        const method = isEditMode ? 'PUT' : 'POST';
+      let url = '';
+      let payload: any = {};
+      let successMessage = '';
+      let routerRedirect = '';
 
-        const response = await fetch(url, {
-            method: method,
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify(payload),
-        });
+      if (mode === 'garage') {
+        garageStore.setLocation({ latitude: currentRegion.latitude, longitude: currentRegion.longitude });
+        url = garageId ? `${API_BASE_URL}/api/garages/${garageId}` : `${API_BASE_URL}/api/garages`;
+        payload = {
+          details: { ...garageStore.details },
+          services: garageStore.services,
+          location: {
+            type: 'Point',
+            coordinates: [currentRegion.longitude, currentRegion.latitude],
+          },
+          supportedVehicleTypes: garageStore.supportedVehicleTypes,
+        };
+        successMessage = garageId ? 'Your garage has been updated!' : 'Your garage has been created!';
+        routerRedirect = '/settings/add-business/businesssetup/businesspage';
+        garageStore.reset();
+      } else { // mode === 'sparePart'
+        sparePartStore.setLocation({ latitude: currentRegion.latitude, longitude: currentRegion.longitude });
+        url = `${API_BASE_URL}/api/spare-parts`;
+        payload = {
+          ...sparePartStore.details,
+          price: parseFloat(sparePartStore.details.price),
+          quantity: parseInt(sparePartStore.details.quantity, 10),
+          year: parseInt(sparePartStore.details.year, 10) || undefined,
+          location: {
+            type: 'Point',
+            coordinates: [currentRegion.longitude, currentRegion.latitude],
+          },
+        };
+        successMessage = 'Your spare part has been listed for sale!';
+        routerRedirect = '/settings/add-business/businesssetup/spare-part';
+        sparePartStore.reset();
+      }
 
-        if (!response.ok) {
-            const errorBody = await response.text();
-            let errorMessage = `Server Error: ${response.status}`;
-            try {
-                const errorData = JSON.parse(errorBody);
-                errorMessage = errorData.error || errorMessage;
-            } catch (e) {
-                console.error("Non-JSON error response:", errorBody);
-                errorMessage = "An unexpected server error occurred.";
-            }
-            throw new Error(errorMessage);
-        }
+      const response = await fetch(url, {
+        method: mode === 'garage' && garageId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
 
-        const successMessage = isEditMode ? 'Your garage has been updated!' : 'Your garage has been created!';
-        // Directly reset and redirect for a smoother UX
-        reset();
-        router.replace('/settings/add-business/businesssetup/businesspage');
-        // Optionally, you could show a brief toast notification here instead of a blocking alert.
-        Alert.alert('Success!', successMessage);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'An unexpected server error occurred.');
+      }
+
+      Alert.alert('Success!', successMessage);
+      router.replace(routerRedirect as any);
 
     } catch (e: any) {
-        Alert.alert('Submission Error', e.message);
+      Alert.alert('Submission Error', e.message);
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
-};
+  };
 
   if (!currentRegion) {
     return (
       <View style={styles.centered}>
-          <RotatingLoader  
-              iconName="navigate-circle-outline" 
-              message="Loading Your Business Profile" 
-              color="#ed8b65"
-              size={50}
-            />
+        <ActivityIndicator size="large" color="#005C70" />
+        <Text style={styles.loadingText}>Fetching Your Location...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ title: 'Step 3: Pin Your Location' }} />
-      
-      {GOOGLE_API_KEY && GOOGLE_API_KEY.length > 20 && (
-          <GooglePlacesAutocomplete
-              placeholder="Search for a place"
-              fetchDetails={true}
-              enablePoweredByContainer={false}
-              minLength={2}
-              debounce={300}
-              timeout={20000}
-              enableHighAccuracyLocation={true}
-              onPress={handleLocationSelect}
-              onFail={(error) => {
-                  console.error('GooglePlacesAutocomplete onFail:', error);
-                  setSearchError('Location search failed. Please try again.');
-              }}
-              onTimeout={() => {
-                  console.log('Google Places request timed out');
-                  setSearchError('Search timed out, please try again');
-              }}
-              onNotFound={() => {
-                  console.log('No results found');
-                  setSearchError('No results found for your search.');
-              }}
-              query={{
-                  key: GOOGLE_API_KEY,
-                  language: 'en',
-                  components: 'country:in',
-                  types: '(cities)',
-                  fields: 'formatted_address,geometry,name,place_id'
-              }}
-              requestUrl={{
-                  url: 'https://maps.googleapis.com/maps/api/place/autocomplete/json',
-                  useOnPlatform: 'web'
-              }}
-              styles={{
-                  container: styles.searchContainer,
-                  textInput: styles.searchInput,
-                  listView: styles.searchResults,
-                  row: styles.searchResultRow,
-                  description: styles.searchResultText,
-              }}
-              textInputProps={{
-                  placeholderTextColor: '#999',
-                  returnKeyType: 'search',
-                  clearButtonMode: 'while-editing',
-                  autoCapitalize: 'words',
-                  autoCorrect: false
-              }}
-              predefinedPlaces={[]}
-              currentLocation={false}
-              nearbyPlacesAPI="GooglePlacesSearch"
-              GooglePlacesSearchQuery={{
-                  rankby: 'distance',
-              }}
-              GooglePlacesDetailsQuery={{
-                  fields: 'formatted_address,geometry,name,place_id'
-              }}
-              suppressDefaultStyles={false}
-              keyboardShouldPersistTaps="handled"
-              listEmptyComponent={() => (
-                  <View style={styles.noResults}>
-                      <Text style={styles.noResultsText}>No results found</Text>
-                  </View>
-              )}
-          />
-      )}
-      
-      {searchError && (
-          <View style={styles.searchError}>
-              <Text style={styles.searchErrorText}>{searchError}</Text>
-              <TouchableOpacity onPress={() => setSearchError(null)} style={styles.dismissButton}>
-                  <Text style={styles.dismissButtonText}>Dismiss</Text>
-              </TouchableOpacity>
-          </View>
+      <Stack.Screen options={{ title: 'Step 2: Pin Your Location' }} />
+
+      {GOOGLE_API_KEY && (
+        <GooglePlacesAutocomplete
+          placeholder="Search for a place"
+          fetchDetails={true}
+          enablePoweredByContainer={false}
+          minLength={2}
+          debounce={300}
+          onPress={handleLocationSelect}
+          onFail={(error) => console.error('GooglePlacesAutocomplete Error:', error)}
+          query={{
+            key: GOOGLE_API_KEY,
+            language: 'en',
+            components: 'country:in',
+            types: '(cities)',
+            fields: 'formatted_address,geometry,name,place_id',
+          }}
+          styles={{
+            container: styles.searchContainer,
+            textInput: styles.searchInput,
+            listView: styles.searchResults,
+          }}
+          textInputProps={{
+            placeholderTextColor: '#999',
+          }}
+          keyboardShouldPersistTaps="handled"
+          predefinedPlaces={[]}
+        />
       )}
 
       <MapView
@@ -309,31 +206,31 @@ export default function LocationPickerScreen() {
         initialRegion={currentRegion}
         showsUserLocation={true}
         onRegionChangeComplete={(region) => {
-            setCurrentRegion(region);
-            reverseGeocode(region);
+          setCurrentRegion(region);
+          reverseGeocode(region);
         }}
       />
-      
+
       <View style={styles.pinContainer}>
-          <Ionicons name="location" size={50} color="#b95528" style={styles.pinShadow} />
+        <Ionicons name="location" size={50} color="#005C70" style={styles.pinShadow} />
       </View>
 
       <View style={styles.overlayContainer}>
         <View style={styles.instructionsContainer}>
-            <Text style={styles.instructionsTitle}>Set Garage Location</Text>
-            <Text style={styles.instructionsSubtitle} numberOfLines={2}>{geocodedAddress}</Text>
+          <Text style={styles.instructionsTitle}>Set Your Location</Text>
+          <Text style={styles.instructionsSubtitle} numberOfLines={2}>{geocodedAddress}</Text>
         </View>
-        <TouchableOpacity onPress={handleFinalSubmit} disabled={isSubmitting || isLoadingGarage}>
-            <LinearGradient colors={['#4CAF50', '#45a049']} style={styles.button}>
-                {(isSubmitting || isLoadingGarage) ? (
-                    <ActivityIndicator color="#fff" />
-                ) : (
-                    <>
-                        <Text style={styles.buttonText}>Confirm Garage</Text>
-                        <Ionicons name="checkmark-done-circle" size={22} color="#fff" />
-                    </>
-                )}
-            </LinearGradient>
+        <TouchableOpacity onPress={handleFinalSubmit} disabled={isSubmitting}>
+          <LinearGradient colors={['#005C70', '#004252']} style={styles.button}>
+            {isSubmitting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Text style={styles.buttonText}>Confirm Location & Finish</Text>
+                <Ionicons name="checkmark-done-circle" size={22} color="#fff" />
+              </>
+            )}
+          </LinearGradient>
         </TouchableOpacity>
       </View>
     </View>
@@ -343,7 +240,7 @@ export default function LocationPickerScreen() {
 const styles = StyleSheet.create({
   searchContainer: {
     position: 'absolute',
-    top: 50,
+    top: 10, // Adjusted from 50
     left: 10,
     right: 10,
     zIndex: 1,
@@ -366,61 +263,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 8,
     marginTop: 5,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
     maxHeight: 200,
-  },
-  searchResultRow: {
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  searchResultText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  noResults: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  noResultsText: {
-    fontSize: 16,
-    color: '#999',
-    fontStyle: 'italic',
-  },
-  searchError: {
-    position: 'absolute',
-    top: 60,
-    left: 10,
-    right: 10,
-    backgroundColor: '#ffebee',
-    padding: 12,
-    borderRadius: 8,
-    zIndex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    elevation: 3,
-  },
-  searchErrorText: {
-    color: '#c62828',
-    flex: 1,
-    fontSize: 14,
-  },
-  dismissButton: {
-    backgroundColor: '#c62828',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-  },
-  dismissButtonText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   container: { flex: 1, backgroundColor: '#fff' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8f9fa' },
@@ -429,13 +272,13 @@ const styles = StyleSheet.create({
   pinContainer: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     justifyContent: 'center', alignItems: 'center',
-    marginBottom: 25, 
-    pointerEvents: 'none', 
+    marginBottom: 25,
+    pointerEvents: 'none',
   },
   pinShadow: {
-      textShadowColor: 'rgba(0, 0, 0, 0.25)',
-      textShadowOffset: { width: 0, height: 4 },
-      textShadowRadius: 5,
+    textShadowColor: 'rgba(0, 0, 0, 0.25)',
+    textShadowOffset: { width: 0, height: 4 },
+    textShadowRadius: 5,
   },
   overlayContainer: {
     position: 'absolute', bottom: 0, left: 0, right: 0,

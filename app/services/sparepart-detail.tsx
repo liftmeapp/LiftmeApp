@@ -1,7 +1,7 @@
 
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter, Link } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -63,7 +63,7 @@ export default function SparePartDetailScreen() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                 },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     partId: part.id,
                     quantity: quantity,
                     paymentMethod: 'CARD' // Defaulting to CARD for now
@@ -78,9 +78,11 @@ export default function SparePartDetailScreen() {
             Alert.alert(
                 'Order Placed',
                 'Your order is awaiting seller confirmation. You will be notified when it is accepted.',
-                [{ text: 'OK', onPress: () => router.push({
-                    pathname: '/(tabs)/orders'
-                } as any) }]
+                [{
+                    text: 'OK', onPress: () => router.push({
+                        pathname: '/(tabs)/orders'
+                    } as any)
+                }]
             );
 
         } catch (error: any) {
@@ -106,59 +108,168 @@ export default function SparePartDetailScreen() {
     }
 
     return (
-        <ScrollView style={styles.container}>
-            <Image source={{ uri: part.images[0] || 'https://via.placeholder.com/400' }} style={styles.image} />
-            <View style={styles.detailsContainer}>
-                <Text style={styles.partName}>{part.partName}</Text>
-                <Text style={styles.price}>INR{part.price.toFixed(2)}</Text>
-                <Text style={styles.stock}>In Stock: {part.quantity}</Text>
-                <Text style={styles.description}>{part.description}</Text>
-                
-                <View style={styles.separator} />
+        <View style={styles.container}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+                <Image source={{ uri: part.images[0] || 'https://via.placeholder.com/400' }} style={styles.heroImage} />
 
-                <Text style={styles.sellerInfo}>Sold by: {part.store.name}</Text>
+                <View style={styles.sheetContainer}>
+                    <View style={styles.handle} />
 
-                <View style={styles.quantityContainer}>
-                    <TouchableOpacity onPress={() => changeQuantity(-1)} style={styles.quantityButton}>
-                        <Ionicons name="remove-circle-outline" size={30} color="#b95528" />
+                    <View style={styles.headerRow}>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.partName}>{part.partName}</Text>
+                            <View style={styles.stockBadge}>
+                                <Ionicons name={part.quantity > 0 ? "checkmark-circle" : "close-circle"} size={14} color={part.quantity > 0 ? "#27ae60" : "#c0392b"} />
+                                <Text style={[styles.stockText, { color: part.quantity > 0 ? "#27ae60" : "#c0392b" }]}>
+                                    {part.quantity > 0 ? `In Stock (${part.quantity})` : "Out of Stock"}
+                                </Text>
+                            </View>
+                        </View>
+                        <Text style={styles.price}>₹{part.price.toFixed(0)}</Text>
+                    </View>
+
+                    <Text style={styles.sectionTitle}>Specifications</Text>
+                    <View style={styles.specGrid}>
+                        <View style={styles.specItem}>
+                            <Text style={styles.specLabel}>Brand</Text>
+                            <Text style={styles.specValue}>{part.brand || 'N/A'}</Text>
+                        </View>
+                        <View style={styles.specItem}>
+                            <Text style={styles.specLabel}>Model</Text>
+                            <Text style={styles.specValue}>{part.model || 'N/A'}</Text>
+                        </View>
+                        <View style={styles.specItem}>
+                            <Text style={styles.specLabel}>Year</Text>
+                            <Text style={styles.specValue}>{part.year || 'N/A'}</Text>
+                        </View>
+                        <View style={styles.specItem}>
+                            <Text style={styles.specLabel}>Category</Text>
+                            <Text style={styles.specValue}>{part.category || 'Spare Part'}</Text>
+                        </View>
+                    </View>
+
+                    <Text style={styles.sectionTitle}>Description</Text>
+                    <Text style={styles.description}>{part.description}</Text>
+
+                    <View style={styles.sellerCard}>
+                        <View style={styles.sellerIcon}>
+                            <Ionicons name="storefront" size={24} color="#005C70" />
+                        </View>
+                        <View>
+                            <Text style={styles.soldByLabel}>Sold by</Text>
+                            <Text style={styles.sellerName}>{part.store.name}</Text>
+                        </View>
+                    </View>
+
+                    {/* Spacer for bottom bar */}
+                    <View style={{ height: 100 }} />
+                </View>
+            </ScrollView>
+
+            <View style={styles.footer}>
+                <View style={styles.quantityControl}>
+                    <TouchableOpacity onPress={() => changeQuantity(-1)} style={styles.qtyBtn}>
+                        <Ionicons name="remove" size={20} color="#005C70" />
                     </TouchableOpacity>
-                    <Text style={styles.quantityText}>{quantity}</Text>
-                    <TouchableOpacity onPress={() => changeQuantity(1)} style={styles.quantityButton}>
-                        <Ionicons name="add-circle-outline" size={30} color="#b95528" />
+                    <Text style={styles.qtyText}>{quantity}</Text>
+                    <TouchableOpacity onPress={() => changeQuantity(1)} style={styles.qtyBtn}>
+                        <Ionicons name="add" size={20} color="#005C70" />
                     </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity 
-                    style={[styles.buyButton, isOrdering && styles.disabledButton]} 
+                <TouchableOpacity
+                    style={[styles.buyButton, isOrdering && styles.disabledButton]}
                     onPress={handleBuyNow}
                     disabled={isOrdering}
                 >
                     {isOrdering ? (
                         <ActivityIndicator color="#fff" />
                     ) : (
-                        <Text style={styles.buyButtonText}>Buy Now</Text>
+                        <>
+                            <Text style={styles.buyButtonText}>Buy Now</Text>
+                            <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 8 }} />
+                        </>
                     )}
                 </TouchableOpacity>
             </View>
-        </ScrollView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#fff' },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    image: { width: '100%', height: 300 },
-    detailsContainer: { padding: 20 },
-    partName: { fontSize: 24, fontWeight: 'bold', marginBottom: 8 },
-    price: { fontSize: 22, fontWeight: '700', color: '#b95528', marginBottom: 8 },
-    stock: { fontSize: 16, color: '#27ae60', marginBottom: 16 },
-    description: { fontSize: 16, color: '#333', lineHeight: 24 },
-    separator: { height: 1, backgroundColor: '#e0e0e0', marginVertical: 20 },
-    sellerInfo: { fontSize: 16, fontWeight: '500', color: '#555', marginBottom: 20 },
-    quantityContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: 20 },
-    quantityButton: { padding: 10 },
-    quantityText: { fontSize: 20, fontWeight: 'bold', marginHorizontal: 20 },
-    buyButton: { backgroundColor: '#b95528', padding: 15, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    heroImage: { width: '100%', height: 350, resizeMode: 'cover' },
+    sheetContainer: {
+        marginTop: -30,
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 24,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: -3 },
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+        elevation: 5,
+    },
+    handle: {
+        width: 40, height: 4, backgroundColor: '#e0e0e0', borderRadius: 2, alignSelf: 'center', marginBottom: 20
+    },
+    headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
+    partName: { fontSize: 24, fontWeight: '800', color: '#1a1a1a', flex: 1, paddingRight: 10 },
+    price: { fontSize: 24, fontWeight: '800', color: '#005C70' }, // Teal
+    stockBadge: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+    stockText: { fontSize: 13, fontWeight: '600', marginLeft: 4 },
+
+    sectionTitle: { fontSize: 18, fontWeight: '700', color: '#333', marginTop: 16, marginBottom: 12 },
+
+    specGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 },
+    specItem: {
+        width: '48%',
+        backgroundColor: '#f8f9fa',
+        padding: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#eee'
+    },
+    specLabel: { fontSize: 12, color: '#888', marginBottom: 2, textTransform: 'uppercase' },
+    specValue: { fontSize: 16, fontWeight: '600', color: '#333' },
+
+    description: { fontSize: 15, color: '#555', lineHeight: 24 },
+
+    sellerCard: {
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: '#f0faff', // Light Teal Tint
+        padding: 16, borderRadius: 16,
+        marginTop: 24,
+        borderWidth: 1, borderColor: '#e0f2f1'
+    },
+    sellerIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#e0f2f1', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+    soldByLabel: { fontSize: 12, color: '#005C70', fontWeight: '500' },
+    sellerName: { fontSize: 16, fontWeight: 'bold', color: '#004252' },
+
+    footer: {
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        backgroundColor: '#fff',
+        padding: 16, paddingBottom: 30, // Safe area
+        borderTopWidth: 1, borderTopColor: '#eee',
+        flexDirection: 'row', alignItems: 'center',
+        gap: 16,
+        shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 10
+    },
+    quantityControl: {
+        flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f3f4', borderRadius: 12, padding: 6
+    },
+    qtyBtn: { padding: 8, backgroundColor: '#fff', borderRadius: 8, shadowColor: '#000', shadowOpacity: 0.05, elevation: 1 },
+    qtyText: { fontSize: 18, fontWeight: 'bold', paddingHorizontal: 16, color: '#333' },
+
+    buyButton: {
+        flex: 1,
+        backgroundColor: '#005C70', // Teal
+        paddingVertical: 14, borderRadius: 12,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        shadowColor: '#005C70', shadowOpacity: 0.3, shadowOffset: { width: 0, height: 4 }, elevation: 4
+    },
     buyButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
     disabledButton: { backgroundColor: '#95a5a6' },
 });

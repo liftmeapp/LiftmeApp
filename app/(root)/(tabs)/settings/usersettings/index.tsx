@@ -1,4 +1,5 @@
 import { useAuth, useUser } from '@clerk/clerk-expo';
+import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -7,7 +8,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 type ModalType = 'email' | 'phone' | null;
 
-const ManagementModal = ({ visible, type, onClose }: { visible: boolean; type: ModalType; onClose: () => void } ) => {
+const ManagementModal = ({ visible, type, onClose }: { visible: boolean; type: ModalType; onClose: () => void }) => {
   const [value, setValue] = useState('');
   const [code, setCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,26 +65,26 @@ const ManagementModal = ({ visible, type, onClose }: { visible: boolean; type: M
 
   return (
     <Modal visible={visible} onRequestClose={onClose} transparent animationType="slide">
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modalContent}>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-            <Text>Close</Text>
+      <View style={modalStyles.modalBackdrop}>
+        <View style={modalStyles.modalContent}>
+          <TouchableOpacity style={modalStyles.closeButton} onPress={onClose}>
+            <Ionicons name="close" size={24} color="#666" />
           </TouchableOpacity>
           {!verification ? (
             <>
-              <Text style={styles.modalTitle}>{`Add New ${type === 'email' ? 'Email' : 'Phone Number'}`}</Text>
-              <TextInput style={styles.input} placeholder={type === 'email' ? 'Email Address' : 'Phone Number'} value={value} onChangeText={setValue} keyboardType={type === 'email' ? 'email-address' : 'phone-pad'} />
-              <TouchableOpacity style={styles.modalButton} onPress={onAdd} disabled={isSubmitting}>
-                {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Send Verification Code</Text>}
+              <Text style={modalStyles.modalTitle}>{`Add New ${type === 'email' ? 'Email' : 'Phone Number'}`}</Text>
+              <TextInput style={modalStyles.input} placeholder={type === 'email' ? 'Email Address' : 'Phone Number'} value={value} onChangeText={setValue} keyboardType={type === 'email' ? 'email-address' : 'phone-pad'} autoCapitalize="none" />
+              <TouchableOpacity style={modalStyles.modalButton} onPress={onAdd} disabled={isSubmitting}>
+                {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={modalStyles.modalButtonText}>Send Verification Code</Text>}
               </TouchableOpacity>
             </>
           ) : (
             <>
-              <Text style={styles.modalTitle}>{`Verify ${type === 'email' ? 'Email' : 'Phone'}`}</Text>
-              <Text style={styles.modalSubtitle}>A code has been sent to {value}.</Text>
-              <TextInput style={styles.input} placeholder="Verification Code" value={code} onChangeText={setCode} keyboardType="numeric" />
-              <TouchableOpacity style={styles.modalButton} onPress={onVerify} disabled={isSubmitting}>
-                {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Verify and Set as Primary</Text>}
+              <Text style={modalStyles.modalTitle}>{`Verify ${type === 'email' ? 'Email' : 'Phone'}`}</Text>
+              <Text style={modalStyles.modalSubtitle}>A code has been sent to {value}.</Text>
+              <TextInput style={modalStyles.input} placeholder="Verification Code" value={code} onChangeText={setCode} keyboardType="numeric" />
+              <TouchableOpacity style={modalStyles.modalButton} onPress={onVerify} disabled={isSubmitting}>
+                {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={modalStyles.modalButtonText}>Verify and Set as Primary</Text>}
               </TouchableOpacity>
             </>
           )}
@@ -97,74 +98,61 @@ const UserSettingsScreen = () => {
   const { user, isLoaded } = useUser();
   const { getToken, signOut } = useAuth();
   const router = useRouter();
+
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [initialFirstName, setInitialFirstName] = useState('');
   const [initialLastName, setInitialLastName] = useState('');
+
+  const [isEditingFirst, setIsEditingFirst] = useState(false);
+  const [isEditingLast, setIsEditingLast] = useState(false);
+
   const [isSaving, setIsSaving] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState<ModalType>(null);
 
-   useEffect(() => {
-        if (user) {
-            console.log('--- useEffect [user] triggered ---');
-            console.log('User data from Clerk:', { firstName: user.firstName, lastName: user.lastName });
-            // Update our local state to match the fresh data from the user object.
-            setFirstName(user.firstName || '');
-            setLastName(user.lastName || '');
-            
-            // Also update the 'initial' state to keep them in sync.
-            setInitialFirstName(user.firstName || '');
-            setInitialLastName(user.lastName || '');
-        }
-    }, [user]);
+  useEffect(() => {
+    if (user) {
+      setFirstName(user.firstName || '');
+      setLastName(user.lastName || '');
+      setInitialFirstName(user.firstName || '');
+      setInitialLastName(user.lastName || '');
+    }
+  }, [user]);
 
-    const onSaveName = async () => {
-      if (!firstName) { Alert.alert('First name is required.'); return; }
-      setIsSaving(true);
-      try {
-       const updateData: { firstName?: string; lastName?: string | null } = {};
+  const hasChanges = firstName !== initialFirstName || lastName !== initialLastName;
 
-      if (firstName !== initialFirstName) {
-          updateData.firstName = firstName || '';
-      }
-      if (lastName !== initialLastName) {
-         updateData.lastName = lastName || null;
-        }
+  const onSaveName = async () => {
+    if (!hasChanges) return;
+    if (!firstName.trim()) { Alert.alert('First name is required.'); return; }
 
-        if (Object.keys(updateData).length === 0) {
-          Alert.alert('No changes to save.');
-          setIsSaving(false);
-          return;
-        }
+    setIsSaving(true);
+    try {
+      const updateData: { firstName?: string; lastName?: string | null } = {};
+      if (firstName !== initialFirstName) updateData.firstName = firstName || '';
+      if (lastName !== initialLastName) updateData.lastName = lastName || null;
 
-        console.log('--- Attempting to update name ---');
-        console.log('Data being sent to user.update():', updateData);
+      await user?.update(updateData);
+      await user?.reload();
 
-        await user?.update(updateData);
-        await user?.reload();
+      if (updateData.firstName) setInitialFirstName(updateData.firstName);
+      if (updateData.lastName !== undefined) setInitialLastName(updateData.lastName || '');
 
+      setIsEditingFirst(false);
+      setIsEditingLast(false);
 
-        if (updateData.firstName) {
-            setInitialFirstName(updateData.firstName);
-        }
-        if (updateData.lastName !== undefined) {
-            setInitialLastName(updateData.lastName || '');
-        }
+      Alert.alert('Success', 'Your profile has been updated.');
+    } catch (error: any) {
+      Alert.alert('Error', error.errors?.[0]?.message || 'An unknown error occurred.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
-        Alert.alert('Success', 'Your profile has been updated.');
-      } catch (error: any) {
-        console.error('--- Error updating name ---', error);
-        const errorMessage = error.errors?.[0]?.longMessage || error.errors?.[0]?.message || 'An unknown error occurred while updating your profile.';
-        Alert.alert('Error', errorMessage);
-      } finally {
-        setIsSaving(false);
-      }
-    };
   const onDeleteAccount = async () => {
     Alert.alert(
       "Delete Account",
-      "Are you absolutely sure? This action is irreversible and will permanently delete your account and all associated data.",
+      "Are you absolutely sure? This action is irreversible.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -177,16 +165,10 @@ const UserSettingsScreen = () => {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` },
               });
-
-              if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: "Failed to delete account." }));
-                throw new Error(errorData.error);
-              }
-
+              if (!response.ok) throw new Error("Failed to delete account.");
               await signOut();
               router.replace('/(auth)/signin');
-              Alert.alert("Account Deleted", "Your account has been successfully deleted.");
-
+              Alert.alert("Account Deleted", "Your account has been deleted.");
             } catch (error: any) {
               Alert.alert("Error", error.message);
             }
@@ -201,90 +183,241 @@ const UserSettingsScreen = () => {
     setModalVisible(true);
   };
 
-  if (!isLoaded) {
-    return <ActivityIndicator style={{ flex: 1 }} />;
-  }
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(root)/(tabs)/settings');
+    }
+  };
+
+  if (!isLoaded) return <ActivityIndicator style={{ flex: 1, marginTop: 50 }} />;
 
   const primaryEmail = user?.primaryEmailAddress?.emailAddress;
   const primaryPhone = user?.primaryPhoneNumber?.phoneNumber;
 
   return (
-    <>
-      <ScrollView style={styles.container}>
-        <Stack.Screen options={{ title: 'Profile Settings' }} />
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Personal Information</Text>
-          <>
-            <TextInput style={styles.input} placeholder="First Name" value={firstName} onChangeText={setFirstName} />
-            <TextInput style={styles.input} placeholder="Last Name" value={lastName} onChangeText={setLastName} />
-            <TouchableOpacity style={styles.saveButton} onPress={onSaveName} disabled={isSaving}>
-              {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Update Name</Text>}
+    <View style={styles.safeArea}>
+      <Stack.Screen
+        options={{
+          title: 'User Settings',
+          headerShown: true,
+          headerTitleAlign: 'center',
+          headerStyle: { backgroundColor: '#e0e0e0' },
+          headerShadowVisible: false,
+          headerLeft: () => (
+            <TouchableOpacity onPress={handleBack} style={{ marginLeft: 10 }}>
+              <Ionicons name="arrow-back" size={24} color="#000" />
             </TouchableOpacity>
-          </>
-        </View>
+          ),
+        }}
+      />
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.card}>
+          <Text style={styles.cardHeader}>Personal Information</Text>
+          <View style={styles.divider} />
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Email Address</Text>
-          <View style={styles.infoRow}>
-            <Text>{primaryEmail || 'No email address'}</Text>
+          {/* First Name */}
+          <View style={styles.fieldContainer}>
+            <Text style={styles.label}>First Name</Text>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.valueInput, isEditingFirst && styles.editableInput]}
+                value={firstName}
+                onChangeText={setFirstName}
+                editable={isEditingFirst}
+                autoFocus={isEditingFirst}
+              />
+              <TouchableOpacity
+                style={styles.editIcon}
+                onPress={() => setIsEditingFirst(!isEditingFirst)}
+              >
+                <Ionicons name={isEditingFirst ? "checkmark" : "pencil"} size={16} color="#666" />
+              </TouchableOpacity>
+            </View>
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={() => openModal('email')}>
-            <Text style={styles.addButtonText}>{primaryEmail ? 'Update Email' : 'Add Email'}</Text>
-          </TouchableOpacity>
-        </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Phone Number</Text>
-          <View style={styles.infoRow}>
-            <Text>{primaryPhone || 'No phone number'}</Text>
+          {/* Last Name */}
+          <View style={styles.fieldContainer}>
+            <Text style={styles.label}>Last Name</Text>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.valueInput, isEditingLast && styles.editableInput]}
+                value={lastName}
+                onChangeText={setLastName}
+                editable={isEditingLast}
+              />
+              <TouchableOpacity
+                style={styles.editIcon}
+                onPress={() => setIsEditingLast(!isEditingLast)}
+              >
+                <Ionicons name={isEditingLast ? "checkmark" : "pencil"} size={16} color="#666" />
+              </TouchableOpacity>
+            </View>
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={() => openModal('phone')}>
-            <Text style={styles.addButtonText}>{primaryPhone ? 'Update Phone Number' : 'Add Phone Number'}</Text>
-          </TouchableOpacity>
-        </View>
 
-        <View style={styles.section}>
+          {/* Email */}
+          <View style={styles.fieldContainer}>
+            <Text style={styles.label}>Email Address</Text>
+            <View style={styles.inputRow}>
+              <Text style={styles.valueText}>{primaryEmail || 'Add Email'}</Text>
+              <TouchableOpacity style={styles.editIcon} onPress={() => openModal('email')}>
+                <Ionicons name="pencil" size={16} color="#666" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Phone */}
+          <View style={styles.fieldContainer}>
+            <Text style={styles.label}>Phone Number</Text>
+            <View style={styles.inputRow}>
+              <Text style={styles.valueText}>{primaryPhone || 'Add Phone'}</Text>
+              <TouchableOpacity style={styles.editIcon} onPress={() => openModal('phone')}>
+                <Ionicons name="pencil" size={16} color="#666" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Update Button */}
+          <TouchableOpacity
+            style={[styles.updateButton, !hasChanges && styles.disabledButton]}
+            onPress={onSaveName}
+            disabled={isSaving || !hasChanges}
+          >
+            {isSaving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.updateButtonText}>Update Details</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Delete Button (Separate) */}
           <TouchableOpacity style={styles.deleteButton} onPress={onDeleteAccount}>
             <Text style={styles.deleteButtonText}>Delete Account</Text>
           </TouchableOpacity>
+
         </View>
       </ScrollView>
-      <ManagementModal 
+
+      <ManagementModal
         visible={modalVisible}
         type={modalType}
         onClose={() => setModalVisible(false)}
       />
-    </>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f2f2f2', padding: 20 },
-  section: { backgroundColor: '#fff', padding: 20, borderRadius: 10, marginBottom: 20 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
-  input: { borderWidth: 1, borderColor: '#ddd', padding: 15, borderRadius: 8, marginBottom: 15, fontSize: 16 },
-  saveButton: { backgroundColor: '#007BFF', padding: 15, borderRadius: 8, alignItems: 'center' },
-  saveButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  addButton: { backgroundColor: '#28a745', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 10 },
-  addButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { backgroundColor: '#fff', padding: 20, borderRadius: 10, width: '90%' },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
-  modalSubtitle: { fontSize: 14, color: '#666', marginBottom: 15 },
-  modalButton: { backgroundColor: '#007BFF', padding: 15, borderRadius: 8, alignItems: 'center' },
-  modalButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  closeButton: { alignSelf: 'flex-end', marginBottom: 10 },
-  deleteButton: {
-    backgroundColor: '#dc3545',
-    padding: 15,
-    borderRadius: 8,
+  safeArea: { flex: 1, backgroundColor: '#e0e0e0' },
+  container: { padding: 20 },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  cardHeader: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#005C70', // Teal
+    marginBottom: 10,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#eee',
+    marginBottom: 20,
+  },
+  fieldContainer: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 14,
+    color: '#888',
+    marginBottom: 5,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    minHeight: 40,
+  },
+  valueInput: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+    paddingVertical: 5,
+    paddingHorizontal: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: 'transparent',
+  },
+  editableInput: {
+    borderBottomColor: '#005C70', // Show underline when editable
+    color: '#000',
+  },
+  valueText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+  },
+  editIcon: {
+    backgroundColor: '#e0e0e0',
+    padding: 8,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  updateButton: {
+    backgroundColor: '#74B768', // Green
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  disabledButton: {
+    backgroundColor: '#A8D5A0', // Lighter Green/Gray for disabled
+    opacity: 0.7,
+  },
+  updateButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  deleteButton: {
+    backgroundColor: '#FF7F50', // Orange
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 20,
   },
   deleteButtonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+});
+
+const modalStyles = StyleSheet.create({
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { backgroundColor: '#fff', padding: 20, borderRadius: 20, width: '90%' },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+  modalSubtitle: { fontSize: 14, color: '#666', marginBottom: 15, textAlign: 'center' },
+  modalButton: { backgroundColor: '#005C70', padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 15 },
+  modalButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  closeButton: { alignSelf: 'flex-end' },
+  input: {
+    backgroundColor: '#f9f9f9',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+    fontSize: 16
   },
 });
 

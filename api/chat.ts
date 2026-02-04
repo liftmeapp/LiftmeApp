@@ -35,23 +35,44 @@ router.post('/bookings/:bookingId/chat', async (req, res) => {
             return res.status(403).json({ error: 'You are not a participant in this booking' });
         }
 
-        let chat = await prisma.chat.findUnique({
-            where: { bookingId },
+        const otherParticipantId = userId === booking.user.clerkId ? provider?.clerkId : booking.user.clerkId;
+
+        if (!otherParticipantId) {
+            return res.status(400).json({ error: 'Could not identify chat participants' });
+        }
+
+        // 1. Check for an EXISTING chat between these two users
+        // We look for a chat where participantClerkIds contains BOTH userId AND otherParticipantId
+        const existingChat = await prisma.chat.findFirst({
+            where: {
+                participantClerkIds: {
+                    hasEvery: [userId, otherParticipantId]
+                }
+            }
         });
 
-        if (!chat) {
-            const participants = [booking.user.clerkId];
-            if (provider) {
-                participants.push(provider.clerkId);
-            }
+        if (existingChat) {
+            console.log(`[Chat API] Reusing existing chat ${existingChat.id} for Booking ${bookingId}`);
 
-            chat = await prisma.chat.create({
-                data: {
-                    bookingId,
-                    participantClerkIds: participants,
-                },
+            // Link this booking to the existing chat
+            await prisma.booking.update({
+                where: { id: bookingId },
+                data: { chatId: existingChat.id }
             });
+
+            return res.status(200).json(existingChat);
         }
+
+        // 2. If no existing chat, create a new one
+        console.log(`[Chat API] Creating NEW chat for Booking ${bookingId}`);
+        const chat = await prisma.chat.create({
+            data: {
+                participantClerkIds: [userId, otherParticipantId],
+                bookings: {
+                    connect: { id: bookingId }
+                }
+            },
+        });
 
         return res.status(200).json(chat);
     } catch (error) {
@@ -69,36 +90,36 @@ router.get('/chat/:chatId/messages', async (req, res) => {
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
-            try {
-                const chat = await prisma.chat.findUnique({
-                    where: { id: chatId },
-                    select: { participantClerkIds: true },
-                });
-    
-                if (!chat || !chat.participantClerkIds.includes(userId)) {
-                    return res.status(403).json({ error: 'You are not a member of this chat' });
+    try {
+        const chat = await prisma.chat.findUnique({
+            where: { id: chatId },
+            select: { participantClerkIds: true },
+        });
+
+        if (!chat || !chat.participantClerkIds.includes(userId)) {
+            return res.status(403).json({ error: 'You are not a member of this chat' });
+        }
+
+        const [messages, participants] = await Promise.all([
+            prisma.message.findMany({
+                where: { chatId },
+                orderBy: { createdAt: 'asc' },
+                include: { sender: true },
+            }),
+            prisma.user.findMany({
+                where: {
+                    clerkId: { in: chat.participantClerkIds }
+                },
+                select: {
+                    clerkId: true,
+                    firstName: true,
+                    lastName: true,
                 }
+            })
+        ]);
 
-                const [messages, participants] = await Promise.all([
-                    prisma.message.findMany({
-                        where: { chatId },
-                        orderBy: { createdAt: 'asc' },
-                        include: { sender: true },
-                    }),
-                    prisma.user.findMany({
-                        where: {
-                            clerkId: { in: chat.participantClerkIds }
-                        },
-                        select: {
-                            clerkId: true,
-                            firstName: true,
-                            lastName: true,
-                        }
-                    })
-                ]);
-
-                // Return both messages and participant details
-                return res.status(200).json({ messages, participants });
+        // Return both messages and participant details
+        return res.status(200).json({ messages, participants });
     } catch (error) {
         console.error('Failed to get messages:', error);
         return res.status(500).json({ error: 'Internal server error' });
@@ -139,25 +160,9 @@ router.post('/chat/:chatId/messages', async (req, res) => {
             include: { sender: true },
         });
 
-        // Emit message via socket to other participants
+        // Emit message via socket to all clients in the chat room
         const io = req.app.get('socketio');
-        const { customerSockets, providerSockets } = require('./socket'); // Import the socket maps
-
-        chat.participantClerkIds.forEach(participantClerkId => {
-            let targetSocketId;
-            // Check if the participant is a customer
-            if (customerSockets[participantClerkId]) {
-                targetSocketId = customerSockets[participantClerkId];
-            } 
-            // Check if the participant is a provider (garage owner, tow truck owner, spare part store owner)
-            else if (providerSockets[participantClerkId]) {
-                targetSocketId = providerSockets[participantClerkId];
-            }
-
-            if (targetSocketId && participantClerkId !== userId) {
-                io.to(targetSocketId).emit('new_message', message);
-            }
-        });
+        io.to(chatId).emit('new_message', message);
 
         return res.status(201).json(message);
     } catch (error) {
@@ -228,6 +233,34 @@ router.get('/chats', async (req, res) => {
         return res.status(200).json(chatsWithParticipantDetails);
     } catch (error) {
         console.error('Failed to get chats:', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.delete('/chat/:chatId', async (req, res) => {
+    const { chatId } = req.params;
+    const { userId } = req.auth;
+
+    if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    try {
+        const chat = await prisma.chat.findUnique({
+            where: { id: chatId },
+            select: { participantClerkIds: true },
+        });
+
+        if (!chat || !chat.participantClerkIds.includes(userId)) {
+            return res.status(403).json({ error: 'You are not a member of this chat' });
+        }
+
+        await prisma.message.deleteMany({ where: { chatId } });
+        await prisma.chat.delete({ where: { id: chatId } });
+
+        return res.status(200).json({ success: true });
+    } catch (error) {
+        console.error('Failed to delete chat:', error);
         return res.status(500).json({ error: 'Internal server error' });
     }
 });

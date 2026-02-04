@@ -1,50 +1,53 @@
 import { router } from "expo-router";
-import { Image, Text, TouchableOpacity, View } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const opts = [
   {
     id: 5,
-    name: "Bike Assistance",
-    icon: require("@/assets/icons/bikefix.jpeg"),
+    name: "Bike",
+    icon: "bike", // Using MaterialCommunityIcons name
     link: "/services/roadsidebike-service",
   },
   {
     id: 7,
-    name: "Cars/SUV",
-    icon: require("@/assets/icons/luxurycar.jpeg"),
+    name: "Car",
+    icon: "car-hatchback",
     link: "/services/luxury-service",
   },
   {
     id: 8,
     name: "Garages",
-    icon: require("@/assets/icons/garage.jpeg"),
+    icon: "garage",
     link: "/services/garages",
   },
   {
     id: 9,
     name: "Spare Parts",
-    icon: require("@/assets/icons/spareparts.jpeg"),
+    icon: "wrench",
     link: "/services/spareparts",
   },
 ];
 
 export default function NavOptionSec() {
   return (
-    <View className="flex-row justify-between px-4 py-2 mt-5 mb-[5rem] gap-1">
+    <View className="flex-row flex-wrap justify-between px-2 py-2 mt-4" style={{ gap: 10 }}>
       {opts.map((item) => (
         <TouchableOpacity
           key={item.id}
+          activeOpacity={0.8}
           onPress={() => router.push(item.link as any)}
-          className="w-[6.4rem] h-[96px] bg-white rounded-md items-center justify-start shadow-lg"
+          className="w-[48%] bg-white rounded-xl flex-row items-center justify-between p-4 shadow-sm h-20"
         >
-          <Image
-            source={item.icon}
-            resizeMode="cover"
-            className="w-full h-20 rounded-t-md"
-          />
-          <Text className="text-xs font-semibold mt-1 text-center text-slate-800">
-            {item.name}
-          </Text>
+          <View className="flex-row items-center gap-3">
+            <View className="bg-sky-100 p-2 rounded-lg">
+              <Icon name={item.icon} size={24} color="#000" />
+            </View>
+            <Text className="text-base font-medium text-slate-800">
+              {item.name}
+            </Text>
+          </View>
+          <Icon name="chevron-right" size={24} color="#ccc" />
         </TouchableOpacity>
       ))}
     </View>

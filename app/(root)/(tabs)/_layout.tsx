@@ -1,83 +1,87 @@
-import { icons } from "@/constants";
 import { Tabs } from "expo-router";
 import React from 'react';
-import { Image, ImageSourcePropType, View } from "react-native";
+import { View } from "react-native";
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-const TabIcon = ({
-  source,
-  iconName ='help-circle',
+// Custom Dynamic Tab Bar Icon Component
+const DynamicTabIcon = ({
+  iconName,
   focused,
 }: {
-  source?: ImageSourcePropType;
-  iconName?: string;
+  iconName: string;
   focused: boolean;
-}) => (
-  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-    {source ? (
-      <Image
-        source={source}
-        resizeMode="contain"
-        style={{
-          width: 28,
-          height: 28,
-          tintColor: focused ? 'black' : '#7b381a',
-        }}
-      />
-    ) : (
+}) => {
+  if (focused) {
+    return (
+      <View style={{
+        width: 50,
+        height: 50,
+        borderRadius: 35,
+        backgroundColor: 'white',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 3,
+        elevation: 4,
+      }}>
+        <Icon name={iconName} size={28} color="#005C70" />
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center' }}>
       <Icon
         name={iconName}
         size={28}
-        color={focused ? 'black' : '#7b381a'}
+        color="rgba(255,255,255,0.6)"
       />
-    )}
-  </View>
-);
+    </View>
+  );
+};
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false, // Apply this globally
-        tabBarActiveTintColor: '#b95528',
-        tabBarInactiveTintColor: '#7b381a',
-        tabBarShowLabel: false, // Hiding labels to match many modern UIs, set to true if you want them
-        tabBarPosition: 'bottom',
+        headerShown: false,
+        tabBarShowLabel: false,
         tabBarStyle: {
-          backgroundColor: "#ededed",
-          borderTopColor: '#fff',
-          height: 85,
-          paddingBottom: 20,
-          paddingTop: 10,
+          backgroundColor: '#005C70',
+          borderTopWidth: 0,
+          elevation: 0,
+          height: 60,
+          position: 'absolute',
+          bottom: 30,
+          marginHorizontal: 30,
+          borderRadius: 50,
+          paddingBottom: 0,
+          paddingTop: 0,
+          paddingHorizontal: 2,
+          shadowColor: '#000',
+          shadowOffset: {
+            width: 0,
+            height: 4,
+          },
+          shadowOpacity: 0.3,
+          shadowRadius: 4,
         },
+        tabBarItemStyle: {
+          height: 60,
+          paddingVertical: 10,
+          paddingHorizontal: 0,
+          marginHorizontal: -2,
+        }
       }}
     >
       <Tabs.Screen
-        name="home"
+        name="settings"
         options={{
-          title: "Home",
+          title: "Settings",
           tabBarIcon: ({ focused }) => (
-            <TabIcon source={icons.home} focused={focused} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon source={icons.profile} focused={focused} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="orders"
-        options={{
-          title: "Orders",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon source={icons.list} focused={focused} />
+            <DynamicTabIcon iconName="cog-outline" focused={focused} />
           ),
         }}
       />
@@ -87,25 +91,46 @@ export default function TabLayout() {
         options={{
           title: "Conversation",
           tabBarIcon: ({ focused }) => (
-            <TabIcon source={icons.chat} focused={focused} />
+            <DynamicTabIcon iconName="email-outline" focused={focused} />
           ),
         }}
-        listeners={({ navigation, route }) => ({
+        listeners={({ navigation }) => ({
           tabPress: (e) => {
             e.preventDefault();
             navigation.navigate('conversation', { screen: 'index' });
           },
         })}
       />
+
       <Tabs.Screen
-        name="settings"
+        name="home"
         options={{
-          title: "Settings", // This is the title for the tab
+          title: "Home",
           tabBarIcon: ({ focused }) => (
-            <TabIcon iconName="cog-outline" focused={focused} />
+            <DynamicTabIcon iconName="home" focused={focused} />
           ),
         }}
       />
-    </Tabs>
+
+      <Tabs.Screen
+        name="orders"
+        options={{
+          title: "Orders",
+          tabBarIcon: ({ focused }) => (
+            <DynamicTabIcon iconName="bell-outline" focused={focused} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          tabBarIcon: ({ focused }) => (
+            <DynamicTabIcon iconName="account-circle-outline" focused={focused} />
+          ),
+        }}
+      />
+    </Tabs >
   );
 }

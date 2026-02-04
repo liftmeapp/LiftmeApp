@@ -1,7 +1,6 @@
-// /app/settings/add-business/businesssetup/towtruck-signup.tsx
-
 import { TowableVehicleType, useTowTruckStore } from '@/store/towtruckStore'; // Adjust path if needed
 import { Picker } from '@react-native-picker/picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -44,12 +43,12 @@ export default function TowTruckSignupScreen() {
 
   // Local state to manage the UI for service selection and pricing
   const [serviceSelections, setServiceSelections] = useState<ServiceSelectionState[]>([
-      { type: 'BIKE', label: 'Bikes / Motorcycles', selected: false, price: '' },
-      { type: 'HATCHBACK', label: 'Hatchback', selected: false, price: '' },
-      { type: 'SEDAN', label: 'Sedan', selected: false, price: '' },
-      { type: 'SUV', label: 'SUV', selected: false, price: '' },
-      { type: 'LUXURY', label: 'Luxury Vehicles', selected: false, price: '' },
-      { type: 'TRUCK', label: 'Light Trucks / Vans', selected: false, price: '' },
+    { type: 'BIKE', label: 'Bikes / Motorcycles', selected: false, price: '' },
+    { type: 'HATCHBACK', label: 'Hatchback', selected: false, price: '' },
+    { type: 'SEDAN', label: 'Sedan', selected: false, price: '' },
+    { type: 'SUV', label: 'SUV', selected: false, price: '' },
+    { type: 'LUXURY', label: 'Luxury Vehicles', selected: false, price: '' },
+    { type: 'TRUCK', label: 'Light Trucks / Vans', selected: false, price: '' },
   ]);
 
   const handleServiceToggle = (index: number) => {
@@ -72,42 +71,42 @@ export default function TowTruckSignupScreen() {
   const handleContinue = () => {
     // --- FORM VALIDATION ---
     if (!name.trim() || !driverName.trim() || !plateNumber.trim() || !licenseNumber.trim() || !make || !model || !year) {
-        Alert.alert('Missing Details', 'Please fill out all required truck, driver, and license fields.');
-        return;
+      Alert.alert('Missing Details', 'Please fill out all required truck, driver, and license fields.');
+      return;
     }
     if (isNaN(parseInt(year)) || year.length !== 4) {
-        Alert.alert('Invalid Year', 'Please enter a valid 4-digit year.');
-        return;
+      Alert.alert('Invalid Year', 'Please enter a valid 4-digit year.');
+      return;
     }
 
     const selectedServicesWithPrices = serviceSelections
-        .filter(s => s.selected)
-        .map(s => ({
-            vehicleType: s.type,
-            price: parseFloat(s.price),
-        }));
+      .filter(s => s.selected)
+      .map(s => ({
+        vehicleType: s.type,
+        price: parseFloat(s.price),
+      }));
 
     if (selectedServicesWithPrices.length === 0) {
-        return Alert.alert('No Services Selected', 'Please select and set a price for at least one towing service you offer.');
+      return Alert.alert('No Services Selected', 'Please select and set a price for at least one towing service you offer.');
     }
 
     // Check if any selected service has a missing or invalid price
     for (const service of selectedServicesWithPrices) {
-        if (isNaN(service.price) || service.price <= 0) {
-            return Alert.alert('Invalid Price', `Please set a valid price for towing a ${service.vehicleType.toLowerCase()}.`);
-        }
+      if (isNaN(service.price) || service.price <= 0) {
+        return Alert.alert('Invalid Price', `Please set a valid price for towing a ${service.vehicleType.toLowerCase()}.`);
+      }
     }
 
     // --- SAVE TO ZUSTAND STORE ---
     setDetails({
-        name: name.trim(),
-        driverName: driverName.trim(),
-        contactEmail: contactEmail.trim(),
-        model,
-        make,
-        year: parseInt(year, 10),
-        plateNumber: plateNumber.trim().toUpperCase(),
-        licenseNumber: licenseNumber.trim(),
+      name: name.trim(),
+      driverName: driverName.trim(),
+      contactEmail: contactEmail.trim(),
+      model,
+      make,
+      year: parseInt(year, 10),
+      plateNumber: plateNumber.trim().toUpperCase(),
+      licenseNumber: licenseNumber.trim(),
     });
 
     setServices(selectedServicesWithPrices);
@@ -121,62 +120,69 @@ export default function TowTruckSignupScreen() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <Text style={styles.title}>Register Your Tow Truck</Text>
-          <Text style={styles.subtitle}>Step 1: Vehicle & Driver Details</Text>
-
-          <TextInput style={styles.input} placeholder="Business or Truck Name *" value={name} onChangeText={setName} />
-          <TextInput style={styles.input} placeholder="Primary Driver's Name *" value={driverName} onChangeText={setDriverName} />
-          <TextInput style={styles.input} placeholder="Contact Email (optional)" value={contactEmail} onChangeText={setContactEmail} keyboardType="email-address" autoCapitalize="none" />
-          <TextInput style={styles.input} placeholder="Vehicle Plate Number *" value={plateNumber} onChangeText={text => setPlateNumber(text.toUpperCase())} autoCapitalize="characters" />
-          <TextInput style={styles.input} placeholder="Official License No *" value={licenseNumber} onChangeText={setLicenseNumber} />
-
-          <View style={styles.row}>
-            <View style={[styles.inputContainer, styles.halfInput]}>
-                <TextInput style={styles.input} placeholder="Year *" value={year} onChangeText={setYear} keyboardType="numeric" maxLength={4} />
-            </View>
-            <View style={[styles.inputContainer, styles.halfInput]}>
-                <TextInput style={styles.input} placeholder="Truck Brand *" value={make} onChangeText={setMake} />
-            </View>
+          <View style={styles.headerContainer}>
+            <Text style={styles.title}>Register Your Tow Truck</Text>
+            <Text style={styles.subtitle}>Step 1: Vehicle & Driver Details</Text>
           </View>
-          
-          <View style={[styles.inputContainer, styles.pickerContainer, { marginBottom: 30 }]}>
+
+          <View style={styles.card}>
+            <TextInput style={styles.input} placeholder="Business or Truck Name *" value={name} onChangeText={setName} />
+            <TextInput style={styles.input} placeholder="Primary Driver's Name *" value={driverName} onChangeText={setDriverName} />
+            <TextInput style={styles.input} placeholder="Contact Email (optional)" value={contactEmail} onChangeText={setContactEmail} keyboardType="email-address" autoCapitalize="none" />
+            <TextInput style={styles.input} placeholder="Vehicle Plate Number *" value={plateNumber} onChangeText={text => setPlateNumber(text.toUpperCase())} autoCapitalize="characters" />
+            <TextInput style={styles.input} placeholder="Official License No *" value={licenseNumber} onChangeText={setLicenseNumber} />
+
+            <View style={styles.row}>
+              <View style={[styles.inputContainer, styles.halfInput]}>
+                <TextInput style={styles.input} placeholder="Year *" value={year} onChangeText={setYear} keyboardType="numeric" maxLength={4} />
+              </View>
+              <View style={[styles.inputContainer, styles.halfInput]}>
+                <TextInput style={styles.input} placeholder="Truck Brand *" value={make} onChangeText={setMake} />
+              </View>
+            </View>
+
+            <View style={[styles.inputContainer, styles.pickerContainer]}>
               <Picker selectedValue={model} onValueChange={(itemValue) => setModel(itemValue)} style={styles.picker} itemStyle={styles.pickerItem}>
-                  <Picker.Item label="Model *" value="" />
-                  <Picker.Item label="Flatbed" value="Flatbed" /><Picker.Item label="Hook and Chain" value="Hook and Chain" /><Picker.Item label="Wheel-Lift" value="Wheel-Lift" /><Picker.Item label="Integrated" value="Integrated" />
+                <Picker.Item label="Model *" value="" />
+                <Picker.Item label="Flatbed" value="Flatbed" /><Picker.Item label="Hook and Chain" value="Hook and Chain" /><Picker.Item label="Wheel-Lift" value="Wheel-Lift" /><Picker.Item label="Integrated" value="Integrated" />
               </Picker>
+            </View>
           </View>
 
           <Text style={styles.subheading}>Your Towing Prices/Km for :</Text>
           <View style={styles.serviceListContainer}>
-              {serviceSelections.map((service, index) => (
-                  <View key={service.type} style={styles.serviceItemContainer}>
-                      <View style={styles.serviceRow}>
-                          <Text style={styles.serviceName}>{service.label}</Text>
-                          <Switch
-                              trackColor={{ false: "#ccc", true: "#ed8b65" }}
-                              thumbColor={"#fff"}
-                              onValueChange={() => handleServiceToggle(index)}
-                              value={service.selected}
-                          />
-                      </View>
-                      {service.selected && (
-                          <View style={styles.priceInputRow}>
-                              <Text style={styles.priceLabel}>Price per km (INR):</Text>
-                              <TextInput
-                                  style={styles.priceInput}
-                                  placeholder="e.g., 50"
-                                  keyboardType="numeric"
-                                  value={service.price}
-                                  onChangeText={(text) => handlePriceChange(text, index)}
-                              />
-                          </View>
-                      )}
+            {serviceSelections.map((service, index) => (
+              <View key={service.type} style={styles.serviceItemContainer}>
+                <View style={styles.serviceRow}>
+                  <Text style={styles.serviceName}>{service.label}</Text>
+                  <Switch
+                    trackColor={{ false: "#ccc", true: "#005C70" }}
+                    thumbColor={"#fff"}
+                    onValueChange={() => handleServiceToggle(index)}
+                    value={service.selected}
+                    style={{ transform: [{ scale: 0.7 }] }}
+                  />
+                </View>
+                {service.selected && (
+                  <View style={styles.priceInputRow}>
+                    <Text style={styles.priceLabel}>Price/km (INR):</Text>
+                    <TextInput
+                      style={styles.priceInput}
+                      placeholder="e.g., 50"
+                      keyboardType="numeric"
+                      value={service.price}
+                      onChangeText={(text) => handlePriceChange(text, index)}
+                    />
                   </View>
-              ))}
+                )}
+              </View>
+            ))}
           </View>
 
-          <TouchableOpacity style={styles.button} onPress={handleContinue}>
-            <Text style={styles.buttonText}>Continue to Set Location</Text>
+          <TouchableOpacity onPress={handleContinue}>
+            <LinearGradient colors={['#005C70', '#004252']} style={styles.button}>
+              <Text style={styles.buttonText}>Continue to Set Location</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -188,24 +194,28 @@ export default function TowTruckSignupScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#f5f5f5' },
   container: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingVertical: 20, paddingBottom: 40 },
-  title: { fontSize: 22, fontWeight: '600', marginBottom: 8, color: '#333' },
-  subtitle: { fontSize: 14, color: '#666', marginBottom: 30 },
-  subheading: { fontSize: 18, fontWeight: '600', marginTop: 10, marginBottom: 15, color: '#333' },
-  input: { height: 50, fontSize: 16, color: '#333', paddingHorizontal: 16, backgroundColor: '#fff', borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: '#eee' },
+  scrollContent: { paddingHorizontal: 16, paddingVertical: 20, paddingBottom: 100 },
+  headerContainer: { marginBottom: 20, alignItems: 'center' },
+  title: { fontSize: 22, fontWeight: '700', marginBottom: 6, color: '#333' },
+  subtitle: { fontSize: 14, color: '#666', marginBottom: 20 },
+
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+
+  subheading: { fontSize: 16, fontWeight: '700', marginTop: 0, marginBottom: 12, color: '#005C70' },
+  input: { height: 48, fontSize: 15, color: '#333', paddingHorizontal: 16, backgroundColor: '#f9f9f9', borderRadius: 10, marginBottom: 12, borderWidth: 0 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   halfInput: { flex: 1, marginRight: 10 },
   inputContainer: { flex: 1 },
-  pickerContainer: { borderWidth: 1, borderColor: '#eee', borderRadius: 12, backgroundColor: '#fff', justifyContent: 'center' },
+  pickerContainer: { borderWidth: 0, borderRadius: 10, backgroundColor: '#f9f9f9', justifyContent: 'center', marginBottom: 0 },
   picker: { height: 50, color: '#333' },
   pickerItem: { height: 50 }, // For iOS styling
-  serviceListContainer: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#eee', padding: 5, marginBottom: 20 },
+  serviceListContainer: { backgroundColor: '#fff', borderRadius: 16, padding: 8, marginBottom: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   serviceItemContainer: { paddingVertical: 12, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   serviceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  serviceName: { fontSize: 16, color: '#333', flex: 1 },
-  priceInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingLeft: 5 },
-  priceLabel: { fontSize: 15, color: '#555', marginRight: 8 },
-  priceInput: { flex: 1, height: 45, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 10, backgroundColor: '#fafafa', fontSize: 15 },
-  button: { height: 50, backgroundColor: '#ed8b65', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 5, },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  serviceName: { fontSize: 15, color: '#333', flex: 1, fontWeight: '500' },
+  priceInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingLeft: 0 },
+  priceLabel: { fontSize: 14, color: '#555', marginRight: 8 },
+  priceInput: { flex: 1, height: 40, borderWidth: 1, borderColor: '#eee', borderRadius: 8, paddingHorizontal: 10, backgroundColor: '#fff', fontSize: 15 },
+  button: { height: 54, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 5, },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

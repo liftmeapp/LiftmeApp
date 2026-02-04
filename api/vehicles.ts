@@ -1,11 +1,12 @@
 import { ClerkExpressWithAuth } from '@clerk/clerk-sdk-node';
 import express, { Request, Response } from 'express';
 import prisma from './lib/prisma';
+import { ensureUserRecord } from './utils/ensureUserRecord';
 
 const vehiclesRouter = express.Router();
 
 vehiclesRouter.get(
-    '/', // Path is relative to the mount point
+    '/api/vehicles',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
         const ownerId = req.auth.userId;
@@ -14,11 +15,7 @@ vehiclesRouter.get(
         }
         try {
             console.log(`[API /api/vehicles] Fetching vehicles for clerkId: ${ownerId}`);
-            const user = await prisma.user.findUnique({
-                where: { clerkId: ownerId },
-                select: { id: true }
-            });
-
+            const user = await ensureUserRecord(prisma, ownerId);
             if (!user) {
                 console.warn(`[API /api/vehicles] User not found for clerkId: ${ownerId}`);
                 return res.status(200).json([]);
@@ -40,7 +37,7 @@ vehiclesRouter.get(
 );
 
 vehiclesRouter.post(
-    '/', // Path is relative to the mount point
+    '/api/vehicles',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
         const ownerId = req.auth.userId;
@@ -52,8 +49,12 @@ vehiclesRouter.post(
             return res.status(400).json({ error: "Missing required vehicle fields." });
         }
         try {
+            const ensuredUser = await ensureUserRecord(prisma, ownerId);
+            if (!ensuredUser) {
+                return res.status(404).json({ error: 'User profile not found.' });
+            }
             const userWithVehicleCount = await prisma.user.findUnique({
-                where: { clerkId: ownerId },
+                where: { id: ensuredUser.id },
                 include: { _count: { select: { vehicles: true } } },
             });
             if (!userWithVehicleCount) {
@@ -82,7 +83,7 @@ vehiclesRouter.post(
 );
 
 vehiclesRouter.delete(
-    '/:id', // Path is relative to the mount point
+    '/api/vehicles/:id',
     ClerkExpressWithAuth(),
     async (req: Request, res: Response) => {
         const ownerId = req.auth.userId;

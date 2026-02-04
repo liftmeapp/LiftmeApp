@@ -1,11 +1,13 @@
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import { Stack } from "expo-router";
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Modal,
+  Platform,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -115,161 +117,161 @@ const StatCard = ({
       </View>
       {/* Icon container */}
       <View style={[styles.statCardIconContainer, { backgroundColor: `${color}20` }]}>
-          <Ionicons name={icon as any} size={24} color={color} />
+        <Ionicons name={icon as any} size={24} color={color} />
       </View>
     </View>
   );
 };
 
-  type BusinessCardProps = Business | PendingBusiness;
+type BusinessCardProps = Business | PendingBusiness;
 
-  const BusinessCard = ({ business, onViewDetails }: {
-    business: BusinessCardProps;
-    onViewDetails: (business: BusinessCardProps) => void;
-  }) => (
-    <TouchableOpacity onPress={() => onViewDetails(business)} style={styles.businessCard}>
-      <View style={styles.businessCardHeader}>
-        <View style={styles.businessCardInfo}>
-          <Text style={styles.businessName}>{business.name}</Text>
-          <Text style={styles.businessType}>{business.type === 'GARAGE' ? '🏢 Garage' : '🚛 Tow Truck'}</Text>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(business.status) + '20' }]}>
-          <Text style={[styles.statusText, { color: getStatusColor(business.status) }]}>{business.status}</Text>
-        </View>
+const BusinessCard = ({ business, onViewDetails }: {
+  business: BusinessCardProps;
+  onViewDetails: (business: BusinessCardProps) => void;
+}) => (
+  <TouchableOpacity onPress={() => onViewDetails(business)} style={styles.businessCard}>
+    <View style={styles.businessCardHeader}>
+      <View style={styles.businessCardInfo}>
+        <Text style={styles.businessName}>{business.name}</Text>
+        <Text style={styles.businessType}>{business.type === 'GARAGE' ? '🏢 Garage' : '🚛 Tow Truck'}</Text>
       </View>
-      <View style={styles.businessDetails}>
-        <View style={styles.detailRow}><Ionicons name="person-circle-outline" size={16} color={colors.gray} /><Text style={styles.detailText}>{business.owner.firstName} {business.owner.lastName || ''}</Text></View>
-        <View style={styles.detailRow}><Ionicons name="mail-outline" size={16} color={colors.gray} /><Text style={styles.detailText}>{business.owner.email}</Text></View>
-        {business.address && <View style={styles.detailRow}><Ionicons name="location-outline" size={16} color={colors.gray} /><Text style={styles.detailText} numberOfLines={1}>{business.address}</Text></View>}
-        <View style={styles.detailRow}><Ionicons name="time-outline" size={16} color={colors.gray} /><Text style={styles.detailText}>{new Date(business.createdAt).toLocaleDateString()}</Text></View>
+      <View style={[styles.statusBadge, { backgroundColor: getStatusColor(business.status) + '20' }]}>
+        <Text style={[styles.statusText, { color: getStatusColor(business.status) }]}>{business.status}</Text>
       </View>
-      <View style={styles.businessActions}>
-          <Text style={styles.viewDetailsText}>View Details & Actions</Text>
-          <Ionicons name="arrow-forward" size={16} color={colors.primary} />
-      </View>
-    </TouchableOpacity>
-  );
+    </View>
+    <View style={styles.businessDetails}>
+      <View style={styles.detailRow}><Ionicons name="person-circle-outline" size={16} color={colors.gray} /><Text style={styles.detailText}>{business.owner.firstName} {business.owner.lastName || ''}</Text></View>
+      <View style={styles.detailRow}><Ionicons name="mail-outline" size={16} color={colors.gray} /><Text style={styles.detailText}>{business.owner.email}</Text></View>
+      {business.address && <View style={styles.detailRow}><Ionicons name="location-outline" size={16} color={colors.gray} /><Text style={styles.detailText} numberOfLines={1}>{business.address}</Text></View>}
+      <View style={styles.detailRow}><Ionicons name="time-outline" size={16} color={colors.gray} /><Text style={styles.detailText}>{new Date(business.createdAt).toLocaleDateString()}</Text></View>
+    </View>
+    <View style={styles.businessActions}>
+      <Text style={styles.viewDetailsText}>View Details & Actions</Text>
+      <Ionicons name="arrow-forward" size={16} color={colors.primary} />
+    </View>
+  </TouchableOpacity>
+);
 
 
 const BusinessDetailModal = ({ business, visible, onClose, onApprove, onReject, onBan }: BusinessDetailModalProps) => {
-    const [rejectReason, setRejectReason] = useState('');
-    const [showRejectForm, setShowRejectForm] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [showRejectForm, setShowRejectForm] = useState(false);
 
-    useEffect(() => {
-        if (!visible) {
-            setShowRejectForm(false);
-            setRejectReason('');
-        }
-    }, [visible]);
+  useEffect(() => {
+    if (!visible) {
+      setShowRejectForm(false);
+      setRejectReason('');
+    }
+  }, [visible]);
 
-    if (!business) return null;
+  if (!business) return null;
 
-    const handleApprove = () => onApprove(business.id, business.type);
-    const handleConfirmReject = () => {
-        if (!rejectReason.trim()) {
-            Alert.alert('Error', 'Please provide a reason for rejection.');
-            return;
-        }
-        onReject(business.id, business.type, rejectReason);
-        onClose();
-    };
-    // Use the ownerId from the business object for the ban action
-    const handleBan = () => onBan(business.ownerId, `${business.owner.firstName} ${business.owner.lastName || ''}`);
+  const handleApprove = () => onApprove(business.id, business.type);
+  const handleConfirmReject = () => {
+    if (!rejectReason.trim()) {
+      Alert.alert('Error', 'Please provide a reason for rejection.');
+      return;
+    }
+    onReject(business.id, business.type, rejectReason);
+    onClose();
+  };
+  // Use the ownerId from the business object for the ban action
+  const handleBan = () => onBan(business.ownerId, `${business.owner.firstName} ${business.owner.lastName || ''}`);
 
-    return (
-        <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
-            <View style={styles.modalBackdrop}>
-                <View style={styles.modalContainer}>
-                    <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>{business.name}</Text>
-                        <TouchableOpacity onPress={onClose}><Ionicons name="close-circle" size={28} color={colors.gray} /></TouchableOpacity>
-                    </View>
-                    <ScrollView style={styles.modalContent}>
-                        {/* Status specific section */}
-                        {business.status === 'REJECTED' && (
-                            <View style={styles.detailSection}>
-                                <Text style={styles.sectionTitleRed}>Rejection Details</Text>
-                                <DetailRow label="Reason" value={formatDisplayValue(business.rejectionReason)} />
-                            </View>
-                        )}
-                        
-                        <View style={styles.detailSection}>
-                            <Text style={styles.sectionTitle}>Basic Information</Text>
-                            <DetailRow label="Business Name" value={formatDisplayValue(business.name)} />
-                            <DetailRow label="Type" value={business.type === 'GARAGE' ? 'Garage' : 'Tow Truck'} />
-                            <DetailRow label="Address" value={formatDisplayValue(business.address)} />
-                            <DetailRow label="Submitted On" value={new Date(business.createdAt).toLocaleString()} />
-                        </View>
+  return (
+    <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{business.name}</Text>
+            <TouchableOpacity onPress={onClose}><Ionicons name="close-circle" size={28} color={colors.gray} /></TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalContent}>
+            {/* Status specific section */}
+            {business.status === 'REJECTED' && (
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitleRed}>Rejection Details</Text>
+                <DetailRow label="Reason" value={formatDisplayValue(business.rejectionReason)} />
+              </View>
+            )}
 
-                        <View style={styles.detailSection}>
-                            <Text style={styles.sectionTitle}>Owner Details</Text>
-                            <DetailRow label="Owner Name" value={`${business.owner.firstName} ${business.owner.lastName || ''}`} />
-                            <DetailRow label="Email" value={formatDisplayValue(business.owner.email)} />
-                            <DetailRow label="Phone" value={formatDisplayValue(business.owner.phone)} />
-                        </View>
-
-                        <View style={styles.detailSection}>
-                            <Text style={styles.sectionTitle}>Business Specifics</Text>
-                            {business.type === 'GARAGE' ? (
-                                <>
-                                    <DetailRow label="Contact Phone" value={formatDisplayValue(business.phoneNumber)} />
-                                    {/* CRASH FIX: Apply formatter to operatingHours */}
-                                    <DetailRow label="Operating Hours" value={formatDisplayValue(business.operatingHours)} />
-                                </>
-                            ) : (
-                                <>
-                                    <DetailRow label="Driver Name" value={formatDisplayValue(business.driverName)} />
-                                    <DetailRow label="Vehicle" value={`${formatDisplayValue(business.make)} ${formatDisplayValue(business.model)} (${formatDisplayValue(business.year)})`} />
-                                    <DetailRow label="Plate Number" value={formatDisplayValue(business.plateNumber)} />
-                                    <DetailRow label="License Number" value={formatDisplayValue(business.licenseNumber)} />
-                                </>
-                            )}
-                        </View>
-
-                        {showRejectForm && (
-                            <View style={styles.rejectForm}>
-                                <Text style={styles.rejectFormTitle}>Reason for Rejection</Text>
-                                <TextInput style={styles.rejectInput} placeholder="Enter reason..." value={rejectReason} onChangeText={setRejectReason} multiline />
-                            </View>
-                        )}
-                    </ScrollView>
-
-                    {/* --- DYNAMIC ACTION BUTTONS --- */}
-                    <View style={styles.modalActions}>
-                        {showRejectForm ? (
-                            <>
-                                <TouchableOpacity style={[styles.modalActionButton, styles.cancelButton]} onPress={() => setShowRejectForm(false)}><Text style={styles.modalActionText}>Cancel</Text></TouchableOpacity>
-                                <TouchableOpacity style={[styles.modalActionButton, styles.confirmRejectButton]} onPress={handleConfirmReject}><Text style={styles.modalActionText}>Confirm Reject</Text></TouchableOpacity>
-                            </>
-                        ) : (
-                            <>
-                                {/* PENDING status shows Approve and Reject buttons */}
-                                {business.status === 'PENDING' && (
-                                    <>
-                                        <TouchableOpacity style={[styles.modalActionButton, styles.rejectButton]} onPress={() => setShowRejectForm(true)}><Text style={styles.modalActionText}>Reject</Text></TouchableOpacity>
-                                        <TouchableOpacity style={[styles.modalActionButton, styles.approveButton]} onPress={handleApprove}><Text style={styles.modalActionText}>Approve</Text></TouchableOpacity>
-                                    </>
-                                )}
-
-                                {/* PENDING and APPROVED statuses show the Ban button */}
-                                {(business.status === 'PENDING' || business.status === 'APPROVED') && (
-                                    <TouchableOpacity 
-                                        style={[styles.banButton, business.status === 'APPROVED' && { flex: 1 }]} // Full width if it's the only button
-                                        onPress={handleBan}
-                                    >
-                                        <Ionicons name="shield-outline" size={18} color={colors.white} style={{ marginRight: 8 }} />
-                                        <Text style={styles.modalActionText}>Ban User</Text>
-                                    </TouchableOpacity>
-                                )}
-                                
-                                {/* If status is REJECTED, this space will be empty, which is intended. */}
-                            </>
-                        )}
-                    </View>
-                </View>
+            <View style={styles.detailSection}>
+              <Text style={styles.sectionTitle}>Basic Information</Text>
+              <DetailRow label="Business Name" value={formatDisplayValue(business.name)} />
+              <DetailRow label="Type" value={business.type === 'GARAGE' ? 'Garage' : 'Tow Truck'} />
+              <DetailRow label="Address" value={formatDisplayValue(business.address)} />
+              <DetailRow label="Submitted On" value={new Date(business.createdAt).toLocaleString()} />
             </View>
-        </Modal>
-    );
+
+            <View style={styles.detailSection}>
+              <Text style={styles.sectionTitle}>Owner Details</Text>
+              <DetailRow label="Owner Name" value={`${business.owner.firstName} ${business.owner.lastName || ''}`} />
+              <DetailRow label="Email" value={formatDisplayValue(business.owner.email)} />
+              <DetailRow label="Phone" value={formatDisplayValue(business.owner.phone)} />
+            </View>
+
+            <View style={styles.detailSection}>
+              <Text style={styles.sectionTitle}>Business Specifics</Text>
+              {business.type === 'GARAGE' ? (
+                <>
+                  <DetailRow label="Contact Phone" value={formatDisplayValue(business.phoneNumber)} />
+                  {/* CRASH FIX: Apply formatter to operatingHours */}
+                  <DetailRow label="Operating Hours" value={formatDisplayValue(business.operatingHours)} />
+                </>
+              ) : (
+                <>
+                  <DetailRow label="Driver Name" value={formatDisplayValue(business.driverName)} />
+                  <DetailRow label="Vehicle" value={`${formatDisplayValue(business.make)} ${formatDisplayValue(business.model)} (${formatDisplayValue(business.year)})`} />
+                  <DetailRow label="Plate Number" value={formatDisplayValue(business.plateNumber)} />
+                  <DetailRow label="License Number" value={formatDisplayValue(business.licenseNumber)} />
+                </>
+              )}
+            </View>
+
+            {showRejectForm && (
+              <View style={styles.rejectForm}>
+                <Text style={styles.rejectFormTitle}>Reason for Rejection</Text>
+                <TextInput style={styles.rejectInput} placeholder="Enter reason..." value={rejectReason} onChangeText={setRejectReason} multiline />
+              </View>
+            )}
+          </ScrollView>
+
+          {/* --- DYNAMIC ACTION BUTTONS --- */}
+          <View style={styles.modalActions}>
+            {showRejectForm ? (
+              <>
+                <TouchableOpacity style={[styles.modalActionButton, styles.cancelButton]} onPress={() => setShowRejectForm(false)}><Text style={styles.modalActionText}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity style={[styles.modalActionButton, styles.confirmRejectButton]} onPress={handleConfirmReject}><Text style={styles.modalActionText}>Confirm Reject</Text></TouchableOpacity>
+              </>
+            ) : (
+              <>
+                {/* PENDING status shows Approve and Reject buttons */}
+                {business.status === 'PENDING' && (
+                  <>
+                    <TouchableOpacity style={[styles.modalActionButton, styles.rejectButton]} onPress={() => setShowRejectForm(true)}><Text style={styles.modalActionText}>Reject</Text></TouchableOpacity>
+                    <TouchableOpacity style={[styles.modalActionButton, styles.approveButton]} onPress={handleApprove}><Text style={styles.modalActionText}>Approve</Text></TouchableOpacity>
+                  </>
+                )}
+
+                {/* PENDING and APPROVED statuses show the Ban button */}
+                {(business.status === 'PENDING' || business.status === 'APPROVED') && (
+                  <TouchableOpacity
+                    style={[styles.banButton, business.status === 'APPROVED' && { flex: 1 }]} // Full width if it's the only button
+                    onPress={handleBan}
+                  >
+                    <Ionicons name="shield-outline" size={18} color={colors.white} style={{ marginRight: 8 }} />
+                    <Text style={styles.modalActionText}>Ban User</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* If status is REJECTED, this space will be empty, which is intended. */}
+              </>
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 };
 
 const DetailRow = ({ label, value }: { label: string; value: string }) => (
@@ -303,6 +305,7 @@ const getStatusColor = (status: string) => {
 
 // Main Component
 export default function AdminVerificationDashboard() {
+  const router = useRouter();
   const { getToken } = useAuth();
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected'>('pending');
 
@@ -317,73 +320,73 @@ export default function AdminVerificationDashboard() {
 
   const handleBanUser = (userId: string, userName: string) => {
     Alert.alert(
-        'Confirm Ban',
-        `Are you sure you want to permanently ban ${userName}? Their businesses will be disabled. This action is irreversible.`,
-        [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Ban User',
-                style: 'destructive',
-                onPress: () => {
-                    Alert.prompt('Reason for Ban', 'Please provide a brief reason.', async (reason) => {
-                        if (reason) {
-                            try {
-                                const token = await getToken();
-                                const response = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/ban`, {
-                                    method: 'POST',
-                                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ reason }),
-                                });
-                                const responseData = await response.json();
-                                if (!response.ok) { throw new Error(responseData.error || 'Failed to ban user.'); }
-                                Alert.alert('Success', `${userName} has been banned.`);
-                                setModalVisible(false);
-                                fetchData();
-                            } catch (error: any) { Alert.alert('Error', error.message); }
-                        }
-                    });
-                }
-            }
-        ]
+      'Confirm Ban',
+      `Are you sure you want to permanently ban ${userName}? Their businesses will be disabled. This action is irreversible.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Ban User',
+          style: 'destructive',
+          onPress: () => {
+            Alert.prompt('Reason for Ban', 'Please provide a brief reason.', async (reason) => {
+              if (reason) {
+                try {
+                  const token = await getToken();
+                  const response = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/ban`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason }),
+                  });
+                  const responseData = await response.json();
+                  if (!response.ok) { throw new Error(responseData.error || 'Failed to ban user.'); }
+                  Alert.alert('Success', `${userName} has been banned.`);
+                  setModalVisible(false);
+                  fetchData();
+                } catch (error: any) { Alert.alert('Error', error.message); }
+              }
+            });
+          }
+        }
+      ]
     );
   };
 
   const fetchData = useCallback(async () => {
     // We will control the loading state outside of this function
     try {
-        const token = await getToken();
-        if (!token) throw new Error("Authentication token not found.");
+      const token = await getToken();
+      if (!token) throw new Error("Authentication token not found.");
 
-        const [statsResponse, businessesResponse] = await Promise.all([
-            fetch(`${API_BASE_URL}/api/admin/dashboard-stats`, { headers: { 'Authorization': `Bearer ${token}` } }),
-            fetch(`${API_BASE_URL}/api/admin/all-businesses`, { headers: { 'Authorization': `Bearer ${token}` } })
-        ]);
+      const [statsResponse, businessesResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/admin/dashboard-stats`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/admin/all-businesses`, { headers: { 'Authorization': `Bearer ${token}` } })
+      ]);
 
-        if (!statsResponse.ok || !businessesResponse.ok) {
-            throw new Error('Failed to fetch data from the server.');
-        }
-        const statsData = await statsResponse.json();
-        const businessesData = await businessesResponse.json();
-        setStats(statsData);
-        setAllBusinesses(businessesData);
+      if (!statsResponse.ok || !businessesResponse.ok) {
+        throw new Error('Failed to fetch data from the server.');
+      }
+      const statsData = await statsResponse.json();
+      const businessesData = await businessesResponse.json();
+      setStats(statsData);
+      setAllBusinesses(businessesData);
     } catch (error: any) {
-        Alert.alert('Error', error.message || 'Failed to load dashboard data.');
+      Alert.alert('Error', error.message || 'Failed to load dashboard data.');
     }
-}, []);
+  }, []);
 
 
   useEffect(() => {
-  setLoading(true);
-  fetchData().finally(() => setLoading(false));
-}, [fetchData]);
+    setLoading(true);
+    fetchData().finally(() => setLoading(false));
+  }, [fetchData]);
 
-const onRefresh = useCallback(() => {
-  setRefreshing(true);
-  fetchData().finally(() => setRefreshing(false));
-}, [fetchData]);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchData().finally(() => setRefreshing(false));
+  }, [fetchData]);
 
   // --- LIVE ACTION HANDLERS ---
-const handleApprove = async (businessId: string, type: 'GARAGE' | 'TOW_TRUCK') => {
+  const handleApprove = async (businessId: string, type: 'GARAGE' | 'TOW_TRUCK') => {
     const apiType = type === 'GARAGE' ? 'garage' : 'tow-truck';
     Alert.alert('Confirm Approval', 'Are you sure you want to approve this business?', [
       { text: 'Cancel', style: 'cancel' },
@@ -404,158 +407,168 @@ const handleApprove = async (businessId: string, type: 'GARAGE' | 'TOW_TRUCK') =
         }
       }
     ]);
-};
+  };
 
-const handleReject = async (businessId: string, type: 'GARAGE' | 'TOW_TRUCK', reason: string) => {
-  const apiType = type === 'GARAGE' ? 'garage' : 'tow-truck';
-  try {
-    const token = await getToken();
-    const response = await fetch(`${API_BASE_URL}/api/admin/applications/${apiType}/${businessId}/reject`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ reason }),
-    });
-    if (!response.ok) throw new Error('Failed to reject business');
-    Alert.alert('Success', 'Business rejected successfully');
-    setModalVisible(false);
-    fetchData();
-  } catch (error: any) { Alert.alert('Error', error.message); }
-};
+  const handleReject = async (businessId: string, type: 'GARAGE' | 'TOW_TRUCK', reason: string) => {
+    const apiType = type === 'GARAGE' ? 'garage' : 'tow-truck';
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API_BASE_URL}/api/admin/applications/${apiType}/${businessId}/reject`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason }),
+      });
+      if (!response.ok) throw new Error('Failed to reject business');
+      Alert.alert('Success', 'Business rejected successfully');
+      setModalVisible(false);
+      fetchData();
+    } catch (error: any) { Alert.alert('Error', error.message); }
+  };
 
-const filteredBusinesses = allBusinesses.filter(business => {
-  const businessStatus = business.status || 'PENDING'; // Default to pending if status is missing
-  const matchesTab = businessStatus.toLowerCase() === activeTab;
-  const matchesSearch = (business.name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-                       `${business.owner.firstName} ${business.owner.lastName}`.toLowerCase().includes(searchQuery.toLowerCase());
-  return matchesTab && matchesSearch;
-});
+  const filteredBusinesses = allBusinesses.filter(business => {
+    const businessStatus = business.status || 'PENDING'; // Default to pending if status is missing
+    const matchesTab = businessStatus.toLowerCase() === activeTab;
+    const matchesSearch = (business.name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      `${business.owner.firstName} ${business.owner.lastName}`.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesTab && matchesSearch;
+  });
 
-const renderContent = () => {
-  if (loading && !refreshing) {
+  const renderContent = () => {
+    if (loading && !refreshing) {
       return (
-          <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading businesses...</Text>
-          </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading businesses...</Text>
+        </View>
       );
-  }
-  if (filteredBusinesses.length === 0) {
+    }
+    if (filteredBusinesses.length === 0) {
       return (
-          <ScrollView 
-              contentContainerStyle={styles.emptyContainer}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]}/>}
-          >
-              <Ionicons name="business-outline" size={64} color={colors.gray} />
-              <Text style={styles.emptyTitle}>No {activeTab} businesses</Text>
-              <Text style={styles.emptySubtitle}>
-                  {activeTab === 'pending'
-                      ? 'All caught up! No pending applications to review.'
-                      : `No ${activeTab} businesses found.`}
-              </Text>
-          </ScrollView>
+        <ScrollView
+          contentContainerStyle={styles.emptyContainer}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
+        >
+          <Ionicons name="business-outline" size={64} color={colors.gray} />
+          <Text style={styles.emptyTitle}>No {activeTab} businesses</Text>
+          <Text style={styles.emptySubtitle}>
+            {activeTab === 'pending'
+              ? 'All caught up! No pending applications to review.'
+              : `No ${activeTab} businesses found.`}
+          </Text>
+        </ScrollView>
       );
-  }
-  return (
+    }
+    return (
       <FlatList
-          data={filteredBusinesses}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-              <BusinessCard
-                  business={item}
-                  onViewDetails={(business) => {
-                      setSelectedBusiness(business as PendingBusiness);
-                      setModalVisible(true);
-                  }}
-              />
-          )}
-          contentContainerStyle={styles.listContainer}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]}/>}
+        data={filteredBusinesses}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <BusinessCard
+            business={item}
+            onViewDetails={(business) => {
+              setSelectedBusiness(business as PendingBusiness);
+              setModalVisible(true);
+            }}
+          />
+        )}
+        contentContainerStyle={styles.listContainer}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
       />
-  );
-};
+    );
+  };
 
-return (
+  return (
     <SafeAreaView style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Stats Cards */}
+      {/* Custom Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 15 }}>
+          <Ionicons name="arrow-back" size={24} color={colors.dark} />
+        </TouchableOpacity>
+        <View>
+          <Text style={styles.headerTitle}>Admin Dashboard</Text>
+          <Text style={styles.headerSubtitle}>Verification Overview</Text>
+        </View>
+      </View>
       <View style={styles.statsContainerWrapper}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statsScrollViewContent}>
-        <StatCard
-          title="Pending Garages"
-          value={stats?.pendingGarages ?? '...'}
-          icon="car-outline"
-          color={colors.warning}
-        />
-        <StatCard
-          title="Pending Tow Trucks"
-          value={stats?.pendingTowTrucks ?? '...'}
-          icon="car-sport-outline"
-          color={colors.info}
-        />
-        <StatCard
-          title="Total Users"
-          value={stats?.totalUsers ?? '...'}
-          icon="people-outline"
-          color={colors.primary}
-        />
-        <StatCard
-          title="Total Businesses"
-          value={stats?.totalBusinesses ?? '...'}
-          icon="business-outline"
-          color={colors.success}
-        />
-        <StatCard
-          title="Approved Today"
-          value={stats?.approvedToday ?? '...'}
-          icon="checkmark-circle-outline"
-          color={colors.success}
-        />
-        <StatCard
-          title="Rejected Today"
-          value={stats?.rejectedToday ?? '...'}
-          icon="close-circle-outline"
-          color={colors.danger}
-        />
-      </ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statsScrollViewContent}>
+          <StatCard
+            title="Pending Garages"
+            value={stats?.pendingGarages ?? '...'}
+            icon="car-outline"
+            color={colors.warning}
+          />
+          <StatCard
+            title="Pending Tow Trucks"
+            value={stats?.pendingTowTrucks ?? '...'}
+            icon="car-sport-outline"
+            color={colors.info}
+          />
+          <StatCard
+            title="Total Users"
+            value={stats?.totalUsers ?? '...'}
+            icon="people-outline"
+            color={colors.primary}
+          />
+          <StatCard
+            title="Total Businesses"
+            value={stats?.totalBusinesses ?? '...'}
+            icon="business-outline"
+            color={colors.success}
+          />
+          <StatCard
+            title="Approved Today"
+            value={stats?.approvedToday ?? '...'}
+            icon="checkmark-circle-outline"
+            color={colors.success}
+          />
+          <StatCard
+            title="Rejected Today"
+            value={stats?.rejectedToday ?? '...'}
+            icon="close-circle-outline"
+            color={colors.danger}
+          />
+        </ScrollView>
       </View>
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <Ionicons name="search-outline" size={20} color={colors.gray} />
-        <TextInput style={styles.searchInput} placeholder="Search by name or owner..." value={searchQuery} onChangeText={setSearchQuery}/>
+        <TextInput style={styles.searchInput} placeholder="Search by name or owner..." value={searchQuery} onChangeText={setSearchQuery} />
       </View>
 
       <View style={styles.tabContainer}>
         {['pending', 'approved', 'rejected'].map((tabName) => (
-            <TouchableOpacity
-                key={tabName}
-                style={[styles.tab, activeTab === tabName && styles.activeTab]}
-                onPress={() => setActiveTab(tabName as any)}
-            >
-                <Text style={[styles.tabText, activeTab === tabName && styles.activeTabText]}>
-                    {tabName.charAt(0).toUpperCase() + tabName.slice(1)}
-                </Text>
-                <View style={[styles.tabBadge, { backgroundColor: getStatusColor(tabName.toUpperCase()) }]}>
-                    <Text style={styles.tabBadgeText}>
-                        {allBusinesses.filter(b => (b.status?.toLowerCase() || 'pending') === tabName).length}
-                    </Text>
-                </View>
-            </TouchableOpacity>
+          <TouchableOpacity
+            key={tabName}
+            style={[styles.tab, activeTab === tabName && styles.activeTab]}
+            onPress={() => setActiveTab(tabName as any)}
+          >
+            <Text style={[styles.tabText, activeTab === tabName && styles.activeTabText]}>
+              {tabName.charAt(0).toUpperCase() + tabName.slice(1)}
+            </Text>
+            <View style={[styles.tabBadge, { backgroundColor: getStatusColor(tabName.toUpperCase()) }]}>
+              <Text style={styles.tabBadgeText}>
+                {allBusinesses.filter(b => (b.status?.toLowerCase() || 'pending') === tabName).length}
+              </Text>
+            </View>
+          </TouchableOpacity>
         ))}
       </View>
 
       {renderContent()}
 
       <BusinessDetailModal
-          business={selectedBusiness}
-          visible={modalVisible}
-          onClose={() => setModalVisible(false)}
-          onApprove={handleApprove}
-          onReject={handleReject}
-          onBan={handleBanUser}
+        business={selectedBusiness}
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        onBan={handleBanUser}
       />
     </SafeAreaView>
   );
@@ -569,23 +582,23 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: colors.white,
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: Platform.OS === 'android' ? 50 : 20,
     paddingBottom: 15,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    borderRadius:10
+    borderRadius: 10
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    fontFamily:'Poppins_600SemiBold',
+    fontFamily: 'Poppins_600SemiBold',
     color: colors.dark,
   },
   viewDetailsText: {
     color: colors.primary,
     fontWeight: '600',
     marginRight: 4
-},
+  },
   headerSubtitle: {
     fontSize: 16,
     color: colors.gray,
@@ -599,51 +612,51 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 10,
     alignItems: 'center',
-},
-statCard: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  backgroundColor: colors.white,
-  borderRadius: 8,
-  padding: 16,
-  marginRight: 12,
-  width: 180,
-  height: '100%',
-  borderLeftWidth: 4,
-  elevation: 2,
-  shadowColor: colors.dark,
-  shadowOffset: { width: 0, height: 1 },
-  shadowOpacity: 0.1,
-  shadowRadius: 2,
-},
-statCardTextContainer: {
-  flex: 1, // Allows the text to take up available space
-},
-statCardTitle: {
-  fontSize: 12,
-  fontFamily:'Poppins_400Regular',
-  color: colors.gray,
-  fontWeight: '500',
-  marginBottom: 4,
-},
-statCardValue: {
-  fontSize: 24,
-  fontWeight: 'bold',
-  marginBottom: 2,
-},
-statCardSubtitle: {
-  fontSize: 10,
-  color: colors.gray,
-},
-statCardIconContainer: {
-  width: 40,
-  height: 40,
-  borderRadius: 20,
-  justifyContent: 'center',
-  alignItems: 'center',
-  marginLeft: 8, // Creates space between text and icon
-},
+  },
+  statCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 8,
+    padding: 16,
+    marginRight: 12,
+    width: 180,
+    height: '100%',
+    borderLeftWidth: 4,
+    elevation: 2,
+    shadowColor: colors.dark,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  statCardTextContainer: {
+    flex: 1, // Allows the text to take up available space
+  },
+  statCardTitle: {
+    fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
+    color: colors.gray,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  statCardValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  statCardSubtitle: {
+    fontSize: 10,
+    color: colors.gray,
+  },
+  statCardIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8, // Creates space between text and icon
+  },
   statCardContent: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
@@ -666,7 +679,7 @@ statCardIconContainer: {
     backgroundColor: colors.white,
     marginHorizontal: 15,
     marginBottom: 15,
-    marginTop:5,
+    marginTop: 5,
     paddingHorizontal: 15,
     paddingVertical: 12,
     borderRadius: 10,
@@ -945,7 +958,7 @@ statCardIconContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 13,
-    borderRadius:10,
+    borderRadius: 10,
     marginHorizontal: 6,
   },
   cancelButton: {

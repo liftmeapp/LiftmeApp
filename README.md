@@ -1,74 +1,66 @@
-# Welcome to your Expo app 👋
+# Afthuliftme Agent Brief
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Afthuliftme is a mobile-first platform that connects stranded drivers with the right help, whether they need a tow truck, in-garage repair, roadside assistance, luxury concierge service, EV support, or spare parts. The Expo app delivers the customer experience while operators (tow trucks, garages, parts sellers) run their business flows through dedicated dashboards. A Node/Prisma backend orchestrates bookings, chat, payments, and real-time updates over Socket.IO.
 
-## Get started
+---
 
-1. Install dependencies
+## Product Surface At A Glance
+- **Roadside Assistance (Car/Bike)** – Map-driven booking flow (`app/services/roadsidecar-service.tsx`, `roadsidebike-service.tsx`) powered by `BookingContext`. Customers pin their location, select a vehicle, and confirm payment while providers receive sockets updates to accept, navigate, and complete jobs.
+- **Home Service** – Same stage manager with in-home garage visits (`app/services/homeservice.tsx`) filtered by `ServiceCategory.HOME_SERVICE`.
+- **Luxury Concierge** – Premium garages/services (`app/services/luxury-service.tsx`) emphasise curated options and card-on-file flows.
+- **Electric Vehicle Support** – EV-specific roadside help (`app/services/electric-vehicleservice.tsx`) plus nearby charging overlays.
+- **Towing & Tow-To-Garage Flow** – `app/services/towing_service.tsx` and `components/TowMap.tsx` cover pickup/destination selection, truck dispatch, and payments. Tow truck owners manage availability and live tracking under `app/(root)/(tabs)/settings/add-business/businesssetup/towtruck-setup/*`. Once a vehicle reaches a garage, `garage-dashboard.tsx` handles inspection, quotes, final pricing, and completion.
+- **Garage Discovery** – `app/services/garages.tsx` with `components/GarageMap` list nearby providers, surfaces services, and deep-links into booking with preselected providers. Garages monitor work through the business dashboard.
+- **Spare Parts Marketplace** – Customers browse nearby parts (`app/services/spareparts.tsx`, `sparepart-detail.tsx`). Sellers list inventory through `add-spare-part.tsx` and `location-picker.tsx`, backed by `api/spareparts.ts`. Orders ride the booking pipeline so they appear in the unified history.
+- **Conversations** – Booking-scoped chats (`api/chat.ts`) hydrate the conversation list and threads under `app/(root)/(tabs)/conversation/*`, using Socket.IO for live messaging. Threads can now be deleted from the conversation index.
+- **Cross-Cutting Utilities** – Map components (`components/Map`, `GarageMap`, `TowMap`), location utilities, and `api/bookings.ts` for server-side ETA/distance calculations keep experiences consistent. Clerk handles auth (`useAuth`, `useUser`), Prisma models capture state, and Socket.IO propagates booking events.
 
-   ```bash
-   npm install
-   ```
+Refer to `SERVICES.md` for a service-by-service deep dive and screen references.
 
-2. Start the app
+---
 
-   ```bash
-   npx expo start
-   ```
+## Repository & Codebase Guide
 
-In the output, you'll find options to open the app in a
+### Structure
+- `app/` – Expo Router route groups for auth, tabs, and service flows.
+- `components/` – Shared UI primitives and map widgets; `components/ui/` wraps NativeWind tokens.
+- `context/`, `store/`, `hooks/` – Clerk/Zustand state and booking/towing contexts.
+- `api/` – Express handlers, Prisma schema (`api/prisma/schema.prisma`), generated client (`api/app/generated`), and Socket.IO wiring.
+- `scripts/` – Maintenance scripts (e.g., `scripts/reset-project.js`).
+- `types/`, `assets/` – Domain types, icons, fonts.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Key Commands
+- `npm run start` – Expo bundler (`--clear` to reset Metro cache).
+- Platform targets: `npm run android`, `npm run ios`, `npm run web`.
+- `npm run lint` – Run ESLint (`npm run lint -- --fix` to autofix).
+- Backend maintenance: `npm run api:generate`, `npm run api:db:push`.
+- Reset routine: `npm run reset-project`.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+### Coding & Collaboration
+- TypeScript everywhere; components in PascalCase, utilities/hooks in camelCase.
+- Two-space indentation, early returns preferred.
+- Compose styles via NativeWind class strings; share tokens in `constants/` or `tailwind.config.js`.
+- ESLint handles formatting; avoid alternate tooling.
 
-## Get a fresh project
+### Testing & QA
+- Jest wiring pending—co-locate tests as `*.test.ts(x)` when adding coverage, mocking Expo APIs via `@testing-library/react-native`.
+- Validate Prisma changes with disposable databases (`npm run api:db:push -- --force`).
+- Manual QA: run sign-in, booking (all stages), chat, map flows before shipping.
 
-When you're ready, run:
+### Git & Reviews
+- Commit messages: short, imperative (≈65 chars, no trailing periods).
+- Reference issues in commit/PR bodies; include platform test notes and media for UI updates.
 
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
-
-<!-- 
-
-[API] Found 1 eligible tow trucks. Broadcasting request...
-🔴 [API] CRITICAL ERROR in /request-towing: PrismaClientKnownRequestError:
-Invalid `prisma.booking.create()` invocation in
-C:\prjs\afthuliftme\api\bookings.ts:829:53
-
-  826 const eligibleProviderIds = eligibleTrucks.map(truck => truck.id);
-  827 const basePrice = eligibleTrucks[0].services[0].price; // Use price from the first eligible truck as a baseline
-  828
-→ 829 const newBooking = await prisma.booking.create(
-Unique constraint failed on the constraint: `bookings_paymentIntentId_key`
-    at $n.handleRequestError (C:\prjs\afthuliftme\api\node_modules\@prisma\client\runtime\library.js:121:7315)
-    at $n.handleAndLogRequestError (C:\prjs\afthuliftme\api\node_modules\@prisma\client\runtime\library.js:121:6623)
-    at $n.request (C:\prjs\afthuliftme\api\node_modules\@prisma\client\runtime\library.js:121:6307)
-    at l (C:\prjs\afthuliftme\api\node_modules\@prisma\client\runtime\library.js:130:9633)
-    at C:\prjs\afthuliftme\api\bookings.ts:829:32 {
-  code: 'P2002',
-  clientVersion: '5.22.0',
-  meta: { modelName: 'Booking', target: 'bookings_paymentIntentId_key' } -->
+### Security & Configuration
+- Secrets in `.env` / `api/.env`. Review `app/index.tsx:16` for keystore context.
+- Rotate Clerk, Stripe, Google Maps keys after previews; scrub sensitive logs.
+- Update `expo-env.d.ts` whenever environment variables change to maintain type safety.
 
 
-   The BookingModal and accepting the booking and when clicking the bookingCard does not function inside the  @app/\(root\)/\(tabs\)/settings/add-business/tow-truck-dashboard.tsx  but  it does work coorectly inside @app/\(root\)/\(tabs\)/settings/add-business/garage-dashboard.tsx  and I want to have the same features and details there, and the card to function correctly like it does in garage dashboard. Like the booking card should have same details in the modal and the card like it does in garage dashboard, and inside towtruck it should show the pickup location as well as the destination and the distance between them and stuff. CAn you do that?                                     
+use a WhatsApp hook for the towtrucks and garages to show requests.
+Need a persistant api call for sending price request
+Need a request from the user and stuff: Make a payment more robust Look into it.
+Minimal reporting regarding Garages and tow trucks, give them a scoring system. Data driven business.
+ERP check
+make the payment options with gpay
+change UI

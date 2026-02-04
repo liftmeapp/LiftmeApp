@@ -53,8 +53,8 @@ interface ApiService {
 // State to track only the user's choices
 interface ServiceSelectionState {
   [serviceId: string]: {
-      selected: boolean;
-      price: string;
+    selected: boolean;
+    price: string;
   };
 }
 
@@ -66,7 +66,7 @@ export default function AddServicesScreen() {
   // REFACTORED STATE: Two separate, clean states
   const [masterServices, setMasterServices] = useState<ApiService[]>([]); // Original data from API
   const [selections, setSelections] = useState<ServiceSelectionState>({}); // User's interactions
-  const [categorySelections, setCategorySelections] = useState<{[key: string]: boolean}>({}); // New state for category selection
+  const [categorySelections, setCategorySelections] = useState<{ [key: string]: boolean }>({}); // New state for category selection
   const [selectedVehicleCategories, setSelectedVehicleCategories] = useState<string[]>([]); // New state for top-level vehicle categories
 
   const [loading, setLoading] = useState(true);
@@ -77,62 +77,62 @@ export default function AddServicesScreen() {
   useEffect(() => {
     // 2. Only proceed if the user is signed in AND we haven't already tried to fetch.
     if (isSignedIn && !fetchInitiated.current) {
-      
+
       // 3. Immediately mark that we are starting the fetch.
       //    This prevents any subsequent re-renders from triggering this block again.
       fetchInitiated.current = true;
-      
+
       const fetchServices = async () => {
         setLoading(true);
         setError(null);
         console.log("1. Starting fetchServices (This should only run ONCE).");
 
         try {
-            const token = await getToken();
-            if (!token) throw new Error("Authentication token not found.");
-            console.log("2. Token acquired.");
+          const token = await getToken();
+          if (!token) throw new Error("Authentication token not found.");
+          console.log("2. Token acquired.");
 
-            const url = `${API_BASE_URL}/api/services`;
-            console.log(`3. Fetching from: ${url}`);
-            
-            const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-            console.log(`4. Received response with status: ${response.status}`);
+          const url = `${API_BASE_URL}/api/services`;
+          console.log(`3. Fetching from: ${url}`);
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Connection failed (Status: ${response.status}).`);
-            }
+          const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+          console.log(`4. Received response with status: ${response.status}`);
 
-            const data: ApiService[] = await response.json();
-            console.log("5. Successfully parsed JSON data.");
-            
-            if (!Array.isArray(data)) {
-                throw new Error("API did not return an array of services.");
-            }
-            
-            setMasterServices(data);
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Connection failed (Status: ${response.status}).`);
+          }
 
-            const initialSelections: ServiceSelectionState = {};
-            data.forEach(service => {
-                initialSelections[service.id] = { selected: false, price: '' };
-            });
+          const data: ApiService[] = await response.json();
+          console.log("5. Successfully parsed JSON data.");
 
-            setSelections(initialSelections);
-            setSelectedVehicleCategories([]); // Initialize as empty
-            console.log("6. State initialized.");
+          if (!Array.isArray(data)) {
+            throw new Error("API did not return an array of services.");
+          }
+
+          setMasterServices(data);
+
+          const initialSelections: ServiceSelectionState = {};
+          data.forEach(service => {
+            initialSelections[service.id] = { selected: false, price: '' };
+          });
+
+          setSelections(initialSelections);
+          setSelectedVehicleCategories([]); // Initialize as empty
+          console.log("6. State initialized.");
 
         } catch (e: any) {
-            console.error("💥 CATCH BLOCK ERROR:", e);
-            setError(e.message || 'An unknown error occurred.');
+          console.error("💥 CATCH BLOCK ERROR:", e);
+          setError(e.message || 'An unknown error occurred.');
         } finally {
-            setLoading(false);
-            console.log("7. fetchServices finished.");
+          setLoading(false);
+          console.log("7. fetchServices finished.");
         }
       };
 
       fetchServices();
     }
-  // 4. The dependency array now includes `isSignedIn`. The ref handles the "run once" logic.
+    // 4. The dependency array now includes `isSignedIn`. The ref handles the "run once" logic.
   }, [isSignedIn]);
 
   useEffect(() => {
@@ -140,51 +140,51 @@ export default function AddServicesScreen() {
     // the individual category sections are shown or hidden.
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setCategorySelections(prevCategorySelections => {
-        const newCategorySelections: { [key: string]: boolean } = { ...prevCategorySelections };
-        MAIN_VEHICLE_CATEGORIES.forEach(mainCat => {
-            const isMainCatSelected = selectedVehicleCategories.includes(mainCat.key);
-            newCategorySelections[mainCat.key] = isMainCatSelected;
-        });
-        return newCategorySelections;
+      const newCategorySelections: { [key: string]: boolean } = { ...prevCategorySelections };
+      MAIN_VEHICLE_CATEGORIES.forEach(mainCat => {
+        const isMainCatSelected = selectedVehicleCategories.includes(mainCat.key);
+        newCategorySelections[mainCat.key] = isMainCatSelected;
+      });
+      return newCategorySelections;
     });
   }, [selectedVehicleCategories]);
 
   const toggleService = (serviceId: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelections(prev => {
-        const currentSelection = prev[serviceId];
-        const isNowSelected = !currentSelection.selected;
-        const updatedSelections = {
-            ...prev,
-            [serviceId]: {
-                ...currentSelection,
-                selected: isNowSelected,
-                price: isNowSelected ? currentSelection.price : '',
-            },
-        };
+      const currentSelection = prev[serviceId];
+      const isNowSelected = !currentSelection.selected;
+      const updatedSelections = {
+        ...prev,
+        [serviceId]: {
+          ...currentSelection,
+          selected: isNowSelected,
+          price: isNowSelected ? currentSelection.price : '',
+        },
+      };
 
-        return updatedSelections;
+      return updatedSelections;
     });
   };
 
   const toggleMainVehicleCategory = (mainCategoryKey: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelectedVehicleCategories(prev => {
-        const isNowSelected = !prev.includes(mainCategoryKey);
-        const updatedMainCategories = isNowSelected
-            ? [...prev, mainCategoryKey]
-            : prev.filter(cat => cat !== mainCategoryKey);
-        return updatedMainCategories;
+      const isNowSelected = !prev.includes(mainCategoryKey);
+      const updatedMainCategories = isNowSelected
+        ? [...prev, mainCategoryKey]
+        : prev.filter(cat => cat !== mainCategoryKey);
+      return updatedMainCategories;
     });
   };
 
   const handlePriceChange = (text: string, serviceId: string) => {
     setSelections(prev => ({
-        ...prev,
-        [serviceId]: {
-            ...prev[serviceId],
-            price: text.replace(/[^0-9.]/g, ''),
-        },
+      ...prev,
+      [serviceId]: {
+        ...prev[serviceId],
+        price: text.replace(/[^0-9.]/g, ''),
+      },
     }));
   };
 
@@ -194,7 +194,7 @@ export default function AddServicesScreen() {
       .map(([serviceId, value]) => {
         const service = masterServices.find(s => s.id === serviceId);
         const isNoPriceCategory = service?.category === 'INGARAGE_CAR' || service?.category === 'INGARAGE_BIKE';
-        
+
         return {
           serviceId,
           price: isNoPriceCategory ? 0 : parseFloat(value.price),
@@ -226,20 +226,20 @@ export default function AddServicesScreen() {
 
   const categorizedServices = useMemo(() => {
     if (!masterServices.length) return [];
-    
+
     let garageServices = masterServices.filter(service => service.category !== 'TOWING');
 
     const groups = garageServices.reduce((acc, service) => {
-        const key = service.category || 'GENERAL_LISTING';
-        if (!acc[key]) { acc[key] = []; }
-        acc[key].push(service);
-        return acc;
+      const key = service.category || 'GENERAL_LISTING';
+      if (!acc[key]) { acc[key] = []; }
+      acc[key].push(service);
+      return acc;
     }, {} as Record<string, ApiService[]>);
 
     return Object.entries(groups).map(([categoryKey, servicesList]) => ({
-        title: MAIN_VEHICLE_CATEGORIES.find(cat => cat.key === categoryKey)?.label || categoryKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        key: categoryKey,
-        services: servicesList,
+      title: MAIN_VEHICLE_CATEGORIES.find(cat => cat.key === categoryKey)?.label || categoryKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      key: categoryKey,
+      services: servicesList,
     }));
   }, [masterServices]);
 
@@ -247,15 +247,15 @@ export default function AddServicesScreen() {
 
   if (loading) {
     return <View style={styles.centered}>
-      <RotatingLoader  
-        iconName="navigate-circle-outline" 
-        message="Loading Services..." 
-        color="#ed8b65"
+      <RotatingLoader
+        iconName="navigate-circle-outline"
+        message="Loading Services..."
+        color="#005C70"
         size={50}
       />
-      </View>;
+    </View>;
   }
-  
+
   if (error) {
     return <View style={styles.centered}><Ionicons name="cloud-offline-outline" size={48} color="#d9534f" /><Text style={styles.errorText}>{error}</Text></View>;
   }
@@ -265,242 +265,238 @@ export default function AddServicesScreen() {
       <Stack.Screen options={{ title: 'Step 2: Add Services' }} />
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.headerContainer}>
-            <Text style={styles.headerTitle}>Select Your Services</Text>
-            <Text style={styles.headerSubtitle}>Choose what you offer and set your prices.</Text>
+          <Text style={styles.headerTitle}>Select Your Services</Text>
+          <Text style={styles.headerSubtitle}>Choose what you offer and set your prices.</Text>
         </View>
 
         <View style={styles.mainCategoryContainer}>
-            <Text style={styles.mainCategoryTitle}>Vehicle Types Serviced</Text>
-            {MAIN_VEHICLE_CATEGORIES.map(mainCat => (
-                <View key={mainCat.key} style={styles.mainCategoryItem}>
-                    <Text style={styles.mainCategoryItemText}>{mainCat.label}</Text>
-                    <Switch
-                        trackColor={{ false: "#ccc", true: "#b95528" }}
-                        thumbColor={"#fff"}
-                        onValueChange={() => toggleMainVehicleCategory(mainCat.key)}
-                        value={selectedVehicleCategories.includes(mainCat.key)}
-                    />
-                </View>
-            ))}
-        </View>
-        
-        {categorizedServices.map((category) => (
-                            <View key={category.title} style={styles.categoryCard}>
-                                <View style={styles.categoryHeader}>
-                                    <Text style={styles.categoryTitle}>{category.title}</Text>
-                                </View>
-                                {categorySelections[category.key] && category.services.map((service, index) => {                    const selectionState = selections[service.id];
-                    if (!selectionState) return null; // Should not happen, but a safe guard
-
-                    return (
-                        <View key={service.id} style={[styles.serviceItemContainer, index === category.services.length - 1 && { borderBottomWidth: 0 }]}>
-                            <View style={styles.serviceRow}>
-                                <Text style={styles.serviceName}>{service.name}</Text>
-                                <Switch
-                                    trackColor={{ false: "#ccc", true: "#b95528" }}
-                                    thumbColor={"#fff"}
-                                    onValueChange={() => toggleService(service.id)}
-                                    value={selectionState.selected}
-                                />
-                            </View>
-                            {selectionState.selected && !['INGARAGE_CAR', 'INGARAGE_BIKE'].includes(service.category) && (
-                            <View style={styles.priceInputContainer}>
-                                <TextInput
-                                    style={styles.priceInput}
-                                    placeholder="e.g., 120.00 INR"
-                                    placeholderTextColor="#999"
-                                    keyboardType="decimal-pad"
-                                    value={selectionState.price}
-                                    onChangeText={(text) => handlePriceChange(text, service.id)}
-                                />
-                            </View>
-                            )}
-                        </View>
-                    );
-                })}
+          <Text style={styles.mainCategoryTitle}>Vehicle Types Serviced</Text>
+          {MAIN_VEHICLE_CATEGORIES.map(mainCat => (
+            <View key={mainCat.key} style={styles.mainCategoryItem}>
+              <Text style={styles.mainCategoryItemText}>{mainCat.label}</Text>
+              <Switch
+                trackColor={{ false: "#ccc", true: "#005C70" }}
+                thumbColor={"#fff"}
+                onValueChange={() => toggleMainVehicleCategory(mainCat.key)}
+                value={selectedVehicleCategories.includes(mainCat.key)}
+                style={{ transform: [{ scale: 0.7 }] }}
+              />
             </View>
+          ))}
+        </View>
+
+        {categorizedServices.map((category) => (
+          <View key={category.title} style={styles.categoryCard}>
+            <View style={styles.categoryHeader}>
+              <Text style={styles.categoryTitle}>{category.title}</Text>
+            </View>
+            {categorySelections[category.key] && category.services.map((service, index) => {
+              const selectionState = selections[service.id];
+              if (!selectionState) return null; // Should not happen, but a safe guard
+
+              return (
+                <View key={service.id} style={[styles.serviceItemContainer, index === category.services.length - 1 && { borderBottomWidth: 0 }]}>
+                  <View style={styles.serviceRow}>
+                    <Text style={styles.serviceName}>{service.name}</Text>
+                    <Switch
+                      trackColor={{ false: "#ccc", true: "#005C70" }}
+                      thumbColor={"#fff"}
+                      onValueChange={() => toggleService(service.id)}
+                      value={selectionState.selected}
+                      style={{ transform: [{ scale: 0.7 }] }}
+                    />
+                  </View>
+                  {selectionState.selected && !['INGARAGE_CAR', 'INGARAGE_BIKE'].includes(service.category) && (
+                    <View style={styles.priceInputContainer}>
+                      <TextInput
+                        style={styles.priceInput}
+                        placeholder="e.g., 120.00 INR"
+                        placeholderTextColor="#999"
+                        keyboardType="decimal-pad"
+                        value={selectionState.price}
+                        onChangeText={(text) => handlePriceChange(text, service.id)}
+                      />
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
         ))}
       </ScrollView>
 
       <View style={styles.fabContainer}>
-              <Pressable 
-                onPress={handleNext} 
-                disabled={loading || isNavigating}
-                style={({ pressed }) => [
-                  styles.fab,
-                  (loading || isNavigating) && styles.disabledFab,
-                  pressed && !loading && !isNavigating && styles.pressedFab
-                ]}
-              >
-                <LinearGradient 
-                  colors={['#c3683c', '#b95528']} 
-                  style={styles.fabGradient}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                >
-                  {isNavigating ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <View style={styles.fabContent}>
-                      <Text style={styles.fabText}>
-                        {selectedCount > 0 
-                          ? 'Next: Update Location' 
-                          : 'Select Services to Continue'}
-                      </Text>
-                      {!isNavigating && selectedCount > 0 && (
-                        <Ionicons name="arrow-forward" size={20} color="#fff" style={styles.arrowIcon} />
-                      )}
-                    </View>
-                  )}
-                </LinearGradient>
-              </Pressable>
-            </View>
+        <Pressable
+          onPress={handleNext}
+          disabled={loading || isNavigating}
+          style={({ pressed }) => [
+            styles.fab,
+            (loading || isNavigating) && styles.disabledFab,
+            pressed && !loading && !isNavigating && styles.pressedFab
+          ]}
+        >
+          <LinearGradient
+            colors={['#005C70', '#004252']}
+            style={styles.fabGradient}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+          >
+            {isNavigating ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <View style={styles.fabContent}>
+                <Text style={styles.fabText}>
+                  {selectedCount > 0
+                    ? 'Next: Update Location'
+                    : 'Select Services to Continue'}
+                </Text>
+                {!isNavigating && selectedCount > 0 && (
+                  <Ionicons name="arrow-forward" size={20} color="#fff" style={styles.arrowIcon} />
+                )}
+              </View>
+            )}
+          </LinearGradient>
+        </Pressable>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: '#f8f9fa',paddingTop: 20 },
-    fabContainer: {
-      position: 'absolute',
-      bottom: 20,
-      left: 20,
-      right: 20,
-      alignItems: 'center',
-      borderRadius: 30,
-      elevation: 8,
-    },
-    arrowIcon: {
-      marginLeft: 8,
-    },
-    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-    loadingText: { marginTop: 15, fontSize: 16, color: '#555' },
-    errorText: { marginTop: 15, textAlign: 'center', color: '#d9534f', fontSize: 16, fontWeight: '500' },
-    scrollContainer: { paddingHorizontal: 10, paddingBottom: 100 }, // Add padding for FAB
-    headerContainer: { paddingHorizontal: 10, paddingVertical: 20 },
-    headerTitle: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', color: '#333' },
-    headerSubtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginTop: 4 },
-    categoryCard: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        marginBottom: 15,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 3,
-        overflow: 'hidden',
-    },
-    categoryTitle: {
-        fontSize: 18, fontWeight: '600', color: '#fff', 
-        backgroundColor: '#7b381a', padding: 15,
-    },
-    categoryHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        backgroundColor: '#7b381a',
-        padding: 15,
-        borderTopLeftRadius: 12,
-        borderTopRightRadius: 12,
-    },
-    serviceItemContainer: {
-        paddingHorizontal: 15,
-        paddingVertical: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0'
-    },
-    serviceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    serviceName: { fontSize: 16, color: '#444', flex: 1, marginRight: 10 },
-    priceInputContainer: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f7f7f7' },
-    priceInput: { 
-        height: 45, borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
-        paddingHorizontal: 15, fontSize: 15, backgroundColor: '#fdfdfd'
-    },
-    fab: {
-        position: 'absolute',
-        bottom: 20,
-        left: 20,
-        right: 20,
-        borderRadius: 15,
-        paddingVertical: 15,
-        paddingHorizontal: 20,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        shadowColor: '#b95528',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 6,
-        elevation: 8,
-    },
-    fabContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    disabledFab: {
-      opacity: 0.6,
-    },
-    pressedFab: {
-      opacity: 0.8,
-      transform: [{ scale: 0.98 }],
-    },
-    fabGradient: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: 16,
-      paddingHorizontal: 24,
-      width: '100%',
-      borderRadius: 30,
-    },
-    fabText: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginRight: 10,
-    },
-    fabBadge: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        width: 24,
-        height: 24,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    fabBadgeText: {
-        color: '#b95528',
-        fontWeight: 'bold',
-        fontSize: 14
-    },
-    mainCategoryContainer: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        marginBottom: 15,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 3,
-        padding: 15,
-    },
-    mainCategoryTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#333',
-        marginBottom: 10,
-        paddingBottom: 5,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-    },
-    mainCategoryItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 8,
-    },
-    mainCategoryItemText: {
-        fontSize: 16,
-        color: '#444',
-    },
+  safeArea: { flex: 1, backgroundColor: '#eef0f3', paddingTop: 10 },
+  fabContainer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+    borderRadius: 30,
+    elevation: 8,
+    zIndex: 100,
+  },
+  arrowIcon: {
+    marginLeft: 8,
+  },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  loadingText: { marginTop: 15, fontSize: 16, color: '#555' },
+  errorText: { marginTop: 15, textAlign: 'center', color: '#d9534f', fontSize: 16, fontWeight: '500' },
+  scrollContainer: { paddingHorizontal: 12, paddingBottom: 120 }, // Add padding for FAB
+  headerContainer: { paddingHorizontal: 10, paddingVertical: 16 },
+  headerTitle: { fontSize: 22, fontWeight: '700', textAlign: 'center', color: '#1a1a1a' },
+  headerSubtitle: { fontSize: 14, color: '#666', textAlign: 'center', marginTop: 4, fontWeight: '500' },
+  categoryCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 12, // Reduced
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  categoryTitle: {
+    fontSize: 16, fontWeight: '700', color: '#fff', // Reduced font size
+    backgroundColor: '#005C70', padding: 0,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#005C70',
+    paddingVertical: 12, // Reduced
+    paddingHorizontal: 16,
+  },
+  serviceItemContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 10, // Reduced
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0'
+  },
+  serviceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  serviceName: { fontSize: 15, color: '#333', flex: 1, marginRight: 10, fontWeight: '500' },
+  priceInputContainer: { marginTop: 8, paddingTop: 0 },
+  priceInput: {
+    height: 40, borderWidth: 0, borderRadius: 8, // Reduced height
+    paddingHorizontal: 12, fontSize: 15, backgroundColor: '#f0f0f0', color: '#333', fontWeight: '500'
+  },
+  fab: {
+    borderRadius: 16,
+    width: '100%',
+    shadowColor: '#005C70',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  fabContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  disabledFab: {
+    opacity: 0.6,
+  },
+  pressedFab: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
+  },
+  fabGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    width: '100%',
+  },
+  fabText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginRight: 8,
+  },
+  fabBadge: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fabBadgeText: {
+    color: '#005C70',
+    fontWeight: 'bold',
+    fontSize: 14
+  },
+  mainCategoryContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 16, // Reduced
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+    padding: 16, // Reduced padding
+  },
+  mainCategoryTitle: {
+    fontSize: 16, // Reduced 
+    fontWeight: '700',
+    color: '#005C70', // Brand color
+    marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  mainCategoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8, // Reduced padding
+  },
+  mainCategoryItemText: {
+    fontSize: 15,
+    color: '#333',
+    fontWeight: '500',
+  },
 });

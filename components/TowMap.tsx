@@ -470,7 +470,7 @@ const MAP_STYLE = [
         refreshText: { marginLeft: 8, fontWeight: '500' },
         searchContainer: {
             position: 'absolute',
-            top: 60,
+            top: 20,
             left: 10,
             right: 10,
             zIndex: 1,

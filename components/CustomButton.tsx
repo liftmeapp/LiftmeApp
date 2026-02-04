@@ -1,4 +1,4 @@
-import { TouchableOpacity, Text } from "react-native";
+import { Text, TouchableOpacity } from "react-native";
 
 import { ButtonProps } from "@/types/type";
 
@@ -13,7 +13,7 @@ const getBgVariantStyle = (variant: ButtonProps["bgVariant"]) => {
     case "outline":
       return "bg-transparent border-neutral-300 border-[0.5px]";
     default:
-      return "bg-[#0286FF]";
+      return "bg-[#005C70]";
   }
 };
 
@@ -45,7 +45,7 @@ const CustomButton = ({
   return (
     <TouchableOpacity
       onPress={onPress}
-      className={`w-full p-3 flex flex-row justify-center items-center shadow-md shadow-[#b95528]/70 bg-[#b95528] ${className}`}
+      className={`w-full p-3 flex flex-row justify-center items-center shadow-md shadow-[#005C70]/70 ${getBgVariantStyle(bgVariant)} ${className}`}
       {...props}
     >
       {IconLeft && <IconLeft />}

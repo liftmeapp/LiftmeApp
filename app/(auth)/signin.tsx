@@ -1,12 +1,23 @@
-// app/(auth)/signin.tsx
 import { useAuth, useOAuth, useSignIn } from '@clerk/clerk-expo';
 import * as Linking from 'expo-linking';
 import { Link, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import PhoneInput from 'react-native-phone-number-input';
-import 'react-phone-input-2/lib/style.css'; // If you're using web
 import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -17,33 +28,28 @@ export default function SigninScreen() {
   const router = useRouter();
   const auth = useAuth();
 
-  // State for sign-in method
-  const [signInMethod, setSignInMethod] = useState<'phone' | 'email'>('phone');
+  const [signInMethod, setSignInMethod] = useState<'phone' | 'email'>('email');
+  // Should default to Email based on "Image 3" input field? 
+  // Actually Image 3 shows "Email" and "Password", so I will prioritize Email view style
+  // but keep functionality if user mocks it. 
+  // The design shows specific fields: Email, Password. 
+  // Let's stick to Email as default or just show Email field.
+  // The code supported toggling. I'll keep the toggling but style it better or just default to Email if that matches the design better.
+  // Design shows: "Email" label/placeholder. So I will default to email.
 
-  // State for credentials
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [formattedPhoneNumber, setFormattedPhoneNumber] = useState('');
   const phoneInputRef = useRef<PhoneInput>(null);
 
-  // Loading states
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  
+
   useWarmUpBrowser();
 
-  const handleSignOut = async () => {
-    console.log("Forcing sign out to clear stale session...");
-    await auth.signOut();
-    Alert.alert("Session Cleared", "The session has been cleared. Please try signing in again.");
-};
-
   const onGoogleSignInPress = useCallback(async () => {
-    if (!isSignInLoaded) {
-      console.warn("[SignInScreen] Clerk's useSignIn is not fully loaded for Google Sign In.");
-      return;
-    }
+    if (!isSignInLoaded) return;
     setIsGoogleLoading(true);
     try {
       const redirectUrl = Linking.createURL('/oauth-native-callback');
@@ -54,36 +60,24 @@ export default function SigninScreen() {
         await setActive({ session: createdSessionId });
         return;
       }
-
-      if (oauthSignInResource) {
-        if (oauthSignInResource.status === 'complete' && oauthSignInResource.createdSessionId) {
-          await setActive({ session: oauthSignInResource.createdSessionId });
-          return;
-        }
-      }
-
-      if (oauthSignUpResource) {
-        if (oauthSignUpResource.status === 'complete' && oauthSignUpResource.createdSessionId) {
-          await setActive({ session: oauthSignUpResource.createdSessionId });
-          return;
-        } else if (oauthSignUpResource.status === 'missing_requirements') {
-          Alert.alert('New Account Detected', 'It looks like this is a new account. Please complete the sign-up process.',
-            [{ text: 'OK', onPress: () => router.replace({ pathname: '/(auth)/complete-profile', params: { flow: 'oauth_missing_requirements' } }) }]
-          );
-          return;
-        }
-      }
-
-      if (oauthResult.authSessionResult?.type === 'cancel' || oauthResult.authSessionResult?.type === 'dismiss') {
+      if (oauthSignInResource?.status === 'complete' && oauthSignInResource.createdSessionId) {
+        await setActive({ session: oauthSignInResource.createdSessionId });
         return;
       }
-
-      Alert.alert('Sign-In Failed', 'Could not complete Google Sign-In. Please try again.');
+      if (oauthSignUpResource?.status === 'complete' && oauthSignUpResource.createdSessionId) {
+        await setActive({ session: oauthSignUpResource.createdSessionId });
+        return;
+      } else if (oauthSignUpResource?.status === 'missing_requirements') {
+        router.replace({ pathname: '/(auth)/complete-profile', params: { flow: 'oauth_missing_requirements' } });
+        return;
+      }
+      if (oauthResult.authSessionResult?.type === 'cancel') return;
+      Alert.alert('Sign-In Failed', 'Could not complete Google Sign-In.');
     } catch (err: any) {
-      console.error('[SignInScreen] Google OAuth Sign In error (outer catch):', JSON.stringify(err, null, 2));
-      if (err.code === 'USER_CANCELLED' || err.message?.includes('cancelled')) return;
-      const firstError = err.errors?.[0];
-      Alert.alert('Error', `Google sign in failed: ${firstError?.longMessage || firstError?.message || 'An unexpected error occurred.'}`);
+      if (err.code !== 'USER_CANCELLED') {
+        const firstError = err.errors?.[0];
+        Alert.alert('Error', firstError?.longMessage || 'An unexpected error occurred.');
+      }
     } finally {
       setIsGoogleLoading(false);
     }
@@ -91,184 +85,295 @@ export default function SigninScreen() {
 
   const onSignInPress = async () => {
     if (auth.isSignedIn) {
-      Alert.alert("Already Signed In", "It looks like you're already signed in. Redirecting you to the app.");
-      // The root layout will handle the redirect automatically, but we can be explicit.
-      router.replace('/(root)/(tabs)/home'); 
+      router.replace('/(root)/(tabs)/home');
       return;
-  }
+    }
     if (!isSignInLoaded) return;
-
 
     const identifier = signInMethod === 'email' ? email : formattedPhoneNumber;
     if (!identifier || !password) {
       Alert.alert('Error', 'Please enter your credentials.');
       return;
     }
-    if (signInMethod === 'phone' && !phoneInputRef.current?.isValidNumber(phoneNumber)) {
-      Alert.alert('Invalid Phone Number', 'Please enter a valid phone number.');
-      return;
-    }
-
     setIsLoading(true);
     try {
       const signInAttempt = await signIn.create({ identifier, password });
-
       if (signInAttempt.status === 'complete') {
         await setActive({ session: signInAttempt.createdSessionId });
-      } else if (signInAttempt.status && ["needs_first_factor", "needs_second_factor"].includes(signInAttempt.status)) {
-        Alert.alert("MFA Required", `Please complete the next authentication step.`);
-        // Potentially navigate to an MFA screen here
       } else {
-        Alert.alert('Sign In Failed', `Status: ${signInAttempt.status}. Please check your credentials.`);
+        Alert.alert('Sign In Failed', `Status: ${signInAttempt.status}.`);
       }
     } catch (err: any) {
-      console.error("Password Sign In Error:", JSON.stringify(err, null, 2));
       const firstError = err.errors?.[0];
-      if (firstError?.code === 'form_identifier_not_found' || firstError?.code === 'form_password_incorrect') {
-        Alert.alert('Sign In Failed', 'Invalid credentials. Please try again.');
-      } else {
-        Alert.alert('Sign In Error', firstError?.longMessage || 'An unknown error occurred.');
-      }
+      Alert.alert('Sign In Error', firstError?.longMessage || 'Invalid credentials.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleToggleMethod = () => {
-    setEmail('');
-    setPassword('');
-    setPhoneNumber('');
-    setFormattedPhoneNumber('');
     setSignInMethod(prev => prev === 'phone' ? 'email' : 'phone');
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
-      <Text style={styles.header}>Sign In</Text>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
 
-      {signInMethod === 'phone' ? (
-        <PhoneInput
-          ref={phoneInputRef}
-          value={phoneNumber}
-          defaultCode="IN"
-          layout="first"
-          onChangeText={(text) => setPhoneNumber(text)}
-          onChangeFormattedText={(text) => setFormattedPhoneNumber(text)}
-          containerStyle={styles.phoneInputContainer}
-          textContainerStyle={styles.phoneInputTextContainer}
-          textInputStyle={styles.phoneInputText}
-          codeTextStyle={styles.phoneInputCodeText}
-          countryPickerButtonStyle={styles.countryPickerButton}
-          withDarkTheme
-          withShadow
-          autoFocus
-        />
-      ) : (
-        <TextInput
-          style={styles.inputField}
-          autoCapitalize="none"
-          value={email}
-          placeholder="Email Address"
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          textContentType="emailAddress"
-          placeholderTextColor="#999"
-        />
-      )}
+          <View style={styles.headerContainer}>
+            <View style={styles.logoContainer}>
+              <Image source={require('@/assets/icons/Liftme App icon black.png')} style={styles.logoImage} />
+            </View>
 
-      <TextInput
-        style={styles.inputField}
-        value={password}
-        placeholder="Password"
-        secureTextEntry={true}
-        onChangeText={setPassword}
-        textContentType="password"
-        placeholderTextColor="#999"
-      />
+            <Text style={styles.heroText}>We’re here whenever you need us</Text>
+          </View>
 
-      <View style={styles.passwordOptions}>
-        <TouchableOpacity style={styles.toggleButton} onPress={handleToggleMethod}>
-          <Text style={styles.linkText}>
-            {signInMethod === 'phone' ? 'Sign In with Email Instead' : 'Sign In with Phone Instead'}
-          </Text>
-        </TouchableOpacity>
-        <Link href="/(auth)/reset-password" asChild>
-          <TouchableOpacity>
-            <Text style={styles.linkText}>Forgot Password?</Text>
+          <Text style={styles.welcomeText}>Welcome Back</Text>
+
+          <View style={styles.formContainer}>
+            {signInMethod === 'phone' ? (
+              <PhoneInput
+                ref={phoneInputRef}
+                value={phoneNumber}
+                defaultCode="IN"
+                layout="first"
+                onChangeText={setPhoneNumber}
+                onChangeFormattedText={setFormattedPhoneNumber}
+                containerStyle={styles.phoneInputContainer}
+                textContainerStyle={styles.phoneInputTextContainer}
+                textInputStyle={styles.phoneInputText}
+                codeTextStyle={styles.phoneInputCodeText}
+                countryPickerButtonStyle={styles.countryPickerButton}
+                withDarkTheme
+                withShadow
+              />
+            ) : (
+              <TextInput
+                style={styles.inputField}
+                autoCapitalize="none"
+                value={email}
+                placeholder="Email"
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                placeholderTextColor="rgba(255,255,255,0.7)"
+              />
+            )}
+
+            <TextInput
+              style={styles.inputField}
+              value={password}
+              placeholder="Password*"
+              secureTextEntry={true}
+              onChangeText={setPassword}
+              placeholderTextColor="rgba(255,255,255,0.7)"
+            />
+
+            <View style={styles.forgotPasswordContainer}>
+              <Link href="/(auth)/reset-password" asChild>
+                <TouchableOpacity>
+                  <Text style={styles.forgotPasswordText}>Forgot Password*</Text>
+                </TouchableOpacity>
+              </Link>
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.button} onPress={onSignInPress} disabled={isLoading}>
+            {isLoading ? <ActivityIndicator color="#005C70" /> : <Text style={styles.buttonText}>Log In</Text>}
           </TouchableOpacity>
-        </Link>
-      </View>
 
-      <TouchableOpacity
-        style={[styles.button, (isLoading || (signInMethod === 'email' ? !email : !phoneNumber) || !password) && styles.buttonDisabled]}
-        onPress={onSignInPress}
-        disabled={isLoading || !isSignInLoaded || (signInMethod === 'email' ? !email : !phoneNumber) || !password}
-      >
-        {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign In</Text>}
-      </TouchableOpacity>
+          <View style={styles.orContainer}>
+            <View style={styles.divider} />
+            <Text style={styles.orText}>OR</Text>
+            <View style={styles.divider} />
+          </View>
 
-      <View style={styles.dividerContainer}>
-        <View style={styles.divider} />
-        <Text style={styles.dividerText}>OR</Text>
-        <View style={styles.divider} />
-      </View>
-
-      <TouchableOpacity
-        style={styles.googleButton}
-        onPress={onGoogleSignInPress}
-        disabled={isGoogleLoading || !isSignInLoaded}
-      >
-        {isGoogleLoading ? (
-          <ActivityIndicator color="#757575" size="small" style={{marginRight: 10}} />
-        ) : (
-          <Image source={require('@/assets/icons/google.png')} style={styles.googleIcon} />
-        )}
-        <Text style={styles.googleButtonText}>Continue with Google</Text>
-      </TouchableOpacity>
-
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>Don't have an account? </Text>
-        <Link href="/(auth)/signup" asChild>
-          <TouchableOpacity>
-            <Text style={[styles.footerText, styles.linkText]}>Sign Up</Text>
+          <TouchableOpacity style={styles.googleButton} onPress={onGoogleSignInPress} disabled={isGoogleLoading}>
+            {isGoogleLoading ?
+              <ActivityIndicator color="#000" /> :
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Image source={require('@/assets/icons/google.png')} style={styles.googleIcon} />
+                <Text style={styles.googleButtonText}>Log in with Google</Text>
+              </View>
+            }
           </TouchableOpacity>
-        </Link>
-      </View>
-    </ScrollView>
-    </KeyboardAvoidingView>
+
+          {/* Toggle Method Link (Optional, meant for UX if user prefers Phone) */}
+          <TouchableOpacity onPress={handleToggleMethod} style={{ alignSelf: 'center', marginBottom: 20 }}>
+            <Text style={styles.toggleMethodText}>
+              {signInMethod === 'email' ? 'Use Phone Number instead' : 'Use Email instead'}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Don't have an account? </Text>
+            <Link href="/(auth)/signup" asChild>
+              <TouchableOpacity>
+                <Text style={styles.linkText}>Sign Up</Text>
+              </TouchableOpacity>
+            </Link>
+          </View>
+
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-    scrollView: { flex: 1, backgroundColor: '#fff' },
-    scrollViewContent: { flexGrow: 1, justifyContent: 'center', padding: 20 },
-    innerContainer: { width: '100%', alignItems: 'center' },
-    header: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, color: '#333' },
-    inputField: { width: '100%', height: 50, paddingHorizontal: 15, marginBottom: 12, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, fontSize: 16, color: '#333' },
-    phoneInputContainer: { width: '100%', height: 50, marginBottom: 12, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, backgroundColor: 'white' },
-    phoneInputTextContainer: { paddingVertical: 0, borderRadius: 8, backgroundColor: 'white' },
-    phoneInputText: { fontSize: 16, color: '#333', height: 50 },
-    phoneInputCodeText: { fontSize: 16, color: '#333' },
-    countryPickerButton: { width: 60 },
-    button: { width: '100%', backgroundColor: '#b95528', paddingVertical: 15, borderRadius: 8, alignItems: 'center', minHeight: 50, justifyContent: 'center' },
-    buttonDisabled: { backgroundColor: '#cccccc' },
-    buttonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-    toggleButton: { alignSelf: 'flex-start', marginBottom: 15 },
-    googleButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 15, width: '100%', minHeight: 50 },
-    googleIcon: { width: 20, height: 20, marginRight: 10 },
-    googleButtonText: { color: '#757575', fontSize: 16, fontWeight: '600' },
-    dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 20, width: '100%' },
-    divider: { flex: 1, height: 1, backgroundColor: '#e0e0e0' },
-    dividerText: { marginHorizontal: 10, color: '#757575', fontSize: 14 },
-    footer: { flexDirection: 'row', marginTop: 20 },
-    footerText: { fontSize: 16, color: '#555' },
-    linkText: { color: '#b95528', fontWeight: 'bold', fontSize: 15,alignSelf: 'center' },
-    imageContainer: { width: '100%', justifyContent: 'center', alignItems: 'center', height: 180, marginBottom: 5 },
-    logoImage: { width: '65%', height: '100%', resizeMode: 'contain' },
-    passwordOptions: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
+  container: {
+    flex: 1,
+    backgroundColor: '#005C70', // Teal background
+  },
+  scrollContent: {
+    padding: 24,
+    minHeight: '100%',
+    justifyContent: 'center',
+  },
+  headerContainer: {
+    alignItems: 'flex-start', // Left align as per design? Or standard center? Design image 3 has large left aligned text.
+    marginBottom: 30,
+    marginTop: 20,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 20,
+  },
+  logoImage: {
+    width: 100,
+    height: 100,
+    resizeMode: 'contain',
+  },
+  heroText: {
+    fontSize: 42,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'left',
+    lineHeight: 46,
+  },
+  welcomeText: {
+    fontSize: 20,
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 30,
+    fontWeight: '600'
+  },
+  formContainer: {
+    marginBottom: 20,
+  },
+  inputField: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.5)',
+    height: 50,
+    fontSize: 16,
+    color: '#fff',
+    marginBottom: 20,
+  },
+  phoneInputContainer: {
+    width: '100%',
+    backgroundColor: 'transparent',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.5)',
+    elevation: 0,
+    shadowOpacity: 0,
+    height: 50,
+    marginBottom: 20,
+  },
+  phoneInputTextContainer: {
+    backgroundColor: 'transparent',
+    paddingVertical: 0,
+    height: 50,
+  },
+  phoneInputText: {
+    color: '#fff',
+    fontSize: 16,
+    height: 50,
+    textAlignVertical: 'center',
+  },
+  phoneInputCodeText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  countryPickerButton: {
+    backgroundColor: 'transparent',
+    width: 60,
+  },
+  forgotPasswordContainer: {
+    alignItems: 'flex-end',
+    marginTop: -10, // Pull closer to password
+    marginBottom: 20,
+  },
+  forgotPasswordText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+  },
+  button: {
+    backgroundColor: '#fff',
+    paddingVertical: 16,
+    borderRadius: 30,
+    alignItems: 'center',
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  buttonText: {
+    color: '#005C70',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  orContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  orText: {
+    marginHorizontal: 10,
+    color: 'rgba(255,255,255,0.7)',
+  },
+  googleButton: {
+    backgroundColor: '#fff',
+    paddingVertical: 16,
+    borderRadius: 30,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  googleIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 10,
+  },
+  googleButtonText: {
+    color: '#555',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  footerText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 16,
+  },
+  linkText: {
+    color: '#2AB5D1',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  toggleMethodText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+    textDecorationLine: 'underline'
+  }
 });
 ""

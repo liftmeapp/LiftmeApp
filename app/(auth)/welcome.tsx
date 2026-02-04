@@ -1,38 +1,89 @@
-import { onboarding } from "@/constants"; // assuming onboarding[0] is the one you want
-import { router } from "expo-router";
-import { Dimensions, ImageBackground, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-const { width, height } = Dimensions.get("window");
+import { useRouter } from "expo-router";
+import React from "react";
+import {
+  Dimensions,
+  Image,
+  StatusBar,
+  StyleSheet,
+  TouchableOpacity,
+  View
+} from "react-native";
 
+const { width } = Dimensions.get("window");
 
-const Home = () => {
-  const item = onboarding[0]; // only show the first item
+const WelcomeScreen = () => {
+  const router = useRouter();
+
+  const handlePress = () => {
+    router.replace("/(auth)/signup");
+  };
+
   return (
-    <SafeAreaView className="flex-1">
-      <View className="flex-1 relative">
-      <ImageBackground
-        source={require("@/assets/images/screen.png")}
-        style={StyleSheet.absoluteFillObject}
-        resizeMode="cover"
-      />
+    <TouchableOpacity
+      style={styles.container}
+      activeOpacity={0.9}
+      onPress={handlePress}
+    >
+      <StatusBar barStyle="light-content" />
+      <View style={styles.contentContainer}>
+        {/* Logo */}
+        <View style={styles.logoContainer}>
+          <Image
+            source={require("@/assets/icons/Liftme App icon black.png")} // Updated logo
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </View>
+
+        {/* Loading Bar at the bottom */}
+        <View style={styles.loaderContainer}>
+          <View style={styles.loaderBar}>
+            <View style={styles.loaderProgress} />
+          </View>
+        </View>
       </View>
-      {/* Button */}
-      <View className="items-center justify-center ">
-      <TouchableOpacity
-        onPress={() => {
-          router.replace("/(auth)/signup");
-          console.log("Get Started");
-        }}
-        className="w-[12rem] mt-10 bg-[#7b381a]  absolute bottom-16 mb-20 rounded-2xl py-3 px-4 opacity-80 shadow-lg "
-        >
-          <Text className=" w-full text-white font-extrabold text-xl text-center">
-            Get Started
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+    </TouchableOpacity>
   );
 };
 
-export default Home;
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#005C70", // Deep Teal color
+  },
+  contentContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  logoContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  logo: {
+    width: width * 0.5,
+    height: width * 0.5,
+  },
+  loaderContainer: {
+    width: "100%",
+    alignItems: "center",
+    paddingBottom: 50, // Space from bottom
+  },
+  loaderBar: {
+    width: width * 0.6,
+    height: 6,
+    backgroundColor: "#004252", // Darker shade for track
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  loaderProgress: {
+    width: "50%", // Fixed partial progress as shown in static design
+    height: "100%",
+    backgroundColor: "#2AB5D1", // Bright Cyan/Blue for progress
+    borderRadius: 3,
+  },
+});
+
+export default WelcomeScreen;
 

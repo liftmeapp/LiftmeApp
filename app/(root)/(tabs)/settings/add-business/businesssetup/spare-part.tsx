@@ -1,7 +1,6 @@
 import RotatingLoader from '@/components/RotatingLoader';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -14,14 +13,21 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 const PartCard = ({ part, onDelete }: { part: any, onDelete: (id: string) => void }) => (
     <View style={styles.card}>
-        <Image source={{ uri: part.images[0] || 'https://via.placeholder.com/150' }} style={styles.cardImage} />
+        <View style={styles.cardIcon}>
+            <Image source={{ uri: part.images[0] || 'https://via.placeholder.com/150' }} style={styles.cardImage} />
+        </View>
         <View style={styles.cardDetails}>
             <Text style={styles.cardTitle}>{part.partName}</Text>
-            <Text style={styles.cardSubtitle}>{`INR${part.price.toFixed(2)} • Qty: ${part.quantity}`}</Text>
-            <Text style={styles.cardInfo}>{part.brand || 'No Brand'}</Text>
+            <Text style={styles.cardSubtitle}>{`INR${part.price.toFixed(2)}`}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <View style={{ backgroundColor: '#e0f2f1', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginRight: 8 }}>
+                    <Text style={{ color: '#005C70', fontSize: 12, fontWeight: 'bold' }}>Qty: {part.quantity}</Text>
+                </View>
+                <Text style={styles.cardInfo}>{part.brand || 'Generic'}</Text>
+            </View>
         </View>
         <TouchableOpacity style={styles.deleteButton} onPress={() => onDelete(part.id)}>
-            <Ionicons name="trash-outline" size={24} color="#e74c3c" />
+            <Ionicons name="trash-outline" size={22} color="#e74c3c" />
         </TouchableOpacity>
     </View>
 );
@@ -40,10 +46,10 @@ const OrderCard = ({ order, onAccept, onChat, onConfirmSale, isAccepting, isConf
             <Ionicons name="person-circle" size={20} color="#9b55b6" />
             <Text style={styles.bookingText}>{`${order.user.firstName} ${order.user.lastName}`}</Text>
         </View>
-        <View style={styles.bookingActions}>
+        <View style={[styles.bookingActionsRow]}>
             {ordersSubTab === 'Pending' && order.status === 'PENDING_ACCEPTANCE' && (
-                <TouchableOpacity 
-                    style={[styles.bookingButton, styles.acceptButton, isAccepting && styles.disabledButton]} 
+                <TouchableOpacity
+                    style={[styles.actionButton, styles.acceptButton, isAccepting && styles.disabledButton]}
                     onPress={() => onAccept(order.id)}
                     disabled={isAccepting}
                 >
@@ -56,23 +62,23 @@ const OrderCard = ({ order, onAccept, onChat, onConfirmSale, isAccepting, isConf
             )}
             {ordersSubTab === 'Current' && (
                 <>
-                    <TouchableOpacity 
-                        style={[styles.bookingButton, styles.chatButton]} 
+                    <TouchableOpacity
+                        style={[styles.actionButton, styles.chatButton]}
                         onPress={() => onChat(order.id)}
                     >
                         <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
-                        <Text style={styles.bookingButtonText}>Chat</Text>
+                        <Text style={styles.actionButtonText}>Chat</Text>
                     </TouchableOpacity>
                     {['CONFIRMED', 'IN_PROGRESS'].includes(order.status) && (
-                        <TouchableOpacity 
-                            style={[styles.bookingButton, styles.completeButton, isConfirming && styles.disabledButton]} 
+                        <TouchableOpacity
+                            style={[styles.actionButton, styles.completeButton, isConfirming && styles.disabledButton]}
                             onPress={() => onConfirmSale(order.id)}
                             disabled={isConfirming}
                         >
                             {isConfirming ? (
                                 <ActivityIndicator size="small" color="#fff" />
                             ) : (
-                                <Text style={styles.bookingButtonText}>Confirm Sale</Text>
+                                <Text style={styles.actionButtonText}>Confirm Sale</Text>
                             )}
                         </TouchableOpacity>
                     )}
@@ -155,20 +161,22 @@ export default function SparePartDashboard() {
     const handleDeletePart = async (partId: string) => {
         Alert.alert("Delete Spare Part", "Are you sure?", [
             { text: "Cancel", style: "cancel" },
-            { text: "Delete", style: "destructive", onPress: async () => {
-                try {
-                    const token = await getToken();
-                    const response = await fetch(`${API_BASE_URL}/api/spare-parts/${partId}`, {
-                        method: 'DELETE',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (!response.ok) throw new Error("Failed to delete spare part.");
-                    Alert.alert("Success", "Spare part deleted successfully.");
-                    fetchData(); // Refresh parts
-                } catch (error: any) {
-                    Alert.alert("Error", error.message);
+            {
+                text: "Delete", style: "destructive", onPress: async () => {
+                    try {
+                        const token = await getToken();
+                        const response = await fetch(`${API_BASE_URL}/api/spare-parts/${partId}`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (!response.ok) throw new Error("Failed to delete spare part.");
+                        Alert.alert("Success", "Spare part deleted successfully.");
+                        fetchData(); // Refresh parts
+                    } catch (error: any) {
+                        Alert.alert("Error", error.message);
+                    }
                 }
-            } }
+            }
         ]);
     };
 
@@ -225,32 +233,32 @@ export default function SparePartDashboard() {
                 return;
             }
             console.log('[handleChat] Token retrieved. Fetching chat room...');
-    
+
             const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/chat`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
             });
-    
+
             console.log(`[handleChat] API response status: ${response.status}`);
-    
+
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response.' }));
                 console.error('[handleChat] API response not OK:', errorData);
                 throw new Error(errorData.error || "Failed to get or create chat.");
             }
-    
+
             const chat = await response.json();
             console.log('[handleChat] Chat data received:', chat);
-    
+
             if (!chat || !chat.id) {
                 console.error('[handleChat] Invalid chat data received from API:', chat);
                 throw new Error("Received invalid chat data from server.");
             }
-    
+
             console.log(`[handleChat] Navigating to /chat/${chat.id}`);
             router.push(`/conversation/${chat.id}`);
             console.log('[handleChat] Navigation command issued.');
-    
+
         } catch (error: any) {
             console.error('[handleChat] CATCH block error:', error);
             Alert.alert("Chat Error", error.message);
@@ -292,25 +300,25 @@ export default function SparePartDashboard() {
 
     return (
         <SafeAreaView style={styles.container}>
-            
+
             {loading ? (
                 <View style={styles.centered}><RotatingLoader /></View>
             ) : (
                 <FlatList
                     data={mainTab === 'Products' ? parts : orders}
                     keyExtractor={(item) => item.id}
-                    renderItem={({ item }) => 
-                        mainTab === 'Products' 
-                            ? <PartCard part={item} onDelete={handleDeletePart} /> 
-                            : <OrderCard 
-                                order={item} 
-                                onAccept={handleAcceptOrder} 
-                                onChat={handleChat} 
+                    renderItem={({ item }) =>
+                        mainTab === 'Products'
+                            ? <PartCard part={item} onDelete={handleDeletePart} />
+                            : <OrderCard
+                                order={item}
+                                onAccept={handleAcceptOrder}
+                                onChat={handleChat}
                                 onConfirmSale={handleConfirmSale}
-                                isAccepting={acceptingId === item.id} 
+                                isAccepting={acceptingId === item.id}
                                 isConfirming={confirmingId === item.id}
                                 ordersSubTab={ordersSubTab}
-                              />
+                            />
                     }
                     ListHeaderComponent={renderListHeader()}
                     ListEmptyComponent={renderEmptyComponent(mainTab === 'Products' ? 'products' : 'orders')}
@@ -321,11 +329,9 @@ export default function SparePartDashboard() {
 
             {mainTab === 'Products' && (
                 <View style={styles.fabContainer}>
-                    <TouchableOpacity onPress={() => router.push('/settings/add-business/businesssetup/add-spare-part')}>
-                        <LinearGradient colors={['#c3683c', '#b95528']} style={styles.fab}>
-                            <Ionicons name="add" size={28} color="#fff" />
-                            <Text style={styles.fabText}>List New Part</Text>
-                        </LinearGradient>
+                    <TouchableOpacity onPress={() => router.push('/settings/add-business/businesssetup/add-spare-part')} activeOpacity={0.8} style={styles.fab}>
+                        <Ionicons name="add" size={24} color="#005C70" />
+                        <Text style={styles.fabText}>List New Part</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -338,35 +344,72 @@ export default function SparePartDashboard() {
 // ===================================================================
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#f8f9fa", marginTop:5 },
+    container: { flex: 1, backgroundColor: "#f8f9fa", marginTop: 5 },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     // Main Tabs
     mainTabContainer: { flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: 15, borderRadius: 10, padding: 5, marginTop: 10, marginBottom: 10, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
     mainTab: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
-    activeMainTab: { backgroundColor: '#b95528' },
-    mainTabText: { fontSize: 16, fontWeight: 'bold', color: '#b95528' },
+    activeMainTab: { backgroundColor: '#005C70' },
+    mainTabText: { fontSize: 16, fontWeight: 'bold', color: '#005C70' },
     activeMainTabText: { color: '#fff' },
     // Sub Tabs (for Orders)
     tabContainer: { flexDirection: 'row', backgroundColor: '#e9ecef', marginHorizontal: 15, borderRadius: 10, padding: 4, marginTop: 5, marginBottom: 15 },
     tab: { flex: 1, padding: 10, borderRadius: 8, alignItems: 'center' },
     activeTab: { backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 2 },
     tabText: { fontSize: 14, fontWeight: '600', color: '#6c757d' },
-    activeTabText: { color: '#b95528' },
+    activeTabText: { color: '#005C70' },
     // Cards
-    card: { backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', marginHorizontal: 15, marginVertical: 8, padding: 15, borderRadius: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
-    cardImage: { width: 60, height: 60, borderRadius: 8, marginRight: 15, backgroundColor: '#eee' },
+    card: {
+        backgroundColor: '#fff',
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: 15,
+        marginVertical: 6,
+        padding: 16,
+        borderRadius: 20,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    cardIcon: {
+        width: 60,
+        height: 60,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+        borderRadius: 15,
+        marginRight: 15,
+        overflow: 'hidden'
+    },
+    cardImage: { width: '100%', height: '100%', resizeMode: 'cover' },
     cardDetails: { flex: 1 },
-    cardTitle: { fontSize: 17, fontWeight: 'bold', color: '#333' },
-    cardSubtitle: { fontSize: 15, color: '#555', marginTop: 2, fontWeight: '500' },
-    cardInfo: { fontSize: 13, color: '#888', marginTop: 3 },
-    deleteButton: { padding: 8 },
+    cardTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
+    cardSubtitle: { fontSize: 14, color: '#005C70', marginTop: 2, fontWeight: '600' },
+    cardInfo: { fontSize: 13, color: '#888' },
+    deleteButton: { padding: 10 },
     // Empty State
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80, paddingBottom: 80 },
     emptyText: { marginTop: 15, fontSize: 20, fontWeight: '600', color: '#999' },
     // FAB
-    fabContainer: { position: 'absolute', bottom: 20, left: 20, right: 20, alignItems: 'center' },
-    fab: { flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 30, alignItems: 'center', elevation: 5 },
-    fabText: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
+    fabContainer: { position: 'absolute', bottom: 100, left: 0, right: 0, alignItems: 'center' },
+    fab: {
+        flexDirection: 'row',
+        paddingVertical: 15,
+        paddingHorizontal: 30,
+        backgroundColor: '#fff', // White pill
+        borderRadius: 30,
+        alignItems: 'center',
+        elevation: 5,
+        shadowColor: '#005C70',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e0e0e0'
+    },
+    fabText: { color: '#005C70', fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
     // Booking Card (for orders)
     bookingCard: { backgroundColor: '#fff', borderRadius: 12, padding: 15, marginBottom: 15, marginHorizontal: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3 },
     bookingHeader: { flexDirection: 'row', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#f0f0f0', paddingBottom: 10, marginBottom: 10, },
@@ -374,8 +417,9 @@ const styles = StyleSheet.create({
     bookingPrice: { fontSize: 16, fontWeight: 'bold', color: '#2c3e50' },
     bookingDetails: { flexDirection: 'row', alignItems: 'center', marginVertical: 5 },
     bookingText: { fontSize: 15, color: '#34495e', marginLeft: 10 },
-    bookingActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-    bookingButton: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 8, marginLeft: 10, minHeight: 50, justifyContent: 'center', alignItems: 'center' },
+    bookingActionsRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#f0f0f0', gap: 10 },
+    actionButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, minWidth: 110 },
+    actionButtonText: { color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 6 },
     acceptButton: { backgroundColor: '#27ae60' },
     chatButton: { backgroundColor: '#3498db' },
     completeButton: { backgroundColor: '#9b59b6' },

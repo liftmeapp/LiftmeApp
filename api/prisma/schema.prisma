@@ -136,7 +136,7 @@
     towTruck TowTruck?
     sparePartStore SparePartStore?
     bookings Booking[]
-    stripeCustomerId String? @unique
+    stripeCustomerId String?
 
     messages Message[] @relation("UserMessages")
 
@@ -405,7 +405,8 @@
     sparePartStoreId String? @db.ObjectId
     sparePartStore SparePartStore? @relation(fields: [sparePartStoreId], references: [id])
 
-    chat Chat?
+    chatId String? @db.ObjectId
+    chat Chat? @relation(fields: [chatId], references: [id])
 
     @@index([userId, status])
     @@index([garageId, status])
@@ -432,9 +433,7 @@ model Chat {
 
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
 
-  bookingId String    @unique @db.ObjectId
-
-  booking   Booking   @relation(fields: [bookingId], references: [id])
+  bookings  Booking[]
 
   
 

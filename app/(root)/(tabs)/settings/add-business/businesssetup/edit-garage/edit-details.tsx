@@ -1,16 +1,22 @@
 // /app/(root)/(tabs)/settings/add-business/businesssetup/edit-garage/edit-details.tsx
-import React, { useState, useEffect } from 'react';
-import { 
-    View, Text, TextInput, TouchableOpacity, StyleSheet, 
-    ScrollView, Alert, ActivityIndicator, SafeAreaView,
-    Platform, KeyboardAvoidingView 
-} from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import RotatingLoader from '@/components/RotatingLoader';
 import { useGarageStore } from '@/store/garageStore';
+import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAuth } from '@clerk/clerk-expo';
-import RotatingLoader from '@/components/RotatingLoader';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text, TextInput, TouchableOpacity,
+    View
+} from 'react-native';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -23,7 +29,7 @@ const Card = ({ title, children }: { title: string, children: React.ReactNode })
 
 const IconInput = ({ icon, ...props }: { icon: keyof typeof Ionicons.glyphMap } & React.ComponentProps<typeof TextInput>) => (
     <View style={styles.inputContainer}>
-        <Ionicons name={icon} size={20} color="#888" style={styles.inputIcon} />
+        <Ionicons name={icon} size={22} color="#005C70" style={styles.inputIcon} />
         <TextInput style={styles.input} {...props} />
     </View>
 );
@@ -33,7 +39,7 @@ export default function EditGarageDetailsScreen() {
     const { garageId } = useLocalSearchParams<{ garageId: string }>();
     const { details, setDetails, setStripeAccountId, setServices, setSupportedVehicleTypes } = useGarageStore();
     const { getToken } = useAuth();
-    
+
     const [isLoading, setIsLoading] = useState(true);
     const [isConnectingStripe, setIsConnectingStripe] = useState(false);
 
@@ -58,7 +64,7 @@ export default function EditGarageDetailsScreen() {
                     const errorText = await response.text();
                     throw new Error(`Failed to fetch garage details: ${errorText}`);
                 }
-                
+
                 const data = await response.json();
                 console.log("EditGarageDetailsScreen: Full garage data fetched from API:", data);
                 console.log("EditGarageDetailsScreen: Data fetched, populating store.");
@@ -74,7 +80,7 @@ export default function EditGarageDetailsScreen() {
                     numberOfEmployees: data.numberOfEmployees ? String(data.numberOfEmployees) : '0',
                     stripeAccountId: data.stripeAccountId || null,
                 });
-                
+
                 // Also populate the services in the store so the next screen is pre-filled
                 if (data.services && Array.isArray(data.services)) {
                     console.log("EditGarageDetailsScreen: Populating services with:", data.services);
@@ -108,7 +114,7 @@ export default function EditGarageDetailsScreen() {
 
     const handleConnectStripe = async () => {
         setIsConnectingStripe(true);
-        await new Promise(resolve => setTimeout(resolve, 1500)); 
+        await new Promise(resolve => setTimeout(resolve, 1500));
         const fakeStripeId = 'acct_' + Math.random().toString(36).substring(2, 15);
         setStripeAccountId(fakeStripeId);
         setIsConnectingStripe(false);
@@ -122,9 +128,9 @@ export default function EditGarageDetailsScreen() {
         if (!details.stripeAccountId) {
             return Alert.alert('Payouts Not Set Up', 'Please connect a Stripe account to receive payments before continuing.');
         }
-        router.push({ 
-            pathname: '/settings/add-business/businesssetup/edit-garage/edit-services', 
-            params: { garageId } 
+        router.push({
+            pathname: '/settings/add-business/businesssetup/edit-garage/edit-services',
+            params: { garageId }
         });
     };
 
@@ -138,8 +144,9 @@ export default function EditGarageDetailsScreen() {
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <KeyboardAvoidingView 
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+            <Stack.Screen options={{ title: 'Edit Garage Details', headerBackTitle: 'Back' }} />
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
             >
                 <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
@@ -170,7 +177,7 @@ export default function EditGarageDetailsScreen() {
                             <TouchableOpacity style={styles.stripeButton} onPress={handleConnectStripe} disabled={isConnectingStripe}>
                                 {isConnectingStripe ? <ActivityIndicator color="#fff" /> : (
                                     <>
-                                        <Ionicons name="card" size={20} color="#fff" style={{ marginRight: 10 }}/>
+                                        <Ionicons name="card" size={20} color="#fff" style={{ marginRight: 10 }} />
                                         <Text style={styles.stripeButtonText}>Connect with Stripe</Text>
                                     </>
                                 )}
@@ -180,7 +187,7 @@ export default function EditGarageDetailsScreen() {
 
                     <TouchableOpacity onPress={handleNext}>
                         <LinearGradient
-                            colors={['#c3683c', '#b95528']}
+                            colors={['#005C70', '#004252']}
                             style={styles.button}
                         >
                             <Text style={styles.buttonText}>Next: Update Services</Text>
@@ -196,7 +203,7 @@ export default function EditGarageDetailsScreen() {
 const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: '#f8f9fa',
+        backgroundColor: '#eef0f3',
     },
     centered: {
         flex: 1,
@@ -205,73 +212,75 @@ const styles = StyleSheet.create({
     },
     scrollContainer: {
         paddingHorizontal: 16,
-        paddingBottom: 40,
+        paddingBottom: 120,
     },
     headerContainer: {
         alignItems: 'center',
-        paddingVertical: 20,
+        paddingVertical: 24,
     },
     title: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: '#333',
+        fontSize: 26,
+        fontWeight: '700',
+        color: '#1a1a1a',
     },
     subtitle: {
-        fontSize: 16,
+        fontSize: 15,
         color: '#666',
-        marginTop: 4,
+        marginTop: 6,
+        fontWeight: '500',
     },
     card: {
         backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 20,
+        borderRadius: 20,
+        padding: 24,
         marginBottom: 20,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.05,
-        shadowRadius: 8,
+        shadowRadius: 10,
         elevation: 3,
     },
     cardTitle: {
-        fontSize: 20,
-        fontWeight: '600',
-        color: '#333',
-        marginBottom: 15,
-        paddingBottom: 5,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee'
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#005C70',
+        marginBottom: 20,
+        paddingBottom: 0,
+        borderBottomWidth: 0,
     },
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 8,
-        marginBottom: 15,
-        paddingHorizontal: 10,
-        backgroundColor: '#fdfdfd'
+        borderWidth: 0,
+        borderRadius: 12,
+        marginBottom: 16,
+        paddingHorizontal: 16,
+        backgroundColor: '#f0f0f0',
+        height: 56,
     },
     inputIcon: {
-        marginRight: 10,
+        marginRight: 12,
+        opacity: 0.7,
     },
     input: {
         flex: 1,
-        height: 50,
+        height: '100%',
         fontSize: 16,
         color: '#333',
+        fontWeight: '500',
     },
     payoutsInfo: {
         fontSize: 14,
         color: '#555',
-        marginBottom: 15,
+        marginBottom: 20,
         lineHeight: 21,
     },
     stripeButton: {
         flexDirection: 'row',
         backgroundColor: '#635BFF',
-        paddingVertical: 15,
+        paddingVertical: 16,
         paddingHorizontal: 20,
-        borderRadius: 8,
+        borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
         elevation: 2
@@ -279,13 +288,13 @@ const styles = StyleSheet.create({
     stripeButtonText: {
         color: '#fff',
         fontSize: 16,
-        fontWeight: 'bold',
+        fontWeight: '700',
     },
     stripeConnectedContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 15,
-        borderRadius: 8,
+        padding: 16,
+        borderRadius: 14,
         backgroundColor: '#E8F5E9',
         borderWidth: 1,
         borderColor: '#C8E6C9'
@@ -293,26 +302,26 @@ const styles = StyleSheet.create({
     stripeConnectedText: {
         color: '#2E7D32',
         fontSize: 16,
-        fontWeight: 'bold',
-        marginLeft: 10,
+        fontWeight: '700',
+        marginLeft: 12,
     },
     button: {
         flexDirection: 'row',
-        padding: 15,
-        borderRadius: 12,
+        padding: 18,
+        borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
         marginTop: 10,
-        shadowColor: '#b95528',
-        shadowOffset: { width: 0, height: 4 },
+        shadowColor: '#005C70',
+        shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.3,
-        shadowRadius: 5,
+        shadowRadius: 12,
         elevation: 6,
     },
     buttonText: {
         color: '#fff',
         fontSize: 18,
-        fontWeight: 'bold',
-        marginRight: 10,
+        fontWeight: '700',
+        marginRight: 8,
     },
 });

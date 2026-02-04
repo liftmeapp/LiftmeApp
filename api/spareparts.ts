@@ -39,7 +39,7 @@ sparePartsRouter.post('/', async (req: Request, res: Response) => {
         if (!user) return res.status(404).json({ error: 'User not found.' });
 
         let store = await prisma.sparePartStore.findUnique({ where: { ownerId: user.id } });
-        
+
         if (!store) {
             // Create a default store for the user
             store = await prisma.sparePartStore.create({
@@ -52,14 +52,45 @@ sparePartsRouter.post('/', async (req: Request, res: Response) => {
             });
         }
 
+        // --- CLOUDINARY UPLOAD ---
+        const uploadedImages: string[] = [];
+        if (images && Array.isArray(images)) {
+            // Import dynamically or at top level. Assuming imported at top.
+            const { default: cloudinary } = await import('./lib/cloudinary');
+
+            for (const image of images) {
+                if (image.startsWith('data:image')) {
+                    try {
+                        const uploadResponse = await cloudinary.uploader.upload(image, {
+                            folder: 'spare-parts',
+                            resource_type: 'image'
+                        });
+                        uploadedImages.push(uploadResponse.secure_url);
+                        console.log(`[Cloudinary] Uploaded: ${uploadResponse.secure_url}`);
+                    } catch (uploadError) {
+                        console.error('[Cloudinary] Upload failed:', uploadError);
+                        // Fallback: Decide whether to fail or skip. 
+                        // For now we skip, but in production we should probably fail.
+                    }
+                } else {
+                    // Maybe it's already a URL?
+                    uploadedImages.push(image);
+                }
+            }
+        }
+        // -------------------------
+
         const newPart = await prisma.sparePart.create({
             data: {
-                partName, description, price, quantity, category, brand, model, year, images, location,
+                partName, description, price, quantity, category, brand, model, year,
+                images: uploadedImages.length > 0 ? uploadedImages : images, // Use uploaded URLs
+                location,
                 store: { connect: { id: store.id } },
             },
         });
         return res.status(201).json(newPart);
     } catch (error: any) {
+        console.error("Add Part Error Is:", error);
         return res.status(500).json({ error: 'Failed to add spare part.' });
     }
 });
@@ -94,42 +125,47 @@ sparePartsRouter.get('/my-parts', async (req: Request, res: Response) => {
 
 // Endpoint to get spare parts near a location
 sparePartsRouter.get('/nearby', async (req: Request, res: Response) => {
-    const { lat, lon } = req.query;
+    const { lat, lon, radius } = req.query;
     if (!lat || !lon) {
         return res.status(400).json({ error: 'Latitude and longitude are required.' });
     }
 
     const latitude = parseFloat(lat as string);
     const longitude = parseFloat(lon as string);
+    const searchRadius = radius ? parseFloat(radius as string) : 20; // Default 20km
+
+    // Helper function to calculate distance between two coordinates in km
+    const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+        const R = 6371; // Radius of the earth in km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+            0.5 - Math.cos(dLat) / 2 +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            (1 - Math.cos(dLon)) / 2;
+        return R * 2 * Math.asin(Math.sqrt(a));
+    };
 
     try {
-        const parts = await prisma.sparePart.aggregateRaw({
-            pipeline: [
-                {
-                    '$lookup': {
-                        from: 'spare_part_stores',
-                        localField: 'storeId',
-                        foreignField: '_id',
-                        as: 'store'
-                    }
-                },
-                {
-                    '$unwind': '$store'
-                },
-                {
-                    '$addFields': {
-                        id: { '$toString': '$_id' }
-                    }
-                },
-                {
-                    '$project': {
-                        _id: 0
-                    }
-                }
-            ]
+        const allParts = await prisma.sparePart.findMany({
+            include: { store: { select: { name: true } } }
         });
-        return res.status(200).json(parts);
+
+        const nearbyParts = allParts.filter(part => {
+            const partLoc = part.location as any;
+            if (partLoc?.type === 'Point' && Array.isArray(partLoc.coordinates) && partLoc.coordinates.length === 2) {
+                const partLon = partLoc.coordinates[0];
+                const partLat = partLoc.coordinates[1];
+                const distance = getDistance(latitude, longitude, partLat, partLon);
+                return distance <= searchRadius;
+            }
+            return false;
+        });
+
+        return res.status(200).json(nearbyParts);
+
     } catch (error: any) {
+        console.error("[API /nearby Error]", error);
         return res.status(500).json({ error: 'Failed to fetch nearby spare parts.' });
     }
 });

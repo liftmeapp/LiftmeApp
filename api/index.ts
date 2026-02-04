@@ -3,6 +3,7 @@ import { ClerkExpressWithAuth, clerkClient } from '@clerk/clerk-sdk-node';
 import { Client } from '@googlemaps/google-maps-services-js';
 import { PrismaClient, Role } from '@prisma/client';
 import cors from 'cors';
+import 'dotenv/config'; // Load environment variables first
 import express, { Request, Response } from 'express';
 import { createServer } from 'http';
 import { Webhook } from 'svix';
@@ -10,16 +11,21 @@ import adminRouter from './admin';
 import bookingsRouter from './bookings';
 import chatRoutes from './chat';
 import garagesRouter from './garages';
-import { attachSocketServer } from './socket';
+import { initSocketIO, io } from './socket'; // Import initSocketIO
 import sparePartRoutes from './spareparts';
-import towTruckRoutes from './towtruck';
-import vehiclesRouter from './vehicles';
 import stripeRouter from './stripe';
+import towTruckRoutes from './towtruck';
+import { ensureUserRecord } from './utils/ensureUserRecord';
+import vehiclesRouter from './vehicles';
 
 const prisma = new PrismaClient();
 const app = express();
 const httpServer = createServer(app);
-attachSocketServer(httpServer); // Attach the socket server
+
+// Initialize Socket.IO using the shared module
+initSocketIO(httpServer);
+app.set('socketio', io); // Make io accessible to our router
+
 app.use(cors());
 const CLERK_WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
@@ -143,15 +149,15 @@ app.post(
                 });
                 console.log("✅ User successfully updated in database for Clerk ID:", id);
             } catch (dbError: any) {
-                if (dbError.code === 'P2025') { 
-                     console.warn(`⚠️ User with Clerk ID ${id} not found in local DB for update.`);
+                if (dbError.code === 'P2025') {
+                    console.warn(`⚠️ User with Clerk ID ${id} not found in local DB for update.`);
                 } else {
                     console.error('🔴 Database error updating user:', dbError);
                 }
                 return res.status(200).json({ message: 'Webhook processed, but DB update failed.' });
             }
         } else {
-             console.log(`Received unhandled event type: ${eventType}`);
+            console.log(`Received unhandled event type: ${eventType}`);
         }
 
         // Send a 200 response to acknowledge receipt of the event
@@ -164,7 +170,7 @@ app.use(garagesRouter); // Mount garagesRouter directly
 app.use(towTruckRoutes); // Mount towTruckRoutes directly
 app.use('/api/stripe', stripeRouter);
 app.use('/api/admin', adminRouter);
-app.use('/api/vehicles', vehiclesRouter);
+app.use(vehiclesRouter);
 app.use('/api', bookingsRouter);
 app.get(
     '/api/services',
@@ -209,14 +215,11 @@ app.get(
             return res.status(401).json({ error: 'User not authenticated.' });
         }
         try {
-            const userInDb = await prisma.user.findUnique({
-                where: { clerkId: clerkId },
-            });
-
+            const userInDb = await ensureUserRecord(prisma, clerkId);
             if (!userInDb) {
                 return res.status(404).json({ error: 'User not found in database.' });
             }
-            
+
             return res.status(200).json(userInDb);
 
         } catch (error) {
@@ -236,8 +239,13 @@ app.get(
             return res.status(401).json({ error: 'Unauthorized' });
         }
         try {
+            const baseUser = await ensureUserRecord(prisma, ownerId);
+            if (!baseUser) {
+                return res.status(404).json({ error: 'User profile not found.' });
+            }
+
             const userWithBusiness = await prisma.user.findUnique({
-                where: { clerkId: ownerId },
+                where: { id: baseUser.id },
                 include: {
                     garage: true,
                     towTruck: true,
@@ -266,14 +274,7 @@ app.get(
         }
         try {
             // Find the user in YOUR database using their clerkId
-            const userInDb = await prisma.user.findUnique({
-                where: { clerkId: clerkId },
-                select: {
-                    // We only need to select the roles field
-                    role: true,
-                },
-            });
-
+            const userInDb = await ensureUserRecord(prisma, clerkId);
             if (!userInDb) {
                 return res.status(404).json({ error: 'User not found in database.' });
             }
@@ -323,7 +324,7 @@ app.delete(
                 }
                 if (user.towTruck) {
                     await tx.towTruckService.deleteMany({ where: { towTruckId: user.towTruck.id } });
-                    await tx.liveTruckLocation.delete({ where: { towTruckId: user.towTruck.id } }).catch(() => {});
+                    await tx.liveTruckLocation.delete({ where: { towTruckId: user.towTruck.id } }).catch(() => { });
                     await tx.towTruck.delete({ where: { id: user.towTruck.id } });
                 }
                 if (user.sparePartStore) {

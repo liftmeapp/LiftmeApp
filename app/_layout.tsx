@@ -1,3 +1,4 @@
+import 'react-native-get-random-values';
 // app/_layout.tsx
 import RotatingLoader from "@/components/RotatingLoader";
 import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-expo";
@@ -8,6 +9,7 @@ import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BookingProvider } from '../context/BookingContext';
+import { SocketProvider } from '../context/SocketContext';
 import { TowingBookingProvider } from '../context/TowingBookingContext';
 import "../global.css";
 
@@ -32,15 +34,17 @@ const tokenCache = {
 export default function RootLayout() {
     return (
         <ClerkProvider tokenCache={tokenCache} publishableKey={CLERK_PUBLISHABLE_KEY as string}>
-            <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY!}>
-                <BookingProvider>
-                    <TowingBookingProvider>
-                        <GestureHandlerRootView style={{ flex: 1 }}>
-                            <InitialLayout />
-                        </GestureHandlerRootView>
-                    </TowingBookingProvider>
-                </BookingProvider>
-            </StripeProvider>
+            <SocketProvider>
+                <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY!}>
+                    <BookingProvider>
+                        <TowingBookingProvider>
+                            <GestureHandlerRootView style={{ flex: 1 }}>
+                                <InitialLayout />
+                            </GestureHandlerRootView>
+                        </TowingBookingProvider>
+                    </BookingProvider>
+                </StripeProvider>
+            </SocketProvider>
         </ClerkProvider>
     );
 }
@@ -121,7 +125,7 @@ function InitialLayout() {
 
     }, [isAuthLoaded, isUserLoaded, isSignedIn, user, router, pathname, justSignedOut, segments]);
 
-    
+
 
     if (!isAuthLoaded || !isUserLoaded) {
         return (

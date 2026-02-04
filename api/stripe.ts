@@ -8,7 +8,6 @@ const prisma = new PrismaClient();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-04-10',
 });
-
 const router = express.Router();
 
 router.post(
@@ -19,7 +18,6 @@ router.post(
     if (!clerkId) {
       return res.status(401).json({ error: 'User not authenticated.' });
     }
-
     try {
       // Find the user in your database
       const user = await prisma.user.findUnique({

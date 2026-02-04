@@ -1,79 +1,53 @@
 import { useRouter } from 'expo-router';
-import { Dimensions, FlatList, Image, Text, TouchableOpacity, View } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const opts = [{
-  id:1,
+  id: 1,
   name: "Road Services",
-  details:"Providing roadside assistance for your vehicle, tire change, fuel delivery, and more.",
-  icon: require("@/assets/icons/carfix.jpeg"),
+  details: "Providing roadside assistance for your vehicle.", // Shortened for design
+  icon: require("@/assets/icons/carfix.jpeg"), // Or maybe use vector icon if available? Sticking to image for now.
+  vectorIcon: "car-wrench", // Alternative
   link: "/services/roadsidecar-service",
 },
 {
   id: 2,
-  name: "Towing Service",
-  details: "Towing Assitance for your vehicle,with ease and quick service protection.",
+  name: "Towing Services",
+  details: "Towing Assistance for your vehicle.",
   icon: require("@/assets/icons/tow.jpeg"),
+  vectorIcon: "tow-truck",
   link: "/services/towing_service",
 },
-{
-  id:3,
-  name: "Home Service",
-  details:"Providing vehicle repair and maintenance services at your home.",
-  icon: require("@/assets/icons/carhouse.jpeg"),
-  link: "/services/homeservice",
-},
-{
-  id: 4,
-  name: "Electric Vehicle Service",
-  details: "Specialized services for electric vehicles, from  battery checks to charging.",
-  icon: require("@/assets/icons/electricCar.jpeg"),
-  link: "/services/electric-vehicleservice",
-},
 ]
- 
+
 
 export default function NavOptions() {
   const router = useRouter();
-    return (
-      <FlatList
-      className="mx-1 mb-1 h-[12rem]"
-      data={opts}
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      keyExtractor={(item) => item.id.toString()}
-      renderItem={({ item }) => {
-        const isSmallDevice = Dimensions.get('window').width < 380;
-        
-        const containerWidth = isSmallDevice ? 'w-[17rem]' : 'w-[19rem]';
-        const containerHeight = isSmallDevice ? 'h-[8rem]' : 'h-[9rem]';
-        const imageWidth = isSmallDevice ? 'w-[6rem]' : 'w-[7rem]';
-        const imageHeight = isSmallDevice ? 'h-[8rem]' : 'h-[9rem]';
-        const textContainerMargin = isSmallDevice ? 'ml-3' : 'ml-5';
-        const textContainerPadding = isSmallDevice ? 'p-2' : 'p-3';
-        const textMaxWidth = isSmallDevice ? 'max-w-[9rem]' : 'max-w-[10rem]';
-
-        return (
-          <View>
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() => router.push(item.link as any)}
-              className={`bg-[#fff] ${containerWidth} ${containerHeight} overflow-hidden shadow-xl border-red-950/8 shadow-slate-900 m-2 rounded-r-md`}
-            >
-              <View className="flex-row">
-                <Image
-                  source={item.icon}
-                  className={`${imageWidth} ${imageHeight} object-cover overflow-hidden`}
-                />
-                <View className={`${textContainerMargin} ${textContainerPadding} text-wrap overflow-hidden`}>
-                  <Text className={`text-slate-500 text-lg font-bold flex-shrink flex-wrap ${textMaxWidth}`}>{item.name}</Text>
-                  <Text className={`text-slate-300 text-sm mt-2 flex-shrink flex-wrap ${textMaxWidth} pr-1`}>{item.details}</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
+  return (
+    <View className="flex-row justify-between w-full px-2">
+      {opts.map((item) => (
+        <TouchableOpacity
+          key={item.id}
+          activeOpacity={0.9}
+          onPress={() => router.push(item.link as any)}
+          className="w-[48%] h-[8rem] bg-[#005C70] rounded-xl items-center justify-center shadow-md p-2"
+        >
+          {/* 
+                  Using Vector Icons for cleaner look matching the "Road Services" / "Towing Services" 
+                  icons in the mock (White icons). The existing images are JPEGs which might not look good on Teal.
+                  I will try to use Vector Icons if possible, or tint the image white.
+                  The mock shows specific icons. Let's try Vector Icons first as they are cleaner.
+                */}
+          <View className="mb-2">
+            <Icon name={item.vectorIcon} size={40} color="white" />
           </View>
-        );
-      }}
-    />
-    
+
+          <Text className="text-white text-base font-bold text-center">
+            {item.name}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+
   );
 }

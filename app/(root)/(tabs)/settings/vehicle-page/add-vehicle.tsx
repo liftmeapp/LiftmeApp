@@ -1,182 +1,252 @@
+import EmptyState from '@/components/EmptyState';
 import RotatingLoader from '@/components/RotatingLoader';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import { FlatList, LayoutAnimation, Platform, RefreshControl, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// CONFIGURATION
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
- 
-// Reusable Input Component for a consistent look
-const IconInput = ({ icon, ...props }: { icon: keyof typeof Ionicons.glyphMap } & React.ComponentProps<typeof TextInput>) => (
-    <View style={styles.inputContainer}>
-        <Ionicons name={icon} size={22} color="#888" style={styles.inputIcon} />
-        <TextInput
-            style={styles.input}
-            placeholderTextColor="#999"
-            {...props}
-        />
+
+const VehicleCard = ({ vehicle }: { vehicle: any }) => (
+    <View style={styles.card}>
+        <View style={styles.iconContainer}>
+            {vehicle.type === 'BIKE' ? (
+                <Ionicons name="bicycle" size={24} color="#005C70" />
+            ) : (
+                <Ionicons name="car-sport" size={24} color="#005C70" />
+            )}
+        </View>
+        <View style={styles.cardDetails}>
+            <Text style={styles.vehicleName}>{vehicle.brand} {vehicle.name}</Text>
+            <Text style={styles.vehiclePlate}>{vehicle.plateNumber}</Text>
+        </View>
+        <TouchableOpacity style={styles.moreButton}>
+            <Ionicons name="ellipsis-horizontal" size={20} color="#000" />
+        </TouchableOpacity>
     </View>
 );
 
-export default function AddVehicleScreen() {
+export default function MyVehiclesScreen() {
     const { getToken } = useAuth();
     const router = useRouter();
+    const insets = useSafeAreaInsets();
 
-    const [brand, setBrand] = useState('');
-    const [name, setName] = useState('');
-    const [model, setModel] = useState('');
-    const [year, setYear] = useState('');
-    const [plateNumber, setPlateNumber] = useState('');
-    const [colorVal, setColorVal] = useState('');
-    const [type, setType] = useState('SEDAN');
+    const [vehicles, setVehicles] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const [isLoading, setIsLoading] = useState(false);
-
-    const handleAddVehicle = async () => {
-        if (!brand.trim() || !name.trim() || !year.trim() || !plateNumber.trim()) {
-            Alert.alert('Missing Information', 'Please fill out all required fields marked with *.');
-            return;
-        }
-        if (isNaN(parseInt(year)) || year.length !== 4) {
-            Alert.alert('Invalid Year', 'Please enter a valid 4-digit year.');
-            return;
-        }
-
-        setIsLoading(true);
-
+    // Stable Fetch Function
+    const fetchVehicles = useCallback(async (isRefresh = false) => {
         try {
+            if (!isRefresh) setLoading(true);
+            setError(null);
             const token = await getToken();
-            if (!token) throw new Error("Authentication failed. Please sign in again.");
-            
-            const response = await fetch(`${API_BASE_URL}/api/vehicles`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    brand: brand.trim(), name: name.trim(), model: model.trim(),
-                    year, plateNumber: plateNumber.trim().toUpperCase(),
-                    color: colorVal.trim(), type,
-                }),
+            if (!token) return;
+
+            const response = await fetch(`${API_BASE_URL}/api/vehicle/my-vehicles`, {
+                headers: { 'Authorization': `Bearer ${token}` }
             });
 
-            // Robust error handling
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({})); // Catch JSON parse errors
-                throw new Error(errorData.error || `Server responded with status ${response.status}`);
+            if (response.ok) {
+                const data = await response.json();
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setVehicles(data);
+            } else {
+                throw new Error("Failed to fetch vehicles");
             }
-
-            const responseData = await response.json();
-            console.log("Vehicle added:", responseData);
-
-            Alert.alert(
-                'Vehicle Added!',
-                `${brand} ${name} has been successfully added to your profile.`,
-                [{ text: 'OK', onPress: () => router.back() }]
-            );
-
-        } catch (error: any) {
-            console.error("Add vehicle error:", error);
-            Alert.alert('Error', error.message || 'An unexpected error occurred.');
+        } catch (err: any) {
+            console.error("Error fetching vehicles:", err);
+            setError("Unable to load your garage. Please try again.");
         } finally {
-            setIsLoading(false);
+            setLoading(false);
+            setRefreshing(false);
         }
+    }, []);
+
+    // Initial Fetch on Focus
+    useFocusEffect(
+        useCallback(() => {
+            fetchVehicles();
+        }, [])
+    );
+
+    // Manual Refresh Handler
+    const onRefresh = () => {
+        setRefreshing(true);
+        fetchVehicles(true);
     };
 
     return (
-        <SafeAreaView style={styles.safeArea}>
-            <Stack.Screen 
-                options={{
-                    title: 'Add New Vehicle',
-                    headerShown: true,
-                    headerLeft: () => (
-                        <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
-                            <Ionicons name="arrow-back" size={24} color="#b95528" />
-                        </TouchableOpacity>
-                    ),
-                }}
-            />
-            <KeyboardAvoidingView
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                style={{ flex: 1 }}
-            >
-                <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
-                    <View style={styles.headerContainer}>
-                        <Text style={styles.header}>Add a New Vehicle</Text>
-                        <Text style={styles.subHeader}>Enter the details of your vehicle below.</Text>
-                    </View>
+        <View style={[styles.container, { paddingTop: insets.top }]}>
+            <Stack.Screen options={{ headerShown: false }} />
 
-                    <IconInput icon="car-sport-outline" placeholder="Brand (e.g., Toyota) *" value={brand} onChangeText={setBrand} />
-                    <IconInput icon="pricetag-outline" placeholder="Name (e.g., Camry) *" value={name} onChangeText={setName} />
-                    <IconInput icon="information-circle-outline" placeholder="Model (e.g., XSE) (Optional)" value={model} onChangeText={setModel} />
-                    <IconInput icon="calendar-outline" placeholder="Year (e.g., 2023) *" value={year} onChangeText={setYear} keyboardType="numeric" maxLength={4} />
-                    <IconInput icon="id-card-outline" placeholder="Plate Number *" value={plateNumber} onChangeText={(text) => setPlateNumber(text.toUpperCase())} autoCapitalize="characters" />
-                    <IconInput icon="color-palette-outline" placeholder="Color (Optional)" value={colorVal} onChangeText={setColorVal} />
-                    
-                    <Text style={styles.pickerLabel}>Vehicle Type *</Text>
-                    <View style={styles.pickerContainer}>
-                        <Picker selectedValue={type} onValueChange={setType} style={styles.picker}>
-                            <Picker.Item label="Sedan" value="SEDAN" />
-                            <Picker.Item label="Hatchback" value="HATCHBACK" />
-                            <Picker.Item label="SUV" value="SUV" />
-                            <Picker.Item label="Electric Vehicle (EV)" value="EV" />
-                            <Picker.Item label="Motorcycle / Bike" value="BIKE" />
-                            <Picker.Item label="Truck / Van" value="TRUCK" />
-                        </Picker>
-                    </View>
+            {/* Custom Header with Padding */}
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                    <Ionicons name="arrow-back" size={24} color="#000" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>My Vehicles</Text>
+            </View>
 
-                    <TouchableOpacity onPress={handleAddVehicle} disabled={isLoading}>
-                        <LinearGradient
-                            colors={['#c3683c', '#b95528']}
-                            style={styles.button}
-                        >
-                            {isLoading ? (
-                                <RotatingLoader color="#fff" size={15}/>
-                            ) : (
-                                <>
-                                    <Text style={styles.buttonText}>Save Vehicle</Text>
-                                    <Ionicons name="add-circle" size={22} color="#fff" />
-                                </>
-                            )}
-                        </LinearGradient>
-                    </TouchableOpacity>
-                </ScrollView>
-            </KeyboardAvoidingView>
-        </SafeAreaView>
+            {/* Scrollable Content */}
+            {loading && vehicles.length === 0 ? (
+                <View style={styles.centered}>
+                    <RotatingLoader size={40} color="#005C70" />
+                </View>
+            ) : error ? (
+                <EmptyState
+                    title="Connection Issue"
+                    message={error}
+                    iconName="cloud-offline-outline"
+                    actionLabel="Retry"
+                    onAction={() => fetchVehicles(false)}
+                />
+            ) : (
+                <FlatList
+                    style={{ flex: 1 }}
+                    data={vehicles}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => <VehicleCard vehicle={item} />}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+                    contentContainerStyle={styles.listContainer}
+                    showsVerticalScrollIndicator={false}
+                    ListEmptyComponent={
+                        <EmptyState
+                            title="No Vehicles Found"
+                            message="Add a vehicle to manage your garage."
+                            iconName="car-sport-outline"
+                        />
+                    }
+                />
+            )}
+
+            {/* Floating Action Button */}
+            {/* Raised to 100 to clear any potential Bottom Tab Bar */}
+            <View style={[styles.buttonWrapper, { bottom: 100 }]}>
+                <TouchableOpacity
+                    style={styles.addButton}
+                    onPress={() => router.push('/settings/vehicle-page/new-vehicle')}
+                >
+                    <Ionicons name="add" size={24} color="#005C70" style={{ marginRight: 8 }} />
+                    <Text style={styles.addButtonText}>Add New Vehicle</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
     );
-};
+}
 
 const styles = StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: '#f8f9fa',marginTop: 10 },
-    scrollContainer: { flexGrow: 1, padding: 20, marginTop: 10, paddingTop: 40 },
-    headerContainer: { alignItems: 'center', marginBottom: 30 },
-    header: { fontSize: 28, fontWeight: 'bold', color: '#333',marginBottom: 10 },
-    subHeader: { fontSize: 16, color: '#666', marginTop: 8, textAlign: 'center' },
-    inputContainer: {
-        flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
-        borderRadius: 12, borderWidth: 1, borderColor: '#e0e0e0',
-        paddingHorizontal: 15, marginBottom: 15,
+    // ... previous styles ...
+    container: {
+        flex: 1,
+        backgroundColor: '#e0e0e0',
     },
-    inputIcon: { marginRight: 10 },
-    input: { flex: 1, height: 55, fontSize: 16, color: '#333' },
-    pickerLabel: { fontSize: 16, color: '#555', fontWeight: '500', marginBottom: 10, paddingLeft: 5 },
-    pickerContainer: {
-        borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 12,
-        backgroundColor: '#fff', justifyContent: 'center',
-        marginBottom: 25,
+    centered: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#e0e0e0'
     },
-    picker: { height: Platform.OS === 'ios' ? 120 : 55 },
-    button: {
-        flexDirection: 'row', padding: 15, borderRadius: 12,
-        alignItems: 'center', justifyContent: 'center',
-        shadowColor: '#b95528', shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3, shadowRadius: 5, elevation: 6,
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingBottom: 20,
+        paddingTop: 10,
+        backgroundColor: '#e0e0e0',
     },
-    buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginRight: 10 },
+    backButton: {
+        marginRight: 15,
+    },
+    headerTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#000',
+    },
+    listContainer: {
+        paddingHorizontal: 20,
+        paddingBottom: 100, // Space for the floating button
+    },
+    card: {
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        padding: 15,
+        marginBottom: 10, // Reduced from 15
+        flexDirection: 'row',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 5,
+        elevation: 2,
+    },
+    iconContainer: {
+        width: 50,
+        height: 50,
+        borderRadius: 15,
+        backgroundColor: '#b3e5fc',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 15,
+    },
+    cardDetails: {
+        flex: 1,
+    },
+    vehicleName: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#000',
+    },
+    vehiclePlate: {
+        fontSize: 14,
+        color: '#333',
+        marginTop: 2,
+    },
+    moreButton: {
+        padding: 5,
+    },
+    emptyContainer: {
+        alignItems: 'center',
+        marginTop: 50,
+    },
+    emptyText: {
+        color: '#666',
+        fontSize: 16,
+    },
+    buttonWrapper: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        zIndex: 999,
+        elevation: 10,
+    },
+    addButton: {
+        backgroundColor: '#fff',
+        // width: '100%', // Removed full width to be "just wide enough"
+        paddingVertical: 12,
+        paddingHorizontal: 25,
+        borderRadius: 30, // Pill shape
+        flexDirection: 'row', // Icon + Text
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+        elevation: 5,
+    },
+    addButtonText: {
+        color: '#005C70',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
 });
-

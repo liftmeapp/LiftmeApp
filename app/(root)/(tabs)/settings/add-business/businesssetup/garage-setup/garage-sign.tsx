@@ -1,14 +1,20 @@
 // /app/(root)/(tabs)/settings/add-business/businesssetup/garage-setup/garage-sign.tsx
-import React, { useState } from 'react';
-import { 
-    View, Text, TextInput, TouchableOpacity, StyleSheet, 
-    ScrollView, Alert, ActivityIndicator, SafeAreaView,
-    Platform, KeyboardAvoidingView 
-} from 'react-native';
-import { useRouter } from 'expo-router';
 import { useGarageStore } from '@/store/garageStore'; // Adjust path if needed
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient'; // For a nice button gradient
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text, TextInput, TouchableOpacity,
+    View
+} from 'react-native';
 
 // A reusable Card component for grouping inputs
 const Card = ({ title, children }: { title: string, children: React.ReactNode }) => (
@@ -21,7 +27,7 @@ const Card = ({ title, children }: { title: string, children: React.ReactNode })
 // A reusable Input component with an icon
 const IconInput = ({ icon, ...props }: { icon: keyof typeof Ionicons.glyphMap } & React.ComponentProps<typeof TextInput>) => (
     <View style={styles.inputContainer}>
-        <Ionicons name={icon} size={20} color="#888" style={styles.inputIcon} />
+        <Ionicons name={icon} size={22} color="#005C70" style={styles.inputIcon} />
         <TextInput style={styles.input} {...props} />
     </View>
 );
@@ -34,7 +40,7 @@ export default function GarageSignUpScreen() {
     // This simulates the flow of connecting to Stripe
     const handleConnectStripe = async () => {
         setIsConnectingStripe(true);
-        await new Promise(resolve => setTimeout(resolve, 1500)); 
+        await new Promise(resolve => setTimeout(resolve, 1500));
         const fakeStripeId = 'acct_' + Math.random().toString(36).substring(2, 15);
         setStripeAccountId(fakeStripeId);
         setIsConnectingStripe(false);
@@ -54,8 +60,8 @@ export default function GarageSignUpScreen() {
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <KeyboardAvoidingView 
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
             >
                 <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
@@ -86,7 +92,7 @@ export default function GarageSignUpScreen() {
                             <TouchableOpacity style={styles.stripeButton} onPress={handleConnectStripe} disabled={isConnectingStripe}>
                                 {isConnectingStripe ? <ActivityIndicator color="#fff" /> : (
                                     <>
-                                        <Ionicons name="card" size={20} color="#fff" style={{ marginRight: 10 }}/>
+                                        <Ionicons name="card" size={20} color="#fff" style={{ marginRight: 10 }} />
                                         <Text style={styles.stripeButtonText}>Connect with Stripe</Text>
                                     </>
                                 )}
@@ -96,7 +102,7 @@ export default function GarageSignUpScreen() {
 
                     <TouchableOpacity onPress={handleNext}>
                         <LinearGradient
-                            colors={['#c3683c', '#b95528']}
+                            colors={['#005C70', '#004252']}
                             style={styles.button}
                         >
                             <Text style={styles.buttonText}>Next: Add Services</Text>
@@ -112,7 +118,7 @@ export default function GarageSignUpScreen() {
 const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: '#f8f9fa', // A light grey background for the whole screen
+        backgroundColor: '#eef0f3', // Slightly darker than white for contrast
     },
     scrollContainer: {
         paddingHorizontal: 16,
@@ -120,69 +126,72 @@ const styles = StyleSheet.create({
     },
     headerContainer: {
         alignItems: 'center',
-        paddingVertical: 20,
+        paddingVertical: 24,
     },
     title: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: '#333',
+        fontSize: 26, // Slightly smaller, cleaner
+        fontWeight: '700', // Bold but not heavy
+        color: '#1a1a1a',
     },
     subtitle: {
-        fontSize: 16,
+        fontSize: 15,
         color: '#666',
-        marginTop: 4,
+        marginTop: 6,
+        fontWeight: '500',
     },
     card: {
         backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 20,
+        borderRadius: 20, // Increased radius
+        padding: 24, // More breathing room
         marginBottom: 20,
+        // Softer shadow
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.05,
-        shadowRadius: 8,
+        shadowRadius: 10,
         elevation: 3,
     },
     cardTitle: {
-        fontSize: 20,
-        fontWeight: '600',
-        color: '#333',
-        marginBottom: 15,
-        paddingBottom: 5,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee'
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#005C70', // Use brand color for headings
+        marginBottom: 20,
+        paddingBottom: 0, // Removed border
+        borderBottomWidth: 0, // Removed border
     },
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 8,
-        marginBottom: 15,
-        paddingHorizontal: 10,
-        backgroundColor: '#fdfdfd'
+        borderWidth: 0, // Remove border
+        borderRadius: 12, // Rounded inputs
+        marginBottom: 16,
+        paddingHorizontal: 16,
+        backgroundColor: '#f0f0f0', // Gray background
+        height: 56, // Taller inputs
     },
     inputIcon: {
-        marginRight: 10,
+        marginRight: 12,
+        opacity: 0.6, // Softer icons
     },
     input: {
         flex: 1,
-        height: 50,
+        height: '100%',
         fontSize: 16,
         color: '#333',
+        fontWeight: '500',
     },
     payoutsInfo: {
         fontSize: 14,
         color: '#555',
-        marginBottom: 15,
+        marginBottom: 20,
         lineHeight: 21,
     },
     stripeButton: {
         flexDirection: 'row',
         backgroundColor: '#635BFF',
-        paddingVertical: 15,
+        paddingVertical: 16,
         paddingHorizontal: 20,
-        borderRadius: 8,
+        borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
         elevation: 2
@@ -190,13 +199,13 @@ const styles = StyleSheet.create({
     stripeButtonText: {
         color: '#fff',
         fontSize: 16,
-        fontWeight: 'bold',
+        fontWeight: '700',
     },
     stripeConnectedContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 15,
-        borderRadius: 8,
+        padding: 16,
+        borderRadius: 14,
         backgroundColor: '#E8F5E9',
         borderWidth: 1,
         borderColor: '#C8E6C9'
@@ -204,26 +213,26 @@ const styles = StyleSheet.create({
     stripeConnectedText: {
         color: '#2E7D32',
         fontSize: 16,
-        fontWeight: 'bold',
-        marginLeft: 10,
+        fontWeight: '700',
+        marginLeft: 12,
     },
     button: {
         flexDirection: 'row',
-        padding: 15,
-        borderRadius: 12,
+        padding: 18,
+        borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
         marginTop: 10,
-        shadowColor: '#b95528',
-        shadowOffset: { width: 0, height: 4 },
+        shadowColor: '#005C70',
+        shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.3,
-        shadowRadius: 5,
+        shadowRadius: 12,
         elevation: 6,
     },
     buttonText: {
         color: '#fff',
         fontSize: 18,
         fontWeight: 'bold',
-        marginRight: 10,
+        marginRight: 8,
     },
 });
