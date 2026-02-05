@@ -51,7 +51,7 @@ export default function MyVehiclesScreen() {
             const token = await getToken();
             if (!token) return;
 
-            const response = await fetch(`${API_BASE_URL}/api/vehicle/my-vehicles`, {
+            const response = await fetch(`${API_BASE_URL}/api/vehicles`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -64,7 +64,7 @@ export default function MyVehiclesScreen() {
             }
         } catch (err: any) {
             console.error("Error fetching vehicles:", err);
-            setError("Unable to load your garage. Please try again.");
+            setError("Unable to load your vehicles. Please try again.");
         } finally {
             setLoading(false);
             setRefreshing(false);

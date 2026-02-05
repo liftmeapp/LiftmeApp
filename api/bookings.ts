@@ -11,6 +11,20 @@ bookingsRouter.use(ClerkExpressWithAuth());
 // ===================================================================
 bookingsRouter.get('/bookings/history', BookingsController.fetchUserHistory);
 bookingsRouter.get('/bookings/active', BookingsController.fetchActiveBookings);
+bookingsRouter.get('/bookings/:id/status', BookingsController.fetchBookingStatus);
+bookingsRouter.post('/bookings/request-service', BookingsController.requestService);
+bookingsRouter.post('/bookings/request-towing', BookingsController.requestTowing);
+bookingsRouter.post('/bookings/request-tow-to-garage', BookingsController.requestTowToGarage);
+bookingsRouter.post('/bookings/:bookingId/create-payment-intent', BookingsController.createPaymentIntent);
+bookingsRouter.post('/bookings/:bookingId/confirm-payment', BookingsController.confirmPayment);
+bookingsRouter.post('/bookings/:bookingId/confirm-cash', BookingsController.confirmCash);
+bookingsRouter.post('/bookings/:bookingId/cancel-by-user', BookingsController.cancelByUser);
+bookingsRouter.post('/bookings/:bookingId/cancel-by-provider', BookingsController.cancelByProvider);
+bookingsRouter.post('/bookings/:bookingId/cancel', BookingsController.cancelByProvider); // legacy alias used by tow dashboard
+bookingsRouter.post('/bookings/:bookingId/submit-quote', BookingsController.submitQuote);
+bookingsRouter.post('/bookings/:bookingId/submit-final-quote', BookingsController.submitFinalQuote);
+bookingsRouter.post('/bookings/:bookingId/approve-quote', BookingsController.approveQuote);
+bookingsRouter.post('/bookings/:bookingId/reject-quote', BookingsController.rejectQuote);
 
 // ===================================================================
 //  SPARE PART SELLER ROUTES
@@ -30,10 +44,14 @@ bookingsRouter.post('/bookings/:id/accept-tow-in', BookingsController.acceptTowI
 bookingsRouter.post('/bookings/:id/accept-tow', BookingsController.acceptTowBooking);
 bookingsRouter.post('/bookings/:id/decline', BookingsController.declineBooking);
 bookingsRouter.post('/bookings/:id/decline-tow', BookingsController.declineTowBooking);
+bookingsRouter.post('/tow-truck/bookings/:id/accept', BookingsController.acceptTowBooking); // legacy alias
+bookingsRouter.post('/tow-truck/bookings/:id/decline', BookingsController.declineTowBooking); // legacy alias
 
 // ===================================================================
 //  OTP VERIFICATION
 // ===================================================================
+bookingsRouter.post('/bookings/:id/request-completion-otp', BookingsController.requestCompletionOtp);
 bookingsRouter.post('/bookings/:id/verify-otp', BookingsController.verifyOtp);
+bookingsRouter.post('/bookings/:id/verify-otp-tow', BookingsController.verifyTowOtp);
 
 export default bookingsRouter;

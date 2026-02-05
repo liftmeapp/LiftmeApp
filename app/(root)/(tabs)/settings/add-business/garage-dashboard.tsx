@@ -4,8 +4,9 @@ import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import io from "socket.io-client";
 
 // --- CONFIGURATION ---
@@ -86,8 +87,21 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
     ) : null
 );
 
+const getCoords = (location: any): { latitude: number; longitude: number } | null => {
+    if (!location) return null;
+    if (Array.isArray(location.coordinates) && location.coordinates.length >= 2) {
+        return { latitude: Number(location.coordinates[1]), longitude: Number(location.coordinates[0]) };
+    }
+    if (typeof location.latitude === 'number' && typeof location.longitude === 'number') {
+        return { latitude: location.latitude, longitude: location.longitude };
+    }
+    return null;
+};
+
 const CollapsibleBookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onOpenQuoteModal, onOpenFinalQuoteModal, onChat, isAccepting, isDeclining = false, garageLocation, currentTab }: { booking: any, onAccept: (booking: any) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onOpenQuoteModal: (booking: any) => void, onOpenFinalQuoteModal: (booking: any) => void, onChat: (bookingId: string) => void, isAccepting: boolean, isDeclining?: boolean, garageLocation?: any, currentTab: 'Pending' | 'Current' | 'History' }) => {
     const [expanded, setExpanded] = useState(false);
+    const pickupCoords = getCoords(booking.pickupLocation);
+    const garageCoords = getCoords(garageLocation);
 
     const toggleExpanded = () => setExpanded(!expanded);
 
@@ -102,6 +116,9 @@ const CollapsibleBookingCard = ({ booking, onAccept, onDecline, onCancel, onPres
             if (booking.subStatus === 'AWAITING_QUOTE_APPROVAL') {
                 return <View style={[styles.badge, styles.badgeWaiting]}><Text style={styles.badgeText}>QUOTE PENDING</Text></View>;
             }
+            if (booking.subStatus === 'AWAITING_FINAL_APPROVAL') {
+                return <View style={[styles.badge, styles.badgeWaiting]}><Text style={styles.badgeText}>FINAL PENDING</Text></View>;
+            }
             if (booking.subStatus === 'QUOTE_REJECTED') {
                 return <View style={[styles.badge, styles.badgeRejected]}><Text style={styles.badgeText}>EST. REJECTED</Text></View>;
             }
@@ -109,20 +126,32 @@ const CollapsibleBookingCard = ({ booking, onAccept, onDecline, onCancel, onPres
         return null;
     };
 
-    const showCompleteButton =
-        (booking.status === 'CONFIRMED' && booking.bookingType !== 'TOW_TO_GARAGE') ||
-        (booking.status === 'IN_PROGRESS' && booking.subStatus === 'SERVICE_IN_PROGRESS');
+    const hasFinalTowEstimate =
+        booking.finalEstimateAmount !== null && booking.finalEstimateAmount !== undefined;
+    const canVerifyStandardCompletion =
+        booking.bookingType !== 'TOW_TO_GARAGE' &&
+        (booking.status === 'CONFIRMED' || booking.status === 'IN_PROGRESS');
+    const canVerifyTowCompletion =
+        booking.bookingType === 'TOW_TO_GARAGE' &&
+        (booking.status === 'CONFIRMED' || booking.status === 'IN_PROGRESS') &&
+        booking.subStatus === 'SERVICE_IN_PROGRESS' &&
+        hasFinalTowEstimate;
+    const showCompleteButton = canVerifyStandardCompletion || canVerifyTowCompletion;
 
     const showSubmitQuoteButton =
         booking.bookingType === 'TOW_TO_GARAGE' &&
-        booking.status === 'IN_PROGRESS' &&
-        (booking.subStatus === 'AWAITING_GARAGE_QUOTE' || booking.subStatus === 'QUOTE_REJECTED');
+        (
+            (booking.status === 'IN_PROGRESS' &&
+                (booking.subStatus === 'AWAITING_GARAGE_QUOTE' || booking.subStatus === 'QUOTE_REJECTED')) ||
+            (booking.status === 'CONFIRMED' &&
+                (booking.subStatus === 'TOW_TRUCK_ASSIGNED' || booking.subStatus === 'VEHICLE_DELIVERED'))
+        );
 
     const showSubmitFinalQuoteButton =
         booking.bookingType === 'TOW_TO_GARAGE' &&
         booking.status === 'IN_PROGRESS' &&
         booking.subStatus === 'SERVICE_IN_PROGRESS' &&
-        !booking.finalEstimateAmount;
+        !hasFinalTowEstimate;
 
     const showCurrentTabActions =
         currentTab === 'Current' &&
@@ -130,7 +159,8 @@ const CollapsibleBookingCard = ({ booking, onAccept, onDecline, onCancel, onPres
         (booking.bookingType !== 'TOW_TO_GARAGE' ||
             (booking.bookingType === 'TOW_TO_GARAGE' &&
                 (booking.subStatus === 'AWAITING_QUOTE_APPROVAL' ||
-                    (booking.subStatus === 'SERVICE_IN_PROGRESS' && !!booking.finalEstimateAmount))
+                    booking.subStatus === 'AWAITING_FINAL_APPROVAL' ||
+                    (booking.subStatus === 'SERVICE_IN_PROGRESS' && hasFinalTowEstimate))
             )
         );
 
@@ -177,10 +207,50 @@ const CollapsibleBookingCard = ({ booking, onAccept, onDecline, onCancel, onPres
 
                     {/* Status Info */}
                     <View style={styles.expandedSection}>
+                        <InfoRow
+                            icon="navigate-outline"
+                            label="Pickup"
+                            value={booking.pickupAddress || booking.pickupLocation?.description || null}
+                        />
                         <InfoRow icon="location-outline" label="Distance" value={booking.distance ? `${booking.distance.toFixed(1)} km` : 'N/A'} />
                         <InfoRow icon="call-outline" label="Phone" value={booking.user.phone} />
                         <InfoRow icon="information-circle-outline" label="Status" value={booking.status.replace(/_/g, ' ')} />
                     </View>
+
+                    {pickupCoords && garageCoords && (
+                        <View style={styles.mapPreviewContainer}>
+                            <MapView
+                                style={styles.mapPreview}
+                                pointerEvents="none"
+                                scrollEnabled={false}
+                                zoomEnabled={false}
+                                rotateEnabled={false}
+                                pitchEnabled={false}
+                                initialRegion={{
+                                    latitude: (pickupCoords.latitude + garageCoords.latitude) / 2,
+                                    longitude: (pickupCoords.longitude + garageCoords.longitude) / 2,
+                                    latitudeDelta: Math.max(Math.abs(pickupCoords.latitude - garageCoords.latitude) * 2.2, 0.03),
+                                    longitudeDelta: Math.max(Math.abs(pickupCoords.longitude - garageCoords.longitude) * 2.2, 0.03),
+                                }}
+                            >
+                                <Marker coordinate={garageCoords} title="Garage" pinColor="#005C70" />
+                                <Marker coordinate={pickupCoords} title="Customer" />
+                                <Polyline coordinates={[garageCoords, pickupCoords]} strokeColor="#005C70" strokeWidth={3} />
+                            </MapView>
+                            <TouchableOpacity
+                                style={styles.openRouteButton}
+                                onPress={() => {
+                                    const origin = `${garageCoords.latitude},${garageCoords.longitude}`;
+                                    const destination = `${pickupCoords.latitude},${pickupCoords.longitude}`;
+                                    const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+                                    Linking.openURL(url).catch(() => Alert.alert('Map Error', 'Unable to open maps app.'));
+                                }}
+                            >
+                                <Ionicons name="navigate" size={16} color="#fff" />
+                                <Text style={styles.openRouteButtonText}>Open in Maps</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
 
                     {/* Actions Area */}
                     <View style={styles.expandedActionArea}>
@@ -245,32 +315,37 @@ const OtpVerificationModal = ({ visible, onClose, otp, setOtp, onVerify, isVerif
         visible={visible}
         onRequestClose={onClose}
     >
-        <View style={modalStyles.modalOverlay}>
-            <View style={modalStyles.modalContent}>
-                <Text style={modalStyles.modalTitle}>Complete Service</Text>
-                <Text style={modalStyles.modalSubtitle}>Enter the 6-digit OTP from the customer to confirm service completion and capture payment.</Text>
-                <TextInput
-                    style={modalStyles.otpInput}
-                    keyboardType="number-pad"
-                    maxLength={6}
-                    value={otp}
-                    onChangeText={setOtp}
-                    placeholder="123456"
-                />
-                <TouchableOpacity
-                    style={[styles.bookingButton, styles.acceptButton, isVerifying && styles.disabledButton]}
-                    onPress={onVerify}
-                    disabled={isVerifying}
-                >
-                    {isVerifying
-                        ? <ActivityIndicator color="#fff" />
-                        : <Text style={styles.bookingButtonText}>Verify & Complete</Text>}
-                </TouchableOpacity>
-                <TouchableOpacity style={{ marginTop: 10 }} onPress={onClose}>
-                    <Text style={{ textAlign: 'center', color: '#7f8c8d' }}>Cancel</Text>
-                </TouchableOpacity>
+        <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+        >
+            <View style={modalStyles.modalOverlay}>
+                <View style={modalStyles.modalContent}>
+                    <Text style={modalStyles.modalTitle}>Complete Service</Text>
+                    <Text style={modalStyles.modalSubtitle}>Enter the 6-digit OTP from the customer to confirm service completion and capture payment.</Text>
+                    <TextInput
+                        style={modalStyles.otpInput}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        value={otp}
+                        onChangeText={setOtp}
+                        placeholder="123456"
+                    />
+                    <TouchableOpacity
+                        style={[styles.modalPrimaryButton, styles.acceptButton, isVerifying && styles.disabledButton]}
+                        onPress={onVerify}
+                        disabled={isVerifying}
+                    >
+                        {isVerifying
+                            ? <ActivityIndicator color="#fff" />
+                            : <Text style={styles.bookingButtonText}>Verify & Complete</Text>}
+                    </TouchableOpacity>
+                    <TouchableOpacity style={{ marginTop: 10 }} onPress={onClose}>
+                        <Text style={{ textAlign: 'center', color: '#7f8c8d' }}>Cancel</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
-        </View>
+        </KeyboardAvoidingView>
     </Modal>
 );
 
@@ -419,7 +494,8 @@ export default function GarageDashboard() {
     const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
     // State for the main tabs: Jobs or Profile
-    const [mainTab, setMainTab] = useState<'Jobs' | 'Profile'>('Jobs');
+    const [mainTab, setMainTab] = useState<'Jobs' | 'Profile' | 'Analytics'>('Jobs');
+    const [analyticsData, setAnalyticsData] = useState<any>(null); // State for analytics
     // State for the sub-tabs within Jobs
     const [jobsSubTab, setJobsSubTab] = useState<'Pending' | 'Current' | 'History'>('Pending');
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -491,10 +567,22 @@ export default function GarageDashboard() {
         }
     };
 
-    const handleOpenOtpModal = (bookingId: string) => {
-        setBookingToComplete(bookingId);
-        setOtpModalVisible(true);
-        setOtp('');
+    const handleOpenOtpModal = async (bookingId: string) => {
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/request-completion-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to request OTP.');
+
+            setBookingToComplete(bookingId);
+            setOtpModalVisible(true);
+            setOtp('');
+        } catch (error: any) {
+            Alert.alert('OTP Error', error.message || 'Could not request OTP.');
+        }
     };
 
     const handleVerifyOtp = async () => {
@@ -616,6 +704,7 @@ export default function GarageDashboard() {
                     <InfoRow icon="call-outline" label="Phone" value={booking.user.phone} />
                     <InfoRow icon="car-outline" label="Vehicle" value={`${booking.vehicle.brand} ${booking.vehicle.name} (${booking.vehicle.plateNumber})`} />
                     <InfoRow icon="build-outline" label="Service" value={booking.service?.name || 'Tow-to-Garage Service'} />
+                    <InfoRow icon="navigate-outline" label="Pickup" value={booking.pickupAddress || booking.pickupLocation?.description || null} />
                     {booking.distance != null && <InfoRow icon="map-outline" label="Distance" value={`~${booking.distance.toFixed(1)} km`} />}
                     <InfoRow icon="cash-outline" label="Amount" value={`INR ${booking.finalAmount.toFixed(2)}`} />
                     <InfoRow icon="time-outline" label="Booked At" value={new Date(booking.bookedAt).toLocaleString()} />
@@ -636,31 +725,42 @@ export default function GarageDashboard() {
             const token = await getToken();
             if (!token) throw new Error("Authentication failed.");
 
-            const allStatuses = ['SEARCHING', 'CONFIRMED', 'IN_PROGRESS', 'AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
-            const bookingStatusQuery = new URLSearchParams({ status: allStatuses.join(',') }).toString();
-            const bookingsUrl = `${API_BASE_URL}/api/garage/bookings?${bookingStatusQuery}`;
 
-            const [garageRes, bookingsRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/api/garages/${garageId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(bookingsUrl, { headers: { 'Authorization': `Bearer ${token}` } })
-            ]);
+            if (mainTab === 'Analytics') {
+                const statsRes = await fetch(`${API_BASE_URL}/api/analytics/stats?providerId=${garageId}&type=garage`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (statsRes.ok) {
+                    const stats = await statsRes.json();
+                    setAnalyticsData(stats);
+                }
+            } else {
+                const allStatuses = ['SEARCHING', 'CONFIRMED', 'IN_PROGRESS', 'AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
+                const bookingStatusQuery = new URLSearchParams({ status: allStatuses.join(',') }).toString();
+                const bookingsUrl = `${API_BASE_URL}/api/garage/bookings?${bookingStatusQuery}`;
 
-            if (!garageRes.ok) {
-                const errorText = await garageRes.text();
-                console.error("--- GARAGE DETAILS FETCH ERROR --- ", errorText);
-                throw new Error(`Failed to load garage details: ${errorText}`);
+                const [garageRes, bookingsRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/garages/${garageId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(bookingsUrl, { headers: { 'Authorization': `Bearer ${token}` } })
+                ]);
+
+                if (!garageRes.ok) {
+                    const errorText = await garageRes.text();
+                    console.error("--- GARAGE DETAILS FETCH ERROR --- ", errorText);
+                    throw new Error(`Failed to load garage details: ${errorText}`);
+                }
+                if (!bookingsRes.ok) {
+                    const errorText = await bookingsRes.text();
+                    console.error("--- BOOKINGS FETCH ERROR --- ", errorText);
+                    throw new Error(`Failed to load bookings: ${errorText}`);
+                }
+
+                const garageData = await garageRes.json();
+                const bookingsData = await bookingsRes.json();
+
+                setGarage(garageData);
+                setBookings(bookingsData);
             }
-            if (!bookingsRes.ok) {
-                const errorText = await bookingsRes.text();
-                console.error("--- BOOKINGS FETCH ERROR --- ", errorText);
-                throw new Error(`Failed to load bookings: ${errorText}`);
-            }
-
-            const garageData = await garageRes.json();
-            const bookingsData = await bookingsRes.json();
-
-            setGarage(garageData);
-            setBookings(bookingsData);
 
         } catch (error: any) {
             console.error("--- FULL DATA FETCH ERROR OBJECT ---", error);
@@ -670,7 +770,13 @@ export default function GarageDashboard() {
             }
             setLoading(false);
         }
-    }, [garageId, jobsSubTab]);
+    }, [garageId, jobsSubTab, mainTab]);
+
+    // Use a ref to keep the latest fetchData without triggering effect re-runs
+    const fetchDataRef = useRef(fetchData);
+    useEffect(() => {
+        fetchDataRef.current = fetchData;
+    }, [fetchData]);
 
     // --- Real-time WebSocket Logic ---
     useEffect(() => {
@@ -713,7 +819,7 @@ export default function GarageDashboard() {
                 trigger: null, // Show immediately
             });
 
-            fetchData();
+            fetchDataRef.current();
         };
 
         socket.on('new_booking', (newBooking: any) => handleNewBooking(newBooking, 'new_booking'));
@@ -726,7 +832,7 @@ export default function GarageDashboard() {
                 "Payment Confirmed",
                 `The customer has paid. The job is confirmed and moved to 'Current'.`
             );
-            fetchData();
+            fetchDataRef.current();
         });
 
         socket.on('booking_confirmed_by_user', (data: { bookingId: string }) => {
@@ -735,7 +841,7 @@ export default function GarageDashboard() {
                 "Booking Confirmed (Cash)",
                 `The customer has confirmed a cash payment. The job is in your 'Current' list.`
             );
-            fetchData();
+            fetchDataRef.current();
         });
 
         socket.on('tow_truck_assigned', (data: { bookingId: string; towTruck: any }) => {
@@ -744,7 +850,7 @@ export default function GarageDashboard() {
                 "Tow Truck Assigned!",
                 `A tow truck is on the way for one of your accepted tow-in jobs. The job has been moved to your 'Current' list.`
             );
-            fetchData(); // Refresh data to update the booking's status
+            fetchDataRef.current(); // Refresh data to update the booking's status
         });
 
         socket.on('vehicle_delivered', (data: { bookingId: string }) => {
@@ -753,25 +859,19 @@ export default function GarageDashboard() {
                 "Vehicle Delivered!",
                 `A vehicle has been successfully delivered to your garage.`
             );
-            fetchData(); // Refresh data to update the booking's status
-        });
-
-        socket.on('quote_rejected_by_customer', (data: { bookingId: string; reason: string }) => {
-            console.log(`❌ [Socket.IO] Quote for booking ${data.bookingId} rejected by customer: ${data.reason}`);
-            Alert.alert("Quote Rejected", `A customer has rejected your quote. The booking has been cancelled.`);
-            fetchData();
+            fetchDataRef.current(); // Refresh data to update the booking's status
         });
 
         socket.on('quote_rejected_by_customer', (data: { bookingId: string; reason: string }) => {
             console.log(`❌ [Socket.IO] Quote for booking ${data.bookingId} rejected by customer: ${data.reason}`);
             Alert.alert("Quote Rejected", `A customer has rejected your quote. Reason: ${data.reason}`);
-            fetchData();
+            fetchDataRef.current();
         });
 
         socket.on('booking_cancelled_by_customer', (data: { bookingId: string; reason: string }) => {
             console.log(`❌ [Socket.IO] Booking ${data.bookingId} cancelled by customer: ${data.reason}`);
             Alert.alert("Booking Cancelled", `A booking has been cancelled by the customer.`);
-            fetchData(); // Refresh data to update the booking list
+            fetchDataRef.current(); // Refresh data to update the booking list
         });
 
         socket.on('disconnect', (reason: any) => {
@@ -782,21 +882,21 @@ export default function GarageDashboard() {
             console.log("--- [Socket.IO] Disconnecting socket... ---");
             socket.disconnect();
         };
-    }, [garageId, fetchData]);
+    }, [garageId]); // Removed fetchData dependency
 
     useEffect(() => {
         if (garageId) {
             registerForPushNotificationsAsync(garageId, 'garage', getToken);
         }
         fetchData(); // Fetch immediately on mount/tab change
-    }, [fetchData, garageId]);
+    }, [garageId]); // Removed fetchData dependency here too (it is called implicitly, but we don't want re-register on tab change)
 
     const onRefresh = useCallback(() => {
         fetchData(true); // Pass true to show refresh indicator
     }, [fetchData]);
 
     // --- Action Handlers ---
-    const handleEdit = () => {
+    const seedGarageStoreFromCurrent = () => {
         if (!garage) return;
         setDetails({
             name: garage.name,
@@ -814,9 +914,29 @@ export default function GarageDashboard() {
         if (garage.location?.coordinates) {
             setLocation({ latitude: garage.location.coordinates[1], longitude: garage.location.coordinates[0] });
         }
+    };
+
+    const handleEdit = () => {
+        seedGarageStoreFromCurrent();
         router.push({
             pathname: '/settings/add-business/businesssetup/edit-garage/edit-details',
             params: { garageId },
+        });
+    };
+
+    const handleEditServicesOnly = () => {
+        seedGarageStoreFromCurrent();
+        router.push({
+            pathname: '/settings/add-business/businesssetup/edit-garage/edit-services',
+            params: { garageId },
+        });
+    };
+
+    const handleEditLocationOnly = () => {
+        seedGarageStoreFromCurrent();
+        router.push({
+            pathname: '/settings/add-business/businesssetup/location-picker',
+            params: { garageId, mode: 'garage' },
         });
     };
 
@@ -881,14 +1001,27 @@ export default function GarageDashboard() {
     const handleDecline = async (bookingId: string) => {
         try {
             const token = await getToken();
-            await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/decline`, {
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/decline`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+
+            if (!response.ok) {
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to decline request');
+                } else {
+                    const text = await response.text();
+                    throw new Error(`Failed to decline (Server Error): ${text.substring(0, 50)}`);
+                }
+            }
+
+            Alert.alert("Declined", "You have declined the request.");
             fetchData(); // Refresh the whole dashboard
-        } catch (error) {
+        } catch (error: any) {
             console.error("Decline Error:", error);
-            Alert.alert("Failed to decline request.");
+            Alert.alert("Failed to decline request.", error.message);
         }
     };
 
@@ -934,7 +1067,7 @@ export default function GarageDashboard() {
                 (b.status === 'SEARCHING' && b.subStatus === 'AWAITING_TOW_TRUCK_ACCEPTANCE') ||
                 b.status === 'AWAITING_PAYMENT' ||
                 b.status === 'CONFIRMED' ||
-                (b.status === 'IN_PROGRESS' && (b.subStatus === 'AWAITING_GARAGE_QUOTE' || b.subStatus === 'AWAITING_QUOTE_APPROVAL' || b.subStatus === 'SERVICE_IN_PROGRESS'))
+                (b.status === 'IN_PROGRESS' && (b.subStatus === 'AWAITING_GARAGE_QUOTE' || b.subStatus === 'AWAITING_QUOTE_APPROVAL' || b.subStatus === 'AWAITING_FINAL_APPROVAL' || b.subStatus === 'SERVICE_IN_PROGRESS'))
             );
         }
         if (jobsSubTab === 'History') {
@@ -966,7 +1099,7 @@ export default function GarageDashboard() {
 
                 {/* Custom Tab Bar - Updated to match Tow Truck Style */}
                 <View style={styles.tabBar}>
-                    {['Jobs', 'Profile'].map((tab) => (
+                    {['Jobs', 'Profile', 'Analytics'].map((tab) => (
                         <TouchableOpacity key={tab} onPress={() => setMainTab(tab as any)} style={[styles.tabItem, mainTab === tab && styles.tabItemActive]}>
                             <Text style={[styles.tabText, mainTab === tab && styles.tabTextActive]}>{tab}</Text>
                         </TouchableOpacity>
@@ -1035,14 +1168,21 @@ export default function GarageDashboard() {
                             />
                         )}
                     </View>
-                ) : (
+
+                ) : mainTab === 'Profile' ? (
                     <View>
                         {/* Spacer for better separation */}
-                        <View style={{ height: 16 }} />
+                        <View style={{ height: 24 }} />
 
                         {/* Details Card */}
                         <View style={styles.detailsCard}>
-                            <Text style={styles.cardTitle}>Details</Text>
+                            <View style={styles.cardHeaderRow}>
+                                <Text style={styles.cardTitle}>Details</Text>
+                                <TouchableOpacity style={[styles.inlineEditButton, styles.editButton]} onPress={handleEdit}>
+                                    <Ionicons name="person-circle-outline" size={14} color="#fff" />
+                                    <Text style={styles.inlineEditButtonText}>Edit Profile</Text>
+                                </TouchableOpacity>
+                            </View>
                             <InfoRow icon="person-circle-outline" label="Owner" value={garage.ownerName} />
                             <InfoRow icon="id-card-outline" label="License No" value={garage.licenseNumber} />
                             <InfoRow icon="call-outline" label="Phone" value={garage.contactPhone} />
@@ -1051,7 +1191,13 @@ export default function GarageDashboard() {
 
                         {/* Services Card */}
                         <View style={styles.detailsCard}>
-                            <Text style={styles.cardTitle}>Services & Pricing</Text>
+                            <View style={styles.cardHeaderRow}>
+                                <Text style={styles.cardTitle}>Services & Pricing</Text>
+                                <TouchableOpacity style={[styles.inlineEditButton, styles.servicesButton]} onPress={handleEditServicesOnly}>
+                                    <Ionicons name="build-outline" size={14} color="#fff" />
+                                    <Text style={styles.inlineEditButtonText}>Edit Services</Text>
+                                </TouchableOpacity>
+                            </View>
                             {garage.services.length > 0 ? (
                                 garage.services.map((serviceItem: any) => (
                                     <View key={serviceItem.id} style={styles.serviceRow}>
@@ -1080,15 +1226,78 @@ export default function GarageDashboard() {
 
                         {/* Management Actions */}
                         <View style={styles.actionsRow}>
-                            <TouchableOpacity style={[styles.actionButton, styles.editButton]} onPress={handleEdit}>
-                                <Ionicons name="pencil" size={18} color="#fff" />
-                                <Text style={styles.actionButtonText}>Edit Profile</Text>
+                            <TouchableOpacity style={[styles.actionButton, styles.locationButton]} onPress={handleEditLocationOnly}>
+                                <Ionicons name="location-outline" size={18} color="#fff" />
+                                <Text style={styles.actionButtonText}>Update Location</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={[styles.actionButton, styles.deleteButton]} onPress={handleDelete}>
                                 <Ionicons name="trash" size={18} color="#fff" />
                                 <Text style={styles.actionButtonText}>Delete</Text>
                             </TouchableOpacity>
                         </View>
+                    </View>
+                ) : null}
+
+                {mainTab === 'Analytics' && (
+                    <View style={{ padding: 20, marginTop: 10 }}>
+                        <Text style={styles.cardTitle}>Business Analytics</Text>
+                        {analyticsData ? (
+                            <View>
+                                {/* Summary Cards Grid */}
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 15 }}>
+
+                                    {/* Total Revenue */}
+                                    <View style={[styles.card, { flex: 1, minWidth: '45%', backgroundColor: '#e0f7fa', marginHorizontal: 0 }]}>
+                                        <Ionicons name="cash-outline" size={30} color="#006064" />
+                                        <Text style={{ fontSize: 14, color: '#006064', marginTop: 10 }}>Total Revenue</Text>
+                                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#006064' }}>₹{analyticsData.totalRevenue.toLocaleString()}</Text>
+                                    </View>
+
+                                    {/* Total Bookings */}
+                                    <View style={[styles.card, { flex: 1, minWidth: '45%', backgroundColor: '#fff3e0', marginHorizontal: 0 }]}>
+                                        <Ionicons name="calendar-outline" size={30} color="#e65100" />
+                                        <Text style={{ fontSize: 14, color: '#e65100', marginTop: 10 }}>Total Bookings</Text>
+                                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#e65100' }}>{analyticsData.totalBookings}</Text>
+                                    </View>
+
+                                    {/* Avg Revenue */}
+                                    <View style={[styles.card, { flex: 1, minWidth: '45%', backgroundColor: '#f3e5f5', marginHorizontal: 0 }]}>
+                                        <Ionicons name="trending-up-outline" size={30} color="#4a148c" />
+                                        <Text style={{ fontSize: 14, color: '#4a148c', marginTop: 10 }}>Avg. Order Value</Text>
+                                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#4a148c' }}>₹{analyticsData.averageRevenue.toFixed(0)}</Text>
+                                    </View>
+
+                                    {/* Completed Count */}
+                                    <View style={[styles.card, { flex: 1, minWidth: '45%', backgroundColor: '#e8f5e9', marginHorizontal: 0 }]}>
+                                        <Ionicons name="checkbox-outline" size={30} color="#1b5e20" />
+                                        <Text style={{ fontSize: 14, color: '#1b5e20', marginTop: 10 }}>Completed Jobs</Text>
+                                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#1b5e20' }}>{analyticsData.completedBookings}</Text>
+                                    </View>
+
+                                </View>
+
+                                {/* Top Customer */}
+                                <View style={[styles.card, { marginTop: 20, marginHorizontal: 0 }]}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
+                                        <Ionicons name="trophy" size={24} color="#fbc02d" />
+                                        <Text style={{ fontSize: 18, fontWeight: 'bold', marginLeft: 10, color: '#333' }}>Top Customer</Text>
+                                    </View>
+                                    {analyticsData.topCustomer.name !== 'N/A' ? (
+                                        <View>
+                                            <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#005C70' }}>{analyticsData.topCustomer.name}</Text>
+                                            <Text style={{ color: '#666', marginTop: 5 }}>
+                                                Has booked <Text style={{ fontWeight: 'bold', color: '#333' }}>{analyticsData.topCustomer.bookings}</Text> times with you.
+                                            </Text>
+                                        </View>
+                                    ) : (
+                                        <Text style={{ color: '#999', fontStyle: 'italic' }}>No customer data available yet.</Text>
+                                    )}
+                                </View>
+
+                            </View>
+                        ) : (
+                            <ActivityIndicator size="large" color="#005C70" style={{ marginTop: 50 }} />
+                        )}
                     </View>
                 )}
             </ScrollView>
@@ -1127,7 +1336,7 @@ export default function GarageDashboard() {
                 onSubmit={handleSubmitFinalQuote}
                 isSubmitting={isSubmittingFinalQuote}
             />
-        </SafeAreaView>
+        </SafeAreaView >
     );
 }
 
@@ -1207,8 +1416,8 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         padding: 16, // Reduced from 24
         marginHorizontal: 16,
-        marginBottom: 16, // Reduced from 20
-        marginTop: 8, // Added to separate from tabs slightly, user asked for padding above details
+        marginBottom: 24, // Increased spacing
+        marginTop: 12, // Increased spacing
         borderRadius: 20,
         elevation: 4,
         shadowColor: "#000",
@@ -1216,7 +1425,21 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.08,
         shadowRadius: 8,
     },
-    cardTitle: { fontSize: 18, fontWeight: '700', color: '#005C70', marginBottom: 12, borderBottomWidth: 0 }, // Reduced fontSize and margin
+    cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+    cardTitle: { fontSize: 18, fontWeight: '700', color: '#005C70', marginBottom: 0, borderBottomWidth: 0 }, // Reduced fontSize and margin
+    inlineEditButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 7,
+        paddingHorizontal: 10,
+        borderRadius: 999,
+        gap: 5,
+    },
+    inlineEditButtonText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '700',
+    },
     infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }, // Reduced vertical padding
     infoIcon: { width: 20, textAlign: 'center', marginRight: 10, opacity: 0.7 },
     infoLabel: { fontSize: 14, color: '#666', fontWeight: '500' }, // Reduced font size
@@ -1227,6 +1450,8 @@ const styles = StyleSheet.create({
     noServicesText: { fontSize: 16, color: '#999', fontStyle: 'italic', textAlign: 'center', paddingVertical: 16 },
     actionsRow: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 16, marginTop: 10, marginBottom: 40, gap: 16 },
     editButton: { backgroundColor: '#3498db' },
+    servicesButton: { backgroundColor: '#005C70' },
+    locationButton: { backgroundColor: '#16a085' },
     deleteButton: { backgroundColor: '#e74c3c' },
     bookingsHeader: { fontSize: 22, fontWeight: '700', marginHorizontal: 16, marginTop: 24, marginBottom: 16, textAlign: 'left', color: '#333' },
 
@@ -1291,6 +1516,31 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         marginLeft: 8,
         fontSize: 14,
+    },
+    mapPreviewContainer: {
+        borderRadius: 12,
+        overflow: 'hidden',
+        marginTop: 10,
+        borderWidth: 1,
+        borderColor: '#e8ecef',
+        backgroundColor: '#fff',
+    },
+    mapPreview: {
+        height: 140,
+        width: '100%',
+    },
+    openRouteButton: {
+        backgroundColor: '#005C70',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+    },
+    openRouteButtonText: {
+        color: '#fff',
+        fontWeight: '700',
+        marginLeft: 8,
+        fontSize: 13,
     },
     chatButton: {
         backgroundColor: '#3498db',
@@ -1419,6 +1669,18 @@ const styles = StyleSheet.create({
     },
 
     // Date Header Styling
+    card: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        marginHorizontal: 16,
+        marginBottom: 16,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
     dateHeaderContainer: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1439,4 +1701,26 @@ const styles = StyleSheet.create({
         height: 1,
         backgroundColor: '#ddd',
     },
+    // Missing Booking Card Styles
+    bookingCard: {
+        backgroundColor: '#fff',
+        marginHorizontal: 16,
+        marginBottom: 16,
+        borderRadius: 20,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 2
+    },
+    bookingHeader: { marginBottom: 12 },
+    bookingDate: { fontSize: 12, color: '#999', fontWeight: '500' },
+    bookingPrice: { fontSize: 18, fontWeight: '700', color: '#333', marginTop: 4 },
+    bookingDetails: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+    bookingText: { fontSize: 13, color: '#555' },
+    bookingButton: { flex: 1, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    modalPrimaryButton: { width: '100%', height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 12 },
+    acceptButton: { backgroundColor: '#005C70' },
+    disabledButton: { opacity: 0.6 },
+    bookingButtonText: { fontWeight: '700', color: '#fff' },
 });

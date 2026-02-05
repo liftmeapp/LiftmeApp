@@ -125,6 +125,10 @@ const GaragesScreen = () => {
             }
             const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
             if (!response.ok) throw new Error("Failed to fetch services.");
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error('Server returned non-JSON response. Check API URL/backend availability.');
+            }
             const data = await response.json();
             setSelectedCategoryServices(data);
         } catch (error: any) {

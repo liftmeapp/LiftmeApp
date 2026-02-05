@@ -3,7 +3,6 @@ import Map, { PinnedLocationData } from "@/components/Map";
 import ServiceBookingSheet from '@/components/ServiceBookingSheet';
 import { BookingStage, useBooking } from '@/context/BookingContext';
 import { useAuth } from '@clerk/clerk-expo';
-import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
@@ -22,13 +21,16 @@ const color = {
 
 export default function LuxuryServiceMap() {
     const mapRef = useRef<MapView>(null);
-    const router = useRouter();
     const { getToken } = useAuth();
 
     // --- Context ---
     const {
         currentStage,
+        restoreActiveBookingForFlow,
         setStage,
+        setActiveFlowType,
+        setSelectedService,
+        setSelectedVehicle,
         setPickupLocation,
         startBooking,
         selectedService,
@@ -38,6 +40,7 @@ export default function LuxuryServiceMap() {
     // --- Local State for Map & Data ---
     const [pinnedLocation, setPinnedLocation] = useState<PinnedLocationData | null>(null);
     const [isGeocoding, setIsGeocoding] = useState(false);
+    const [isFlowReady, setIsFlowReady] = useState(false);
 
     // Data
     const [vehicles, setVehicles] = useState<any[]>([]);
@@ -57,9 +60,21 @@ export default function LuxuryServiceMap() {
 
     // --- Init ---
     useEffect(() => {
-        if (currentStage === BookingStage.IDLE) {
+        let mounted = true;
+        const setupFlow = async () => {
+            setIsFlowReady(false);
+            setActiveFlowType('LUXURY');
+            const restored = await restoreActiveBookingForFlow('LUXURY');
+            if (!mounted || restored) return;
+            setSelectedService(null);
+            setSelectedVehicle(null);
             setStage(BookingStage.SERVICE_SELECTION);
-        }
+        };
+        setupFlow().finally(() => {
+            if (mounted) setIsFlowReady(true);
+        });
+        return () => { mounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // --- Data Fetching ---
@@ -76,17 +91,23 @@ export default function LuxuryServiceMap() {
                 ]);
 
                 if (!vehiclesRes.ok || !servicesRes.ok) throw new Error("Failed to fetch initial data.");
+                const vehiclesType = vehiclesRes.headers.get('content-type') || '';
+                const servicesType = servicesRes.headers.get('content-type') || '';
+                if (!vehiclesType.includes('application/json') || !servicesType.includes('application/json')) {
+                    throw new Error('Server returned non-JSON response. Check API URL/backend availability.');
+                }
 
                 setVehicles(await vehiclesRes.json());
                 setServices(await servicesRes.json());
             } catch (error) {
                 console.error("Error fetching initial data:", error);
-                Alert.alert("Error", "Could not load data. Please try again.");
+                Alert.alert("Error", "Could not load luxury service data. Please check backend/API URL and try again.");
             } finally {
                 setIsInitialLoading(false);
             }
         };
         fetchInitialData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // --- Handlers ---
@@ -114,6 +135,7 @@ export default function LuxuryServiceMap() {
                 vehicleId: selectedVehicle.id,
                 userLat: finalLocation.latitude,
                 userLon: finalLocation.longitude,
+                pickupDescription: finalLocation.description,
             });
         } else {
             Alert.alert("Location Error", "Could not determine the pinned location. Please try again.");
@@ -136,16 +158,18 @@ export default function LuxuryServiceMap() {
                     onMapReady={handleMapReady}
                 />
 
-                <ServiceBookingSheet
-                    services={filteredServices}
-                    vehicles={filteredVehicles}
-                    isInitialLoading={isInitialLoading}
-                    pinnedLocation={pinnedLocation}
-                    isGeocoding={isGeocoding}
-                    onPinLocationRequest={() => { }}
-                    onConfirmPin={handleConfirmPin}
-                    bookingServiceType="LUXURY"
-                />
+                {isFlowReady && (
+                    <ServiceBookingSheet
+                        services={filteredServices}
+                        vehicles={filteredVehicles}
+                        isInitialLoading={isInitialLoading}
+                        pinnedLocation={pinnedLocation}
+                        isGeocoding={isGeocoding}
+                        onPinLocationRequest={() => { }}
+                        onConfirmPin={handleConfirmPin}
+                        bookingServiceType="LUXURY"
+                    />
+                )}
             </View>
         </GestureHandlerRootView>
     );

@@ -5,9 +5,9 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 const opts = [{
   id: 1,
   name: "Road Services",
-  details: "Providing roadside assistance for your vehicle.", // Shortened for design
-  icon: require("@/assets/icons/carfix.jpeg"), // Or maybe use vector icon if available? Sticking to image for now.
-  vectorIcon: "car-wrench", // Alternative
+  details: "Providing roadside assistance for your vehicle.",
+  icon: require("@/assets/icons/carfix.jpeg"),
+  vectorIcon: "car-wrench",
   link: "/services/roadsidecar-service",
 },
 {
@@ -18,19 +18,35 @@ const opts = [{
   vectorIcon: "tow-truck",
   link: "/services/towing_service",
 },
+{
+  id: 3,
+  name: "EV Service",
+  details: "Charging & repair for EVs.",
+  icon: require("@/assets/icons/carfix.jpeg"), // Placeholder or use vector
+  vectorIcon: "car-electric",
+  link: "/services/electric-vehicleservice",
+},
+{
+  id: 4,
+  name: "Home Service",
+  details: "Service at your doorstep.",
+  icon: require("@/assets/icons/carfix.jpeg"), // Placeholder or use vector
+  vectorIcon: "home-account",
+  link: "/services/homeservice",
+},
 ]
 
 
 export default function NavOptions() {
   const router = useRouter();
   return (
-    <View className="flex-row justify-between w-full px-2">
+    <View className="flex-row flex-wrap justify-between w-full px-2">
       {opts.map((item) => (
         <TouchableOpacity
           key={item.id}
           activeOpacity={0.9}
           onPress={() => router.push(item.link as any)}
-          className="w-[48%] h-[8rem] bg-[#005C70] rounded-xl items-center justify-center shadow-md p-2"
+          className="w-[48%] h-[8rem] bg-[#005C70] rounded-xl items-center justify-center shadow-md p-2 mb-4"
         >
           {/* 
                   Using Vector Icons for cleaner look matching the "Road Services" / "Towing Services" 

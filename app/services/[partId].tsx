@@ -25,6 +25,10 @@ export default function SparePartDetailScreen() {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
             if (!response.ok) throw new Error('Failed to fetch part details.');
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error('Server returned non-JSON response. Check API URL/backend availability.');
+            }
             const data = await response.json();
             setPart(data);
         } catch (error: any) {
@@ -56,7 +60,7 @@ export default function SparePartDetailScreen() {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
+                const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.error || 'Failed to place order.');
             }
 

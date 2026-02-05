@@ -1,9 +1,9 @@
-
-import { clerkClient } from '@clerk/clerk-sdk-node';
+import { ClerkExpressWithAuth, clerkClient } from '@clerk/clerk-sdk-node';
 import { Router } from 'express';
 import prisma from './lib/prisma';
 
 const router = Router();
+router.use(ClerkExpressWithAuth());
 
 // Get or create a chat for a booking
 router.post('/bookings/:bookingId/chat', async (req, res) => {

@@ -9,10 +9,15 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
     ActivityIndicator,
     Alert,
+    KeyboardAvoidingView,
+    Modal,
     Dimensions,
     FlatList,
+    Platform,
+    ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
@@ -59,6 +64,7 @@ export default function ServiceBookingSheet({
     bookingServiceType
 }: ServiceBookingSheetProps) {
     const bottomSheetRef = useRef<BottomSheet>(null);
+    const paymentCardsLoadedForBookingRef = useRef<string | null>(null);
     const router = useRouter();
     const { getToken } = useAuth();
     const snapPoints = useMemo(() => ['20%', '70%', '80%'], []);
@@ -69,17 +75,31 @@ export default function ServiceBookingSheet({
     const [selectedCard, setSelectedCard] = useState<string | null>(null);
     const [isFetchingCards, setIsFetchingCards] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'CASH'>('CASH');
+    const [isAddVehicleModalVisible, setIsAddVehicleModalVisible] = useState(false);
+    const [isAddingVehicle, setIsAddingVehicle] = useState(false);
+    const [localVehicles, setLocalVehicles] = useState<any[]>(vehicles);
+    const [vehicleForm, setVehicleForm] = useState({
+        brand: '',
+        name: '',
+        model: '',
+        year: '',
+        plateNumber: '',
+        color: '',
+        type: 'SEDAN',
+    });
 
     const {
         currentStage,
         searchCountdown,
         searchError,
         selectedProvider,
+        currentBookingId,
         isBroadcasting,
         isConfirmingPayment,
         selectedService,
         selectedVehicle,
         resetBookingFlow,
+        cancelBooking,
         confirmPayment,
         confirmCashBooking,
         setStage,
@@ -87,11 +107,15 @@ export default function ServiceBookingSheet({
         setSelectedVehicle,
     } = useBooking();
 
+    useEffect(() => {
+        setLocalVehicles(vehicles);
+    }, [vehicles]);
+
     // --- Bottom Sheet Snap Logic ---
     useEffect(() => {
         const timer = setTimeout(() => setIsBottomSheetReady(true), 100);
         return () => clearTimeout(timer);
-    }, []);
+    }, [getToken]);
 
     useEffect(() => {
         if (!isBottomSheetReady || !bottomSheetRef.current) return;
@@ -136,16 +160,23 @@ export default function ServiceBookingSheet({
         } finally {
             setIsFetchingCards(false);
         }
-    }, []);
+    }, [getToken]);
 
     useEffect(() => {
         if (currentStage === BookingStage.PAYMENT) {
-            fetchSavedCards();
-        } else if (currentStage === BookingStage.CONFIRMED) {
+            const bookingKey = currentBookingId || '__unknown__';
+            if (paymentCardsLoadedForBookingRef.current !== bookingKey) {
+                paymentCardsLoadedForBookingRef.current = bookingKey;
+                fetchSavedCards();
+            }
+            return;
+        }
+
+        if (currentStage === BookingStage.CONFIRMED) {
             router.replace('/(root)/(tabs)/orders');
             resetBookingFlow();
         }
-    }, [currentStage, fetchSavedCards, router]);
+    }, [currentStage, currentBookingId, fetchSavedCards, resetBookingFlow, router]);
 
 
     // --- Handlers ---
@@ -192,7 +223,58 @@ export default function ServiceBookingSheet({
         }
     };
 
-    const navigateToAddVehicle = () => router.push('/settings/vehicle-page/add-vehicle');
+    const openAddVehicleModal = () => {
+        setVehicleForm({
+            brand: '',
+            name: '',
+            model: '',
+            year: '',
+            plateNumber: '',
+            color: '',
+            type: 'SEDAN',
+        });
+        setIsAddVehicleModalVisible(true);
+    };
+
+    const handleCreateVehicle = async () => {
+        if (!vehicleForm.brand.trim() || !vehicleForm.name.trim() || !vehicleForm.year.trim() || !vehicleForm.plateNumber.trim()) {
+            Alert.alert('Missing Information', 'Brand, name, year, and plate number are required.');
+            return;
+        }
+
+        setIsAddingVehicle(true);
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/vehicles`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    brand: vehicleForm.brand.trim(),
+                    name: vehicleForm.name.trim(),
+                    model: vehicleForm.model.trim(),
+                    year: vehicleForm.year.trim(),
+                    plateNumber: vehicleForm.plateNumber.trim().toUpperCase(),
+                    color: vehicleForm.color.trim(),
+                    type: vehicleForm.type,
+                }),
+            });
+
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Failed to add vehicle.');
+
+            setLocalVehicles((prev) => [data, ...prev]);
+            setSelectedVehicle(data);
+            setIsAddVehicleModalVisible(false);
+            Alert.alert('Vehicle Added', 'Your vehicle was added successfully.');
+        } catch (error: any) {
+            Alert.alert('Add Vehicle Error', error.message || 'An unexpected error occurred.');
+        } finally {
+            setIsAddingVehicle(false);
+        }
+    };
 
     const formatServiceName = (name: string) => {
         return name.replace(/^(Car-|Bike - |Home - )/g, '');
@@ -216,7 +298,7 @@ export default function ServiceBookingSheet({
                     <View style={styles.vehicleCardDetails}>
                         <Text style={styles.vehicleCardName}>{item.name}</Text>
                         <Text style={styles.vehicleCardInfo}>{item.brand} {item.model} • {item.year}</Text>
-                        <Text style={styles.vehicleCardNumber}>{item.number}</Text>
+                        <Text style={styles.vehicleCardNumber}>{item.plateNumber || item.number}</Text>
                     </View>
                     {isSelected && (
                         <View style={styles.vehicleCardSelectedIndicator}>
@@ -282,7 +364,7 @@ export default function ServiceBookingSheet({
 
                         <View style={styles.contentArea}>
                             <FlatList
-                                data={vehicles}
+                                data={localVehicles}
                                 renderItem={renderVehicleItem}
                                 keyExtractor={item => item.id}
                                 ListHeaderComponent={() => (
@@ -305,7 +387,7 @@ export default function ServiceBookingSheet({
                         )}
                         <TouchableOpacity
                             style={styles.addVehicleButton}
-                            onPress={navigateToAddVehicle}>
+                            onPress={openAddVehicleModal}>
                             <Ionicons name="add-circle-outline" size={20} color={color.white} />
                             <Text style={styles.addVehicleButtonText}>Add Vehicle</Text>
                         </TouchableOpacity>
@@ -397,8 +479,8 @@ export default function ServiceBookingSheet({
                             </View>
 
                             <View style={styles.otpContainer}>
-                                <Text style={styles.otpLabel}>Share this OTP with your provider upon arrival:</Text>
-                                <Text style={styles.otpCode}>{selectedProvider.otp}</Text>
+                                <Text style={styles.otpLabel}>OTP will appear when provider requests completion:</Text>
+                                <Text style={styles.otpCode}>{selectedProvider.otp || 'WAITING'}</Text>
                             </View>
                         </BottomSheetView>
                     );
@@ -428,7 +510,7 @@ export default function ServiceBookingSheet({
                                 <RotatingLoader size={40} color={color.primary} />
                                 <Text style={[styles.headerText, { marginTop: 20 }]}>Contacting Garages</Text>
                                 <Text style={styles.subHeaderText}>
-                                    We've sent your request to all nearby garages. Please wait for one to accept.
+                                    We have sent your request to all nearby garages. Please wait for one to accept.
                                 </Text>
                                 <View style={styles.countdownBox}>
                                     <Ionicons name="timer-outline" size={24} color={color.primary} />
@@ -562,19 +644,63 @@ export default function ServiceBookingSheet({
     };
 
     return (
-        isBottomSheetReady ? (
-            <BottomSheet
-                ref={bottomSheetRef}
-                index={1} snapPoints={snapPoints}
-                enablePanDownToClose={false}
-                handleIndicatorStyle={{ backgroundColor: color.primary, width: 50 }}
-                keyboardBlurBehavior="restore"
-                android_keyboardInputMode='adjustResize'
-                containerStyle={{ zIndex: 1000 }}
+        <>
+            {isBottomSheetReady ? (
+                <BottomSheet
+                    ref={bottomSheetRef}
+                    index={1} snapPoints={snapPoints}
+                    enablePanDownToClose={false}
+                    handleIndicatorStyle={{ backgroundColor: color.primary, width: 50 }}
+                    keyboardBlurBehavior="restore"
+                    android_keyboardInputMode='adjustResize'
+                    containerStyle={{ zIndex: 1000 }}
+                >
+                    {renderContent()}
+                </BottomSheet>
+            ) : null}
+            <Modal
+                visible={isAddVehicleModalVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setIsAddVehicleModalVisible(false)}
             >
-                {renderContent()}
-            </BottomSheet>
-        ) : null
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    style={styles.modalOverlay}
+                >
+                    <View style={styles.modalCard}>
+                        <Text style={styles.modalTitle}>Add New Vehicle</Text>
+                        <ScrollView keyboardShouldPersistTaps="handled">
+                            <TextInput style={styles.modalInput} placeholder="Brand*" value={vehicleForm.brand} onChangeText={(text) => setVehicleForm((p) => ({ ...p, brand: text }))} />
+                            <TextInput style={styles.modalInput} placeholder="Name*" value={vehicleForm.name} onChangeText={(text) => setVehicleForm((p) => ({ ...p, name: text }))} />
+                            <TextInput style={styles.modalInput} placeholder="Model" value={vehicleForm.model} onChangeText={(text) => setVehicleForm((p) => ({ ...p, model: text }))} />
+                            <TextInput style={styles.modalInput} placeholder="Year*" keyboardType="numeric" maxLength={4} value={vehicleForm.year} onChangeText={(text) => setVehicleForm((p) => ({ ...p, year: text.replace(/[^0-9]/g, '') }))} />
+                            <TextInput style={styles.modalInput} placeholder="Plate Number*" autoCapitalize="characters" value={vehicleForm.plateNumber} onChangeText={(text) => setVehicleForm((p) => ({ ...p, plateNumber: text.toUpperCase() }))} />
+                            <TextInput style={styles.modalInput} placeholder="Color" value={vehicleForm.color} onChangeText={(text) => setVehicleForm((p) => ({ ...p, color: text }))} />
+                            <View style={styles.typeRow}>
+                                {['SEDAN', 'SUV', 'EV', 'BIKE'].map((type) => (
+                                    <TouchableOpacity
+                                        key={type}
+                                        style={[styles.typeChip, vehicleForm.type === type && styles.typeChipActive]}
+                                        onPress={() => setVehicleForm((p) => ({ ...p, type }))}
+                                    >
+                                        <Text style={[styles.typeChipText, vehicleForm.type === type && styles.typeChipTextActive]}>{type}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                            <View style={styles.modalActions}>
+                                <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsAddVehicleModalVisible(false)} disabled={isAddingVehicle}>
+                                    <Text style={styles.modalCancelText}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={[styles.modalSaveBtn, isAddingVehicle && styles.disabledButton]} onPress={handleCreateVehicle} disabled={isAddingVehicle}>
+                                    {isAddingVehicle ? <ActivityIndicator color={color.white} /> : <Text style={styles.modalSaveText}>Save</Text>}
+                                </TouchableOpacity>
+                            </View>
+                        </ScrollView>
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
+        </>
     );
 }
 
@@ -714,6 +840,84 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '500',
         marginLeft: 8
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        justifyContent: 'center',
+        padding: 20,
+    },
+    modalCard: {
+        backgroundColor: color.white,
+        borderRadius: 16,
+        padding: 16,
+        maxHeight: '85%',
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: color.textPrimary,
+        marginBottom: 12,
+    },
+    modalInput: {
+        borderWidth: 1,
+        borderColor: color.mediumGray,
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginBottom: 10,
+        color: color.textPrimary,
+    },
+    typeRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 12,
+    },
+    typeChip: {
+        borderWidth: 1,
+        borderColor: color.mediumGray,
+        borderRadius: 999,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+    },
+    typeChipActive: {
+        backgroundColor: color.primary,
+        borderColor: color.primary,
+    },
+    typeChipText: {
+        color: color.textPrimary,
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    typeChipTextActive: {
+        color: color.white,
+    },
+    modalActions: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        gap: 10,
+        marginTop: 4,
+    },
+    modalCancelBtn: {
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+    },
+    modalCancelText: {
+        color: color.darkGray,
+        fontWeight: '600',
+    },
+    modalSaveBtn: {
+        backgroundColor: color.primary,
+        borderRadius: 10,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        minWidth: 88,
+        alignItems: 'center',
+    },
+    modalSaveText: {
+        color: color.white,
+        fontWeight: '700',
     },
     addressDisplayBox: {
         flexDirection: 'row',

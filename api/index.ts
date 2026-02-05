@@ -8,6 +8,7 @@ import express, { Request, Response } from 'express';
 import { createServer } from 'http';
 import { Webhook } from 'svix';
 import adminRouter from './admin';
+import analyticsRouter from './analytics';
 import bookingsRouter from './bookings';
 import chatRoutes from './chat';
 import garagesRouter from './garages';
@@ -15,6 +16,7 @@ import { initSocketIO, io } from './socket'; // Import initSocketIO
 import sparePartRoutes from './spareparts';
 import stripeRouter from './stripe';
 import towTruckRoutes from './towtruck';
+import { BookingService } from './services/booking.service';
 import { ensureUserRecord } from './utils/ensureUserRecord';
 import vehiclesRouter from './vehicles';
 
@@ -25,6 +27,15 @@ const httpServer = createServer(app);
 // Initialize Socket.IO using the shared module
 initSocketIO(httpServer);
 app.set('socketio', io); // Make io accessible to our router
+
+const BOOKING_EXPIRY_SWEEP_INTERVAL_MS = 15000;
+setInterval(async () => {
+    try {
+        await BookingService.expireOverdueBookings();
+    } catch (error) {
+        console.error('[Booking expiry sweep] failed:', error);
+    }
+}, BOOKING_EXPIRY_SWEEP_INTERVAL_MS);
 
 app.use(cors());
 const CLERK_WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
@@ -201,7 +212,11 @@ app.get(
     }
 );
 
+import notificationsRouter from './notifications';
+
 app.use('/api', chatRoutes);
+app.use(notificationsRouter);
+app.use('/api/analytics', analyticsRouter);
 app.use('/api/spare-parts', sparePartRoutes);
 
 // Apply express.json() middleware for all subsequent routes

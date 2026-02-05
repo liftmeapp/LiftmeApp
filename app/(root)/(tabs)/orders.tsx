@@ -19,7 +19,21 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 //  REDESIGNED ORDER CARD COMPONENT
 // ===================================================================
 
-const OrderCard = ({ booking, onCancel, onCall, onChat }: { booking: any, onCancel: (id: string) => void, onCall: () => void, onChat: (id: string) => void }) => {
+const OrderCard = ({
+    booking,
+    onCancel,
+    onCall,
+    onChat,
+    onApproveQuote,
+    onRejectQuote,
+}: {
+    booking: any,
+    onCancel: (id: string) => void,
+    onCall: () => void,
+    onChat: (id: string) => void,
+    onApproveQuote: (id: string) => void,
+    onRejectQuote: (id: string) => void,
+}) => {
 
     // Derived Data
     const serviceName = booking.service?.name || "Service Booking";
@@ -28,6 +42,11 @@ const OrderCard = ({ booking, onCancel, onCall, onChat }: { booking: any, onCanc
     const otp = booking.otp || "WAITING"; // Placeholder if waiting
     const travelEta = booking.providerEta || 10; // Mock default
     const serviceEta = travelEta + 30; // Mock logic
+    const quoteHistory = Array.isArray(booking.quoteHistory) ? booking.quoteHistory : [];
+    const latestQuote = quoteHistory.length > 0 ? quoteHistory[quoteHistory.length - 1] : null;
+    const isAwaitingInitialQuoteApproval = booking.subStatus === 'AWAITING_QUOTE_APPROVAL';
+    const isAwaitingFinalQuoteApproval = booking.subStatus === 'AWAITING_FINAL_APPROVAL';
+    const showQuoteDecision = booking.bookingType === 'TOW_TO_GARAGE' && (isAwaitingInitialQuoteApproval || isAwaitingFinalQuoteApproval);
 
     return (
         <View style={styles.card}>
@@ -67,6 +86,30 @@ const OrderCard = ({ booking, onCancel, onCall, onChat }: { booking: any, onCanc
                 <Text style={styles.otpCode}>{String(otp).split('').join(' ')}</Text>
             </View>
             <Text style={styles.otpHelperText}>Share the OTP when service completed</Text>
+
+            {showQuoteDecision && (
+                <View style={styles.quoteBox}>
+                    <Text style={styles.quoteTitle}>{isAwaitingFinalQuoteApproval ? 'Final Quote Approval Needed' : 'Initial Quote Approval Needed'}</Text>
+                    {latestQuote?.servicesRequired ? (
+                        <Text style={styles.quoteText}>Work: {latestQuote.servicesRequired}</Text>
+                    ) : null}
+                    {latestQuote?.jobEstimate || booking.jobEstimate || booking.finalEstimateAmount ? (
+                        <Text style={styles.quoteAmount}>INR {Number(latestQuote?.jobEstimate || booking.finalEstimateAmount || booking.jobEstimate || 0).toFixed(2)}</Text>
+                    ) : null}
+                    {latestQuote?.notes ? (
+                        <Text style={styles.quoteText}>Note: {latestQuote.notes}</Text>
+                    ) : null}
+
+                    <View style={styles.quoteButtonsRow}>
+                        <TouchableOpacity style={[styles.quoteActionButton, styles.rejectQuoteButton]} onPress={() => onRejectQuote(booking.id)}>
+                            <Text style={styles.quoteActionText}>Reject</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.quoteActionButton, styles.approveQuoteButton]} onPress={() => onApproveQuote(booking.id)}>
+                            <Text style={styles.quoteActionText}>Accept</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
 
             {/* Action Buttons Row */}
             <View style={styles.actionRow}>
@@ -173,6 +216,48 @@ export default function OrdersScreen() {
         Alert.alert("Chat", "Opening chat...");
     };
 
+    const handleApproveQuote = async (bookingId: string) => {
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/approve-quote`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Failed to approve quote.');
+            Alert.alert('Quote Approved', 'The garage has been notified.');
+            fetchActiveBookings(true);
+        } catch (error: any) {
+            Alert.alert('Approval Error', error.message || 'Failed to approve quote.');
+        }
+    };
+
+    const handleRejectQuote = async (bookingId: string) => {
+        Alert.alert('Reject Quote', 'Reject this quote and ask garage to update it?', [
+            { text: 'No', style: 'cancel' },
+            {
+                text: 'Reject',
+                style: 'destructive',
+                onPress: async () => {
+                    try {
+                        const token = await getToken();
+                        const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/reject-quote`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ reason: 'Please revise the quote.' }),
+                        });
+                        const data = await response.json().catch(() => ({}));
+                        if (!response.ok) throw new Error(data.error || 'Failed to reject quote.');
+                        Alert.alert('Quote Rejected', 'The garage has been asked to revise the quote.');
+                        fetchActiveBookings(true);
+                    } catch (error: any) {
+                        Alert.alert('Rejection Error', error.message || 'Failed to reject quote.');
+                    }
+                }
+            }
+        ]);
+    };
+
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
             <View style={styles.header}>
@@ -204,6 +289,8 @@ export default function OrdersScreen() {
                             onCancel={handleCancel}
                             onCall={() => handleCall(item.garage?.contactPhone || item.towTruck?.contactPhone)}
                             onChat={handleChat}
+                            onApproveQuote={handleApproveQuote}
+                            onRejectQuote={handleRejectQuote}
                         />
                     )}
                     contentContainerStyle={styles.listContent}
@@ -358,6 +445,53 @@ const styles = StyleSheet.create({
         color: '#888',
         fontSize: 12,
         marginBottom: 20,
+    },
+    quoteBox: {
+        backgroundColor: '#fff8e1',
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#ffe082',
+    },
+    quoteTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#8a6d3b',
+        marginBottom: 6,
+    },
+    quoteText: {
+        fontSize: 13,
+        color: '#5f5f5f',
+        marginBottom: 4,
+    },
+    quoteAmount: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#005C70',
+        marginBottom: 8,
+    },
+    quoteButtonsRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginTop: 4,
+    },
+    quoteActionButton: {
+        flex: 1,
+        paddingVertical: 10,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    rejectQuoteButton: {
+        backgroundColor: '#ef5350',
+    },
+    approveQuoteButton: {
+        backgroundColor: '#2e7d32',
+    },
+    quoteActionText: {
+        color: '#fff',
+        fontWeight: '700',
+        fontSize: 13,
     },
     actionRow: {
         flexDirection: 'row',

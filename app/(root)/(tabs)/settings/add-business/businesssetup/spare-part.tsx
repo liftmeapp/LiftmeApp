@@ -3,7 +3,7 @@ import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Image, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -97,8 +97,9 @@ export default function SparePartDashboard() {
     const router = useRouter();
     const { getToken } = useAuth();
 
-    const [mainTab, setMainTab] = useState<'Products' | 'Orders'>('Products');
+    const [mainTab, setMainTab] = useState<'Products' | 'Orders' | 'Analytics'>('Products');
     const [ordersSubTab, setOrdersSubTab] = useState<'Pending' | 'Current' | 'History'>('Pending');
+    const [analyticsData, setAnalyticsData] = useState<any>(null);
 
     const [parts, setParts] = useState<any[]>([]);
     const [orders, setOrders] = useState<any[]>([]);
@@ -115,9 +116,23 @@ export default function SparePartDashboard() {
         try {
             console.log('[fetchData] Getting token...');
             const token = await getToken();
-            console.log('[fetchData] Token obtained.');
 
-            if (mainTab === 'Products') {
+            if (mainTab === 'Analytics') {
+                // 1. Get User Profile to find store ID
+                const userRes = await fetch(`${API_BASE_URL}/api/users/me`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (userRes.ok) {
+                    const user = await userRes.json();
+                    if (user.sparePartStore?.id) {
+                        // 2. Fetch Stats
+                        const statsRes = await fetch(`${API_BASE_URL}/api/analytics/stats?providerId=${user.sparePartStore.id}&type=sparePart`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (statsRes.ok) {
+                            setAnalyticsData(await statsRes.json());
+                        }
+                    }
+                }
+            } else if (mainTab === 'Products') {
                 console.log('[fetchData] Fetching products...');
                 const response = await fetch(`${API_BASE_URL}/api/spare-parts/my-parts`, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -165,6 +180,7 @@ export default function SparePartDashboard() {
                 text: "Delete", style: "destructive", onPress: async () => {
                     try {
                         const token = await getToken();
+                        console.log('[handleDeletePart] Token obtained.');
                         const response = await fetch(`${API_BASE_URL}/api/spare-parts/${partId}`, {
                             method: 'DELETE',
                             headers: { 'Authorization': `Bearer ${token}` }
@@ -268,12 +284,11 @@ export default function SparePartDashboard() {
     const renderListHeader = () => (
         <View>
             <View style={styles.mainTabContainer}>
-                <TouchableOpacity onPress={() => setMainTab('Products')} style={[styles.mainTab, mainTab === 'Products' && styles.activeMainTab]}>
-                    <Text style={[styles.mainTabText, mainTab === 'Products' && styles.activeMainTabText]}>My Products</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setMainTab('Orders')} style={[styles.mainTab, mainTab === 'Orders' && styles.activeMainTab]}>
-                    <Text style={[styles.mainTabText, mainTab === 'Orders' && styles.activeMainTabText]}>Orders</Text>
-                </TouchableOpacity>
+                {['Products', 'Orders', 'Analytics'].map((tab) => (
+                    <TouchableOpacity key={tab} onPress={() => setMainTab(tab as any)} style={[styles.mainTab, mainTab === tab && styles.activeMainTab]}>
+                        <Text style={[styles.mainTabText, mainTab === tab && styles.activeMainTabText]}>{tab}</Text>
+                    </TouchableOpacity>
+                ))}
             </View>
             {mainTab === 'Orders' && (
                 <View style={styles.tabContainer}>
@@ -303,6 +318,57 @@ export default function SparePartDashboard() {
 
             {loading ? (
                 <View style={styles.centered}><RotatingLoader /></View>
+            ) : mainTab === 'Analytics' ? (
+                <ScrollView contentContainerStyle={{ paddingBottom: 100 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+                    {renderListHeader()}
+                    <View style={styles.card}>
+                        <Text style={styles.cardTitle}>Business Analytics</Text>
+                        {analyticsData ? (
+                            <View>
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                                    <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#e0f7fa', padding: 10, borderRadius: 10 }}>
+                                        <Ionicons name="cash-outline" size={24} color="#006064" />
+                                        <Text style={{ fontSize: 12, color: '#006064', marginTop: 5 }}>Total Revenue</Text>
+                                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#006064' }}>₹{analyticsData.totalRevenue.toLocaleString()}</Text>
+                                    </View>
+                                    <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#fff3e0', padding: 10, borderRadius: 10 }}>
+                                        <Ionicons name="calendar-outline" size={24} color="#e65100" />
+                                        <Text style={{ fontSize: 12, color: '#e65100', marginTop: 5 }}>Total Orders</Text>
+                                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#e65100' }}>{analyticsData.totalBookings}</Text>
+                                    </View>
+                                    <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#f3e5f5', padding: 10, borderRadius: 10 }}>
+                                        <Ionicons name="trending-up-outline" size={24} color="#4a148c" />
+                                        <Text style={{ fontSize: 12, color: '#4a148c', marginTop: 5 }}>Avg. Order Value</Text>
+                                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#4a148c' }}>₹{analyticsData.averageRevenue.toFixed(0)}</Text>
+                                    </View>
+                                    <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#e8f5e9', padding: 10, borderRadius: 10 }}>
+                                        <Ionicons name="checkbox-outline" size={24} color="#1b5e20" />
+                                        <Text style={{ fontSize: 12, color: '#1b5e20', marginTop: 5 }}>Completed Orders</Text>
+                                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1b5e20' }}>{analyticsData.completedBookings}</Text>
+                                    </View>
+                                </View>
+                                <View style={{ marginTop: 20, padding: 15, backgroundColor: '#f9f9f9', borderRadius: 10 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                                        <Ionicons name="trophy" size={20} color="#fbc02d" />
+                                        <Text style={{ fontSize: 16, fontWeight: 'bold', marginLeft: 8, color: '#333' }}>Top Customer</Text>
+                                    </View>
+                                    {analyticsData.topCustomer.name !== 'N/A' ? (
+                                        <View>
+                                            <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#005C70' }}>{analyticsData.topCustomer.name}</Text>
+                                            <Text style={{ color: '#666', fontSize: 14 }}>
+                                                {analyticsData.topCustomer.bookings} Orders
+                                            </Text>
+                                        </View>
+                                    ) : (
+                                        <Text style={{ color: '#999', fontStyle: 'italic' }}>No data yet.</Text>
+                                    )}
+                                </View>
+                            </View>
+                        ) : (
+                            <ActivityIndicator size="large" color="#005C70" />
+                        )}
+                    </View>
+                </ScrollView>
             ) : (
                 <FlatList
                     data={mainTab === 'Products' ? parts : orders}

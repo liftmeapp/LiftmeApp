@@ -9,8 +9,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
     ActivityIndicator, Alert,
     FlatList,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
@@ -38,6 +43,7 @@ const TowingServiceMapContent = () => {
     const router = useRouter();
     const { getToken } = useAuth();
     const bottomSheetRef = useRef<BottomSheet>(null);
+    const paymentCardsLoadedForBookingRef = useRef<string | null>(null);
     const snapPoints = useMemo(() => ['45%', '85%'], []);
 
     // --- STATE MANAGEMENT ---
@@ -48,6 +54,7 @@ const TowingServiceMapContent = () => {
 
     const {
         currentStage, setCurrentStage,
+        currentBookingId,
         vehicles,
         selectedVehicle, setSelectedVehicle,
         pickupLocation, setPickupLocation,
@@ -58,8 +65,20 @@ const TowingServiceMapContent = () => {
         isConfirmingPayment, confirmPayment, confirmCashBooking,
         startTowingBooking, startTowToGarageBooking, cancelTowingBooking,
         resetTowingBookingFlow,
-        searchCountdown, eligibleTruckCount
+        searchCountdown, eligibleTruckCount,
+        fetchUserVehicles
     } = useTowingBooking();
+    const [isAddVehicleModalVisible, setIsAddVehicleModalVisible] = useState(false);
+    const [isAddingVehicle, setIsAddingVehicle] = useState(false);
+    const [vehicleForm, setVehicleForm] = useState({
+        brand: '',
+        name: '',
+        model: '',
+        year: '',
+        plateNumber: '',
+        color: '',
+        type: 'SEDAN',
+    });
 
     const fetchSavedCards = useCallback(async () => {
         setIsFetchingCards(true);
@@ -68,6 +87,10 @@ const TowingServiceMapContent = () => {
             if (!token) throw new Error("Authentication failed.");
             const res = await fetch(`${API_BASE_URL}/api/stripe/payment-methods`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (!res.ok) throw new Error("Could not load your saved cards.");
+            const contentType = res.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error('Server returned non-JSON response. Check API URL/backend availability.');
+            }
             const cards = await res.json();
             setSavedCards(cards);
 
@@ -76,11 +99,11 @@ const TowingServiceMapContent = () => {
         } finally {
             setIsFetchingCards(false);
         }
-    }, []);
+    }, [getToken]);
 
     useEffect(() => {
         if (!bottomSheetRef.current) return;
-        const snap = (index: number) => { try { bottomSheetRef.current?.snapToIndex(index); } catch (e) { } };
+        const snap = (index: number) => { try { bottomSheetRef.current?.snapToIndex(index); } catch { } };
 
         if (currentStage === TowingBookingStage.CONFIRMED) {
             router.replace('/(root)/(tabs)/orders');
@@ -96,13 +119,19 @@ const TowingServiceMapContent = () => {
                 break;
             case TowingBookingStage.PAYMENT:
                 snap(1);
-                fetchSavedCards();
+                {
+                    const bookingKey = currentBookingId || '__unknown__';
+                    if (paymentCardsLoadedForBookingRef.current !== bookingKey) {
+                        paymentCardsLoadedForBookingRef.current = bookingKey;
+                        fetchSavedCards();
+                    }
+                }
                 break;
             case TowingBookingStage.SEARCHING_FOR_PROVIDER:
                 snap(0);
                 break;
         }
-    }, [currentStage, fetchSavedCards, router]);
+    }, [currentStage, currentBookingId, fetchSavedCards, resetTowingBookingFlow, router]);
 
     const handleLocationChange = (location: PinnedLocationData) => {
         if (currentStage === TowingBookingStage.PICKUP_SELECTION) setPickupLocation(location);
@@ -152,6 +181,53 @@ const TowingServiceMapContent = () => {
             return;
         }
         startTowToGarageBooking();
+    };
+
+    const openAddVehicleModal = () => {
+        setVehicleForm({
+            brand: '',
+            name: '',
+            model: '',
+            year: '',
+            plateNumber: '',
+            color: '',
+            type: 'SEDAN',
+        });
+        setIsAddVehicleModalVisible(true);
+    };
+
+    const handleCreateVehicle = async () => {
+        if (!vehicleForm.brand.trim() || !vehicleForm.name.trim() || !vehicleForm.year.trim() || !vehicleForm.plateNumber.trim()) {
+            Alert.alert('Missing Information', 'Brand, name, year, and plate number are required.');
+            return;
+        }
+        setIsAddingVehicle(true);
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/vehicles`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    brand: vehicleForm.brand.trim(),
+                    name: vehicleForm.name.trim(),
+                    model: vehicleForm.model.trim(),
+                    year: vehicleForm.year.trim(),
+                    plateNumber: vehicleForm.plateNumber.trim().toUpperCase(),
+                    color: vehicleForm.color.trim(),
+                    type: vehicleForm.type,
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Failed to add vehicle.');
+            await fetchUserVehicles();
+            setSelectedVehicle(data);
+            setIsAddVehicleModalVisible(false);
+            Alert.alert('Vehicle Added', 'Your vehicle was added successfully.');
+        } catch (error: any) {
+            Alert.alert('Add Vehicle Error', error.message || 'An unexpected error occurred.');
+        } finally {
+            setIsAddingVehicle(false);
+        }
     };
 
     const renderLocationContent = () => {
@@ -252,7 +328,7 @@ const TowingServiceMapContent = () => {
                         <Text style={styles.confirmButtonText}>Confirm Vehicle & Set Pickup</Text>
                     </TouchableOpacity>
                 )}
-                <TouchableOpacity style={styles.addVehicleButton} onPress={() => router.push('/(root)/(tabs)/settings/vehicle-page/add-vehicle')}>
+                <TouchableOpacity style={styles.addVehicleButton} onPress={openAddVehicleModal}>
                     <Ionicons name="add-circle-outline" size={22} color={color.white} />
                     <Text style={styles.addVehicleButtonText}>Add a New Vehicle</Text>
                 </TouchableOpacity>
@@ -402,7 +478,7 @@ const TowingServiceMapContent = () => {
                                 </View>
                             </View>
                             <Text style={styles.pricingExplanation}>
-                                *Price is calculated based on your vehicle type's rate per kilometer.
+                                *Price is calculated based on your vehicle type&apos;s rate per kilometer.
                             </Text>
                         </View>
 
@@ -466,6 +542,41 @@ const TowingServiceMapContent = () => {
                 >
                     {renderContent()}
                 </BottomSheet>
+                <Modal
+                    visible={isAddVehicleModalVisible}
+                    transparent
+                    animationType="slide"
+                    onRequestClose={() => setIsAddVehicleModalVisible(false)}
+                >
+                    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+                        <View style={styles.modalCard}>
+                            <Text style={styles.modalTitle}>Add New Vehicle</Text>
+                            <ScrollView keyboardShouldPersistTaps="handled">
+                                <TextInput style={styles.modalInput} placeholder="Brand*" value={vehicleForm.brand} onChangeText={(text) => setVehicleForm((p) => ({ ...p, brand: text }))} />
+                                <TextInput style={styles.modalInput} placeholder="Name*" value={vehicleForm.name} onChangeText={(text) => setVehicleForm((p) => ({ ...p, name: text }))} />
+                                <TextInput style={styles.modalInput} placeholder="Model" value={vehicleForm.model} onChangeText={(text) => setVehicleForm((p) => ({ ...p, model: text }))} />
+                                <TextInput style={styles.modalInput} placeholder="Year*" keyboardType="numeric" maxLength={4} value={vehicleForm.year} onChangeText={(text) => setVehicleForm((p) => ({ ...p, year: text.replace(/[^0-9]/g, '') }))} />
+                                <TextInput style={styles.modalInput} placeholder="Plate Number*" autoCapitalize="characters" value={vehicleForm.plateNumber} onChangeText={(text) => setVehicleForm((p) => ({ ...p, plateNumber: text.toUpperCase() }))} />
+                                <TextInput style={styles.modalInput} placeholder="Color" value={vehicleForm.color} onChangeText={(text) => setVehicleForm((p) => ({ ...p, color: text }))} />
+                                <View style={styles.typeRow}>
+                                    {['SEDAN', 'SUV', 'EV', 'BIKE'].map((type) => (
+                                        <TouchableOpacity key={type} style={[styles.typeChip, vehicleForm.type === type && styles.typeChipActive]} onPress={() => setVehicleForm((p) => ({ ...p, type }))}>
+                                            <Text style={[styles.typeChipText, vehicleForm.type === type && styles.typeChipTextActive]}>{type}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                                <View style={styles.modalActions}>
+                                    <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsAddVehicleModalVisible(false)} disabled={isAddingVehicle}>
+                                        <Text style={styles.modalCancelText}>Cancel</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={[styles.modalSaveBtn, isAddingVehicle && styles.disabledButton]} onPress={handleCreateVehicle} disabled={isAddingVehicle}>
+                                        {isAddingVehicle ? <ActivityIndicator color={color.white} /> : <Text style={styles.modalSaveText}>Save</Text>}
+                                    </TouchableOpacity>
+                                </View>
+                            </ScrollView>
+                        </View>
+                    </KeyboardAvoidingView>
+                </Modal>
             </View>
         </GestureHandlerRootView>
     );
@@ -553,5 +664,83 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: 'bold',
         marginLeft: 10,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        justifyContent: 'center',
+        padding: 20,
+    },
+    modalCard: {
+        backgroundColor: color.white,
+        borderRadius: 16,
+        padding: 16,
+        maxHeight: '85%',
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: color.darkGray,
+        marginBottom: 12,
+    },
+    modalInput: {
+        borderWidth: 1,
+        borderColor: color.border,
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginBottom: 10,
+        color: color.darkGray,
+    },
+    typeRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 12,
+    },
+    typeChip: {
+        borderWidth: 1,
+        borderColor: color.border,
+        borderRadius: 999,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+    },
+    typeChipActive: {
+        backgroundColor: color.primary,
+        borderColor: color.primary,
+    },
+    typeChipText: {
+        color: color.darkGray,
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    typeChipTextActive: {
+        color: color.white,
+    },
+    modalActions: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        gap: 10,
+        marginTop: 4,
+    },
+    modalCancelBtn: {
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+    },
+    modalCancelText: {
+        color: color.mediumGray,
+        fontWeight: '600',
+    },
+    modalSaveBtn: {
+        backgroundColor: color.primary,
+        borderRadius: 10,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        minWidth: 88,
+        alignItems: 'center',
+    },
+    modalSaveText: {
+        color: color.white,
+        fontWeight: '700',
     },
 });

@@ -9,6 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import MapView, { PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -23,6 +24,7 @@ const BANGALORE_COORDS: Region = {
 export default function LocationPickerScreen() {
   const router = useRouter();
   const { mode = 'garage', garageId } = useLocalSearchParams<{ mode?: string, garageId?: string }>();
+  const insets = useSafeAreaInsets();
 
   const { getToken } = useAuth();
 
@@ -215,7 +217,7 @@ export default function LocationPickerScreen() {
         <Ionicons name="location" size={50} color="#005C70" style={styles.pinShadow} />
       </View>
 
-      <View style={styles.overlayContainer}>
+      <View style={[styles.overlayContainer, { paddingBottom: Math.max(insets.bottom + 74, 96) }]}>
         <View style={styles.instructionsContainer}>
           <Text style={styles.instructionsTitle}>Set Your Location</Text>
           <Text style={styles.instructionsSubtitle} numberOfLines={2}>{geocodedAddress}</Text>
@@ -226,7 +228,7 @@ export default function LocationPickerScreen() {
               <ActivityIndicator color="#fff" />
             ) : (
               <>
-                <Text style={styles.buttonText}>Confirm Location & Finish</Text>
+                <Text style={styles.buttonText}>{mode === 'garage' && garageId ? 'Save Location Changes' : 'Confirm Location & Finish'}</Text>
                 <Ionicons name="checkmark-done-circle" size={22} color="#fff" />
               </>
             )}

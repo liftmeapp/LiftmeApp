@@ -166,7 +166,7 @@ router.post(
         if (!ownerId) {
             return res.status(401).json({ error: 'Unauthorized: No user ID in token.' });
         }
-        const { details, services, location } = req.body;
+        const { details, services, location, supportedVehicleTypes } = req.body;
         const { name, licenseNumber, address, ownerName, numberOfEmployees, contactEmail, contactPhone, operatingHours, stripeAccountId } = details;
 
         if (!name || !licenseNumber || !location || !services || !stripeAccountId) {
@@ -261,7 +261,7 @@ router.put(
     async (req: Request, res: Response) => {
         const ownerId = req.auth.userId;
         const { garageId } = req.params;
-        const { details, services, location } = req.body;
+        const { details, services, location, supportedVehicleTypes } = req.body;
 
         if (!ownerId) {
             return res.status(401).json({ error: 'User not authenticated' });
@@ -296,6 +296,7 @@ router.put(
                     contactPhone: details.contactPhone,
                     operatingHours: details.operatingHours && typeof details.operatingHours === 'object' ? details.operatingHours : {},
                     location: location,
+                    supportedVehicleTypes: Array.isArray(supportedVehicleTypes) ? supportedVehicleTypes : existingGarage.supportedVehicleTypes,
                     services: {
                         create: services.map((service: { serviceId: string; price: number }) => ({
                             price: service.price,

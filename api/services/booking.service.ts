@@ -1,4 +1,4 @@
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus, BookingSubStatus } from '@prisma/client';
 import Stripe from 'stripe';
 import prisma from '../lib/prisma';
 import { customerSockets, io, providerSockets } from '../socket';
@@ -7,8 +7,29 @@ import { getEtaAndDistance, isGeoJSONPoint } from './geo.service';
 import { PRICE_PER_KM } from './pricing.service';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-04-10' as any });
+const OTP_TTL_MS = 10 * 60 * 1000;
 
 export class BookingService {
+    private static generateOtp() {
+        return Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
+    private static async captureAuthorizedPayment(booking: { paymentMethod: string; paymentIntentId: string | null }) {
+        if (booking.paymentMethod !== 'CARD' || !booking.paymentIntentId) return;
+
+        const intent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
+        if (intent.status === 'requires_capture') {
+            await stripe.paymentIntents.capture(booking.paymentIntentId);
+        }
+    }
+
+    private static getLocationDescription(point: any) {
+        if (!point || typeof point !== 'object') return null;
+        if (typeof point.description === 'string' && point.description.trim().length > 0) {
+            return point.description.trim();
+        }
+        return null;
+    }
 
     static async getUserBookingHistory(userId: string) {
         const user = await prisma.user.findUnique({ where: { clerkId: userId } });
@@ -44,13 +65,85 @@ export class BookingService {
                 status: { in: activeStatuses }
             },
             include: {
-                garage: { select: { name: true, contactPhone: true } },
-                towTruck: { select: { name: true } },
-                service: { select: { name: true } },
-                sparePart: { select: { partName: true } }
+                garage: true,
+                towTruck: true,
+                service: true,
+                sparePart: true,
+                vehicle: true
             },
             orderBy: { bookedAt: 'desc' }
         });
+    }
+
+    static async expireOverdueBookings() {
+        const now = new Date();
+
+        const overdueSearching = await prisma.booking.findMany({
+            where: {
+                status: BookingStatus.SEARCHING,
+                expiresAt: { lt: now },
+            },
+            select: {
+                id: true,
+                user: { select: { clerkId: true } },
+            },
+        });
+
+        for (const booking of overdueSearching) {
+            const result = await prisma.booking.updateMany({
+                where: {
+                    id: booking.id,
+                    status: BookingStatus.SEARCHING,
+                    expiresAt: { lt: now },
+                },
+                data: {
+                    status: BookingStatus.EXPIRED,
+                    cancellationReason: 'Search expired.',
+                },
+            });
+
+            if (result.count > 0) {
+                const customerSocketId = customerSockets[booking.user.clerkId];
+                if (customerSocketId) {
+                    io.to(customerSocketId).emit('booking_expired', { bookingId: booking.id });
+                }
+            }
+        }
+
+        const overduePayments = await prisma.booking.findMany({
+            where: {
+                status: BookingStatus.AWAITING_PAYMENT,
+                paymentExpiresAt: { lt: now },
+            },
+            select: {
+                id: true,
+                user: { select: { clerkId: true } },
+            },
+        });
+
+        for (const booking of overduePayments) {
+            const result = await prisma.booking.updateMany({
+                where: {
+                    id: booking.id,
+                    status: BookingStatus.AWAITING_PAYMENT,
+                    paymentExpiresAt: { lt: now },
+                },
+                data: {
+                    status: BookingStatus.CANCELLED,
+                    cancellationReason: 'Payment window expired.',
+                },
+            });
+
+            if (result.count > 0) {
+                const customerSocketId = customerSockets[booking.user.clerkId];
+                if (customerSocketId) {
+                    io.to(customerSocketId).emit('booking_status_updated', {
+                        bookingId: booking.id,
+                        status: BookingStatus.CANCELLED,
+                    });
+                }
+            }
+        }
     }
 
     static async getSparePartOrders(sellerClerkId: string, statusQuery: string) {
@@ -142,7 +235,7 @@ export class BookingService {
                 currency: 'inr',
                 customer: user.stripeCustomerId,
                 application_fee_amount: applicationFee,
-                transfer_data: { destination: (sparePart.store as any).stripeAccountId },
+                transfer_data: { destination: (sparePart!.store as any).stripeAccountId },
                 capture_method: 'manual',
                 metadata: { bookingId: updatedBooking.id, type: 'spare_part_purchase' },
             });
@@ -209,7 +302,7 @@ export class BookingService {
 
         const statusesToFetch = ['SEARCHING', 'CONFIRMED', 'IN_PROGRESS', 'AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
 
-        return await prisma.booking.findMany({
+        const bookings = await prisma.booking.findMany({
             where: {
                 OR: [
                     { garageId: garage.id, status: { in: statusesToFetch as BookingStatus[] } },
@@ -223,6 +316,29 @@ export class BookingService {
             include: { user: true, vehicle: true, service: true },
             orderBy: { bookedAt: 'desc' }
         });
+
+        return await Promise.all(
+            bookings.map(async (booking: any) => {
+                let distance = booking.distance ?? null;
+                if (distance == null && isGeoJSONPoint(booking.pickupLocation) && isGeoJSONPoint(garage.location)) {
+                    try {
+                        const origin = { lat: garage.location.coordinates[1], lon: garage.location.coordinates[0] };
+                        const destination = { lat: booking.pickupLocation.coordinates[1], lon: booking.pickupLocation.coordinates[0] };
+                        const etaResult = await getEtaAndDistance(origin, destination);
+                        distance = etaResult.distanceKm ?? null;
+                    } catch {
+                        distance = null;
+                    }
+                }
+
+                return {
+                    ...booking,
+                    distance,
+                    pickupAddress: this.getLocationDescription(booking.pickupLocation),
+                    destinationAddress: this.getLocationDescription(booking.destinationLocation),
+                };
+            })
+        );
     }
 
     static async getTowTruckBookings(towTruckOwnerId: string, statusQuery: string) {
@@ -237,7 +353,7 @@ export class BookingService {
 
         const statusesToFetch = ['AWAITING_PAYMENT', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
 
-        return await prisma.booking.findMany({
+        const bookings = await prisma.booking.findMany({
             where: {
                 OR: [
                     { towTruckId: towTruck.id, status: { in: statusesToFetch as BookingStatus[] } },
@@ -251,18 +367,24 @@ export class BookingService {
             include: { user: true, vehicle: true, garage: true },
             orderBy: { bookedAt: 'desc' }
         });
+
+        return bookings.map((booking: any) => ({
+            ...booking,
+            pickupAddress: this.getLocationDescription(booking.pickupLocation),
+            destinationAddress: this.getLocationDescription(booking.destinationLocation),
+        }));
     }
 
     static async acceptBooking(bookingId: string, garageOwnerId: string) {
         const garage = await prisma.garage.findFirst({
             where: { owner: { clerkId: garageOwnerId } },
-            include: { services: true }
+            include: { services: { include: { service: true } } }
         });
         if (!garage) throw new AppError(403, "Garage profile not found.");
 
         const bookingToAccept = await prisma.booking.findUnique({
             where: { id: bookingId },
-            include: { user: true }
+            include: { user: true, service: true }
         });
         if (!bookingToAccept) throw new AppError(404, "Booking request not found.");
 
@@ -270,7 +392,10 @@ export class BookingService {
         if (bookingToAccept.expiresAt && new Date() > bookingToAccept.expiresAt) throw new AppError(410, "This request has expired.");
         if (!bookingToAccept.eligibleProviderIds.includes(garage.id)) throw new AppError(403, "Your garage is not eligible for this request.");
 
-        const garageService = garage.services.find(s => s.serviceId === bookingToAccept.serviceId);
+        const isRoadsideBikeBooking = bookingToAccept.service?.category === 'ROADSIDE_BIKE';
+        const exactGarageService = garage.services.find(s => s.serviceId === bookingToAccept.serviceId);
+        const fallbackBikeService = garage.services.find(s => s.service?.category === 'ROADSIDE_BIKE');
+        const garageService = isRoadsideBikeBooking ? (exactGarageService ?? fallbackBikeService) : exactGarageService;
         if (!garageService) throw new AppError(400, "This garage does not offer the requested service.");
         const servicePrice = garageService.price;
 
@@ -300,6 +425,7 @@ export class BookingService {
             data: {
                 status: BookingStatus.AWAITING_PAYMENT,
                 garage: { connect: { id: garage.id } },
+                service: { connect: { id: garageService.serviceId } },
                 basePrice: servicePrice,
                 finalAmount: finalAmount,
                 eligibleProviderIds: [],
@@ -430,12 +556,15 @@ export class BookingService {
 
                 const socketId = providerSockets[truck.id];
                 if (socketId) {
-                    io.to(socketId).emit('new_tow_request_for_garage', {
+                    const payload = {
                         ...updatedBooking,
                         distance: distanceToPickup,
                         totalDistance: totalTowingDistance,
-                        finalAmount: estimatedFare
-                    });
+                        finalAmount: estimatedFare,
+                    };
+                    io.to(socketId).emit('new_tow_request_for_garage', payload);
+                    io.to(socketId).emit('new_booking_request', payload);
+                    io.to(socketId).emit('new_booking', payload);
                     console.log(`📬 Emitted 'new_tow_request_for_garage' to tow truck ${truck.id} with fare ${estimatedFare}`);
                 }
             } catch (e) {
@@ -590,26 +719,895 @@ export class BookingService {
         });
 
         if (!booking) throw new AppError(404, "Booking not found or not assigned to you.");
+        if (!booking.otp || !booking.otpExpiresAt) throw new AppError(409, "OTP has not been generated yet.");
         if (booking.otp !== otp) throw new AppError(400, "Invalid OTP provided.");
         if (booking.otpExpiresAt && new Date() > booking.otpExpiresAt) throw new AppError(410, "The OTP has expired.");
 
-        const isTowToGarageService = booking.bookingType === 'TOW_TO_GARAGE' && booking.status === BookingStatus.IN_PROGRESS && booking.subStatus === 'SERVICE_IN_PROGRESS';
-        const isStandardService = booking.status === BookingStatus.CONFIRMED;
-
-        if (!isStandardService && !isTowToGarageService) {
-            throw new AppError(409, "Booking is not in a verifiable state.");
-        }
+        await this.captureAuthorizedPayment(booking);
 
         const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
                 status: BookingStatus.COMPLETED,
+                subStatus: BookingSubStatus.SERVICE_COMPLETED,
+                paymentStatus: booking.paymentMethod === 'CASH' ? 'paid_in_cash' : 'paid',
                 serviceEndedAt: new Date(),
                 otp: null,
                 otpExpiresAt: null,
-                subStatus: 'SERVICE_COMPLETED'
+            },
+            include: { user: true }
+        });
+
+        const customerSocketId = customerSockets[updatedBooking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('service_completed', { bookingId: updatedBooking.id });
+        }
+
+        return { success: true, booking: updatedBooking };
+    }
+
+    static async requestService(clerkId: string, serviceId: string, vehicleId: string, userLat: number, userLon: number, pickupDescription?: string) {
+        const user = await prisma.user.findUnique({ where: { clerkId } });
+        if (!user) throw new AppError(404, "User not found.");
+        const userId = user.id;
+
+        const service = await prisma.service.findUnique({ where: { id: serviceId } });
+        if (!service) throw new AppError(404, "Service not found.");
+
+        const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
+        if (!vehicle) throw new AppError(404, "Vehicle not found.");
+
+        const nearbyGaragesRaw = await prisma.garage.aggregateRaw({
+            pipeline: [
+                {
+                    '$geoNear': {
+                        near: { type: "Point", coordinates: [userLon, userLat] },
+                        distanceField: "distance",
+                        maxDistance: 50000,
+                        query: { isOpen: true, status: 'APPROVED' },
+                        spherical: true
+                    }
+                },
+                { '$limit': 20 }
+            ]
+        });
+
+        if (!Array.isArray(nearbyGaragesRaw) || nearbyGaragesRaw.length === 0) {
+            throw new AppError(404, "No garages found nearby.");
+        }
+
+        const nearbyGarageIds = nearbyGaragesRaw.map((g: any) => g._id.$oid);
+
+        const isRoadsideBikeRequest = service.category === 'ROADSIDE_BIKE';
+        const eligibleGarages = await prisma.garage.findMany({
+            where: {
+                id: { in: nearbyGarageIds },
+                services: isRoadsideBikeRequest
+                    ? { some: { service: { category: 'ROADSIDE_BIKE' } } }
+                    : { some: { serviceId: service.id } }
+            },
+            include: { services: { include: { service: true } } }
+        });
+
+        if (eligibleGarages.length === 0) {
+            throw new AppError(404, "No garages found nearby offering this service.");
+        }
+
+        const eligibleIds = eligibleGarages.map(g => g.id);
+
+        const firstGarage = eligibleGarages[0];
+        const firstGarageExactService = firstGarage.services.find(s => s.serviceId === service.id);
+        const firstGarageBikeService = firstGarage.services.find(s => s.service?.category === 'ROADSIDE_BIKE');
+        const initialServicePrice = isRoadsideBikeRequest
+            ? (firstGarageExactService?.price ?? firstGarageBikeService?.price ?? 0)
+            : (firstGarageExactService?.price ?? 0);
+
+        const booking = await prisma.booking.create({
+            data: {
+                userId,
+                serviceId,
+                vehicleId,
+                status: BookingStatus.SEARCHING,
+                bookingType: 'ROADSIDE_ASSISTANCE',
+                eligibleProviderIds: eligibleIds,
+                pickupLocation: {
+                    type: 'Point',
+                    coordinates: [userLon, userLat],
+                    ...(pickupDescription ? { description: pickupDescription } : {}),
+                },
+                expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+                basePrice: initialServicePrice,
+                finalAmount: 0
             }
         });
+
+        for (const garage of eligibleGarages) {
+            const socketId = providerSockets[garage.id];
+            if (socketId) {
+                const garageService = garage.services.find(s => s.serviceId === service.id);
+                const fallbackBikeService = garage.services.find(s => s.service?.category === 'ROADSIDE_BIKE');
+                const quotedPrice = isRoadsideBikeRequest
+                    ? (garageService?.price ?? fallbackBikeService?.price)
+                    : garageService?.price;
+                const payload = {
+                    bookingId: booking.id,
+                    serviceName: service.name,
+                    vehicle: { brand: vehicle.brand, model: vehicle.model },
+                    userLocation: { lat: userLat, lon: userLon },
+                    pickupAddress: pickupDescription || null,
+                    price: quotedPrice
+                };
+                io.to(socketId).emit('new_booking_request', payload);
+                io.to(socketId).emit('new_booking', payload);
+            }
+        }
+
+        return { success: true, bookingId: booking.id };
+    }
+
+    static async requestTowing(clerkId: string, vehicleId: string, vehicleType: string, pickup: any, destination: any) {
+        const user = await prisma.user.findUnique({ where: { clerkId } });
+        if (!user) throw new AppError(404, "User not found.");
+        const userId = user.id;
+
+        if (!pickup || !pickup.latitude || !pickup.longitude) throw new AppError(400, "Invalid pickup location.");
+
+        const nearbyTrucksRaw = await prisma.liveTruckLocation.aggregateRaw({
+            pipeline: [
+                {
+                    '$geoNear': {
+                        near: { type: "Point", coordinates: [pickup.longitude, pickup.latitude] },
+                        distanceField: "distance",
+                        maxDistance: 50000,
+                        query: { isAvailable: true },
+                        spherical: true
+                    }
+                },
+                { '$limit': 20 }
+            ]
+        });
+
+        if (!Array.isArray(nearbyTrucksRaw) || nearbyTrucksRaw.length === 0) {
+            throw new AppError(404, "No tow trucks found nearby.");
+        }
+
+        const nearbyTruckIds = nearbyTrucksRaw.map((t: any) => t.towTruckId.$oid);
+
+        const eligibleTrucks = await prisma.towTruck.findMany({
+            where: {
+                id: { in: nearbyTruckIds },
+                status: 'APPROVED',
+                services: { some: { vehicleType: vehicleType as any } }
+            },
+            include: { services: true }
+        });
+
+        if (eligibleTrucks.length === 0) {
+            throw new AppError(404, "No tow trucks found nearby for this vehicle type.");
+        }
+
+        const eligibleIds = eligibleTrucks.map(t => t.id);
+
+        const booking = await prisma.booking.create({
+            data: {
+                userId,
+                vehicleId,
+                status: BookingStatus.SEARCHING,
+                bookingType: 'DIRECT_TOW',
+                eligibleProviderIds: eligibleIds,
+                pickupLocation: {
+                    type: 'Point',
+                    coordinates: [pickup.longitude, pickup.latitude],
+                    ...(pickup?.description ? { description: pickup.description } : {}),
+                },
+                destinationLocation: destination ? {
+                    type: 'Point',
+                    coordinates: [destination.longitude, destination.latitude],
+                    ...(destination?.description ? { description: destination.description } : {}),
+                } : undefined,
+                expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+                basePrice: 0,
+                finalAmount: 0
+            }
+        });
+
+        for (const truck of eligibleTrucks) {
+            const socketId = providerSockets[truck.id];
+            if (socketId) {
+                const payload = {
+                    bookingId: booking.id,
+                    vehicleType,
+                    pickupLocation: pickup,
+                    destinationLocation: destination,
+                    pickupAddress: pickup?.description || null,
+                    destinationAddress: destination?.description || null,
+                };
+                io.to(socketId).emit('new_booking_request', payload);
+                io.to(socketId).emit('new_booking', payload);
+            }
+        }
+
+        return { success: true, bookingId: booking.id };
+    }
+
+    static async requestTowToGarage(clerkId: string, vehicleId: string, pickup: any) {
+        const user = await prisma.user.findUnique({ where: { clerkId } });
+        if (!user) throw new AppError(404, "User not found.");
+        const userId = user.id;
+
+        if (!pickup || !pickup.latitude || !pickup.longitude) throw new AppError(400, "Invalid pickup location.");
+
+        const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
+        if (!vehicle) throw new AppError(404, "Vehicle not found.");
+
+        const nearbyGaragesRaw = await prisma.garage.aggregateRaw({
+            pipeline: [
+                {
+                    '$geoNear': {
+                        near: { type: "Point", coordinates: [pickup.longitude, pickup.latitude] },
+                        distanceField: "distance",
+                        maxDistance: 50000,
+                        query: { isOpen: true, status: 'APPROVED' },
+                        spherical: true
+                    }
+                },
+                { '$limit': 20 }
+            ]
+        });
+
+        if (!Array.isArray(nearbyGaragesRaw) || nearbyGaragesRaw.length === 0) {
+            throw new AppError(404, "No garages found nearby.");
+        }
+
+        const nearbyGarageIds = nearbyGaragesRaw.map((g: any) => g._id.$oid);
+        const eligibleGarages = await prisma.garage.findMany({
+            where: {
+                id: { in: nearbyGarageIds },
+                status: 'APPROVED',
+                isOpen: true,
+            },
+        });
+
+        if (eligibleGarages.length === 0) {
+            throw new AppError(404, "No garages available nearby.");
+        }
+
+        const booking = await prisma.booking.create({
+            data: {
+                userId,
+                vehicleId,
+                bookingType: 'TOW_TO_GARAGE',
+                status: BookingStatus.SEARCHING,
+                subStatus: BookingSubStatus.AWAITING_GARAGE_ACCEPTANCE,
+                eligibleProviderIds: eligibleGarages.map(g => g.id),
+                pickupLocation: {
+                    type: 'Point',
+                    coordinates: [pickup.longitude, pickup.latitude],
+                    ...(pickup?.description ? { description: pickup.description } : {}),
+                },
+                expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+                basePrice: 0,
+                finalAmount: 0,
+            },
+            include: {
+                user: { select: { firstName: true, lastName: true } },
+                vehicle: true,
+            }
+        });
+
+        for (const garage of eligibleGarages) {
+            const socketId = providerSockets[garage.id];
+            if (socketId) {
+                io.to(socketId).emit('new_tow_in_request', booking);
+                io.to(socketId).emit('new_booking_request', booking);
+                io.to(socketId).emit('new_booking', booking);
+            }
+        }
+
+        return { success: true, bookingId: booking.id, eligibleGarageCount: eligibleGarages.length };
+    }
+
+    static async getBookingStatus(bookingId: string, customerClerkId: string) {
+        let booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: {
+                garage: { select: { id: true, name: true, rating: true, address: true, location: true } },
+                towTruck: {
+                    select: {
+                        id: true,
+                        name: true,
+                        model: true,
+                        make: true,
+                        liveLocation: { select: { location: true } },
+                    }
+                },
+            }
+        });
+
+        if (!booking) throw new AppError(404, "Booking not found.");
+
+        if (booking.status === BookingStatus.AWAITING_PAYMENT && booking.paymentExpiresAt && new Date() > booking.paymentExpiresAt) {
+            booking = await prisma.booking.update({
+                where: { id: booking.id },
+                data: { status: BookingStatus.CANCELLED, cancellationReason: 'Payment window expired.' },
+                include: {
+                    garage: { select: { id: true, name: true, rating: true, address: true, location: true } },
+                    towTruck: {
+                        select: {
+                            id: true,
+                            name: true,
+                            model: true,
+                            make: true,
+                            liveLocation: { select: { location: true } },
+                        }
+                    },
+                }
+            });
+        }
+
+        if (booking.status === BookingStatus.SEARCHING && booking.expiresAt && new Date() > booking.expiresAt) {
+            booking = await prisma.booking.update({
+                where: { id: booking.id },
+                data: { status: BookingStatus.EXPIRED, cancellationReason: 'Search expired.' },
+                include: {
+                    garage: { select: { id: true, name: true, rating: true, address: true, location: true } },
+                    towTruck: {
+                        select: {
+                            id: true,
+                            name: true,
+                            model: true,
+                            make: true,
+                            liveLocation: { select: { location: true } },
+                        }
+                    },
+                }
+            });
+        }
+
+        const provider = booking.towTruck ?? booking.garage;
+        const providerLocation = booking.towTruck?.liveLocation?.location ?? booking.garage?.location;
+        if ((booking.status === BookingStatus.CONFIRMED || booking.status === BookingStatus.AWAITING_PAYMENT) && provider && isGeoJSONPoint(booking.pickupLocation) && isGeoJSONPoint(providerLocation)) {
+            const userCoords = booking.pickupLocation.coordinates;
+            const providerCoords = providerLocation.coordinates;
+            const { etaMinutes, distanceKm } = await getEtaAndDistance(
+                { lat: userCoords[1], lon: userCoords[0] },
+                { lat: providerCoords[1], lon: providerCoords[0] }
+            );
+            return {
+                status: booking.status,
+                otp: booking.otp,
+                provider: { ...provider, eta: etaMinutes, distance: distanceKm },
+                finalPrice: booking.finalAmount,
+            };
+        }
+
+        return {
+            status: booking.status,
+            otp: booking.otp,
+            provider,
+            finalPrice: booking.finalAmount,
+        };
+    }
+
+    static async createPaymentIntent(bookingId: string, customerClerkId: string) {
+        const booking = await prisma.booking.findUnique({
+            where: { id: bookingId },
+            include: { garage: true, towTruck: true, user: true },
+        });
+
+        if (!booking || booking.user.clerkId !== customerClerkId) {
+            throw new AppError(404, "Booking not found or not owned by user.");
+        }
+        if (booking.status !== BookingStatus.AWAITING_PAYMENT) {
+            throw new AppError(409, "This booking is not awaiting payment.");
+        }
+        if (booking.paymentExpiresAt && new Date() > booking.paymentExpiresAt) {
+            throw new AppError(410, "The payment window for this booking has expired.");
+        }
+
+        const provider = booking.towTruck ?? booking.garage;
+        if (!provider || !provider.stripeAccountId) {
+            throw new AppError(400, "Provider is not set up to receive payments.");
+        }
+
+        let stripeCustomerId = booking.user.stripeCustomerId;
+        if (!stripeCustomerId) {
+            const customer = await stripe.customers.create({
+                email: booking.user.email,
+                name: `${booking.user.firstName} ${booking.user.lastName || ''}`.trim(),
+                phone: booking.user.phone,
+            });
+            stripeCustomerId = customer.id;
+            await prisma.user.update({
+                where: { id: booking.user.id },
+                data: { stripeCustomerId },
+            });
+        }
+
+        const amountInCents = Math.round(booking.finalAmount * 100);
+        if (amountInCents <= 0) throw new AppError(400, "Invalid booking amount for payment.");
+        const applicationFee = Math.round(amountInCents * 0.10);
+
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amountInCents,
+            currency: 'inr',
+            customer: stripeCustomerId,
+            application_fee_amount: applicationFee,
+            transfer_data: { destination: provider.stripeAccountId },
+            capture_method: 'manual',
+            metadata: {
+                bookingId: booking.id,
+                userId: booking.user.id,
+            }
+        });
+
+        await prisma.booking.update({
+            where: { id: booking.id },
+            data: { paymentIntentId: paymentIntent.id, paymentMethod: 'CARD' },
+        });
+
+        return { clientSecret: paymentIntent.client_secret };
+    }
+
+    static async confirmPayment(bookingId: string, customerClerkId: string) {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+        });
+        if (!booking) throw new AppError(404, "Booking not found.");
+        if (booking.status !== BookingStatus.AWAITING_PAYMENT) throw new AppError(409, "This booking is not awaiting payment.");
+        if (booking.paymentExpiresAt && new Date() > booking.paymentExpiresAt) throw new AppError(410, "The payment window for this booking has expired.");
+        if (!booking.paymentIntentId) throw new AppError(400, "Payment has not been initiated for this booking.");
+
+        const intent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
+        if (intent.status !== 'requires_capture' && intent.status !== 'succeeded') {
+            throw new AppError(400, "Payment could not be authorized. Please try again.");
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: booking.id },
+            data: {
+                status: BookingStatus.CONFIRMED,
+                paymentStatus: 'authorized',
+                paymentMethod: 'CARD',
+                paymentExpiresAt: null,
+                otp: null,
+                otpExpiresAt: null,
+            },
+            include: { garage: true, towTruck: true, user: true }
+        });
+
+        const providerIds = [updatedBooking.garageId, updatedBooking.towTruckId].filter(Boolean) as string[];
+        for (const providerId of providerIds) {
+            const socketId = providerSockets[providerId];
+            if (socketId) {
+                io.to(socketId).emit('payment_confirmed', { bookingId: updatedBooking.id });
+                io.to(socketId).emit('booking_status_updated', { bookingId: updatedBooking.id, status: updatedBooking.status });
+            }
+        }
+
+        return { success: true, booking: updatedBooking };
+    }
+
+    static async confirmCashBooking(bookingId: string, customerClerkId: string) {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+        });
+        if (!booking) throw new AppError(404, "Booking not found.");
+        if (booking.status !== BookingStatus.AWAITING_PAYMENT) throw new AppError(409, "This booking is not awaiting payment.");
+        if (booking.paymentExpiresAt && new Date() > booking.paymentExpiresAt) throw new AppError(410, "The payment window for this booking has expired.");
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: booking.id },
+            data: {
+                status: BookingStatus.CONFIRMED,
+                paymentStatus: 'pending_cash',
+                paymentMethod: 'CASH',
+                paymentIntentId: null,
+                paymentExpiresAt: null,
+                otp: null,
+                otpExpiresAt: null,
+            },
+            include: { garage: true, towTruck: true, user: true }
+        });
+
+        const providerIds = [updatedBooking.garageId, updatedBooking.towTruckId].filter(Boolean) as string[];
+        for (const providerId of providerIds) {
+            const socketId = providerSockets[providerId];
+            if (socketId) {
+                io.to(socketId).emit('booking_confirmed_by_user', { bookingId: updatedBooking.id });
+                io.to(socketId).emit('booking_status_updated', { bookingId: updatedBooking.id, status: updatedBooking.status });
+            }
+        }
+
+        return { success: true, booking: updatedBooking };
+    }
+
+    static async requestCompletionOtp(bookingId: string, providerClerkId: string) {
+        const booking = await prisma.booking.findFirst({
+            where: {
+                id: bookingId,
+                OR: [
+                    { garage: { owner: { clerkId: providerClerkId } } },
+                    { towTruck: { owner: { clerkId: providerClerkId } } },
+                ],
+            },
+            include: {
+                user: true,
+                garage: { include: { owner: true } },
+                towTruck: { include: { owner: true } },
+            },
+        });
+
+        if (!booking) throw new AppError(404, "Booking not found or not assigned to you.");
+
+        const providerCanRequestOtp =
+            booking.status === BookingStatus.CONFIRMED || booking.status === BookingStatus.IN_PROGRESS;
+        if (!providerCanRequestOtp) {
+            throw new AppError(409, "OTP can only be generated for active confirmed/in-progress jobs.");
+        }
+
+        const isGarageOwner = booking.garage?.owner?.clerkId === providerClerkId;
+        const isTowTruckOwner = booking.towTruck?.owner?.clerkId === providerClerkId;
+        if (isGarageOwner && !isTowTruckOwner && booking.bookingType === 'TOW_TO_GARAGE') {
+            if (
+                booking.status !== BookingStatus.IN_PROGRESS ||
+                booking.subStatus !== BookingSubStatus.SERVICE_IN_PROGRESS
+            ) {
+                throw new AppError(409, "Tow-to-garage completion OTP can be generated only after service is in progress.");
+            }
+            if (booking.finalEstimateAmount === null || booking.finalEstimateAmount === undefined) {
+                throw new AppError(409, "Submit final quote before requesting completion OTP.");
+            }
+        }
+
+        const now = new Date();
+        const hasActiveOtp = booking.otp && booking.otpExpiresAt && booking.otpExpiresAt > now;
+        const otp = hasActiveOtp ? booking.otp! : this.generateOtp();
+        const otpExpiresAt = hasActiveOtp ? booking.otpExpiresAt! : new Date(Date.now() + OTP_TTL_MS);
+
+        await prisma.booking.update({
+            where: { id: booking.id },
+            data: { otp, otpExpiresAt },
+        });
+
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('booking_otp_generated', {
+                bookingId: booking.id,
+                otp,
+                otpExpiresAt,
+            });
+        }
+
+        return { success: true, bookingId: booking.id, otpExpiresAt };
+    }
+
+    static async cancelByUser(bookingId: string, customerClerkId: string, reason = 'Cancelled by user.') {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+        });
+        if (!booking) throw new AppError(404, "Booking not found.");
+
+        const cancellableStatuses: BookingStatus[] = [BookingStatus.SEARCHING, BookingStatus.AWAITING_PAYMENT, BookingStatus.CONFIRMED];
+        if (!cancellableStatuses.includes(booking.status)) {
+            throw new AppError(403, "This booking cannot be cancelled at its current stage.");
+        }
+
+        if (booking.paymentIntentId) {
+            const intent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
+            if (intent.status === 'requires_capture') {
+                await stripe.paymentIntents.cancel(booking.paymentIntentId);
+            }
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: booking.id },
+            data: {
+                status: BookingStatus.CANCELLED,
+                cancellationReason: reason,
+                paymentStatus: booking.paymentMethod === 'CARD' ? 'cancelled' : booking.paymentStatus,
+            },
+        });
+
+        const providerIds = [booking.garageId, booking.towTruckId].filter(Boolean) as string[];
+        for (const providerId of providerIds) {
+            const socketId = providerSockets[providerId];
+            if (socketId) {
+                io.to(socketId).emit('booking_cancelled_by_customer', { bookingId: booking.id, reason });
+                io.to(socketId).emit('booking_status_updated', { bookingId: booking.id, status: BookingStatus.CANCELLED });
+            }
+        }
+
+        return { success: true, booking: updatedBooking };
+    }
+
+    static async cancelByProvider(bookingId: string, providerClerkId: string, reason: string) {
+        const booking = await prisma.booking.findFirst({
+            where: {
+                id: bookingId,
+                OR: [
+                    { garage: { owner: { clerkId: providerClerkId } } },
+                    { towTruck: { owner: { clerkId: providerClerkId } } },
+                ],
+            },
+            include: { user: true },
+        });
+
+        if (!booking) throw new AppError(404, "Booking not found or you are not the assigned provider.");
+        const providerCancellableStatuses: BookingStatus[] = [BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS, BookingStatus.AWAITING_PAYMENT];
+        if (!providerCancellableStatuses.includes(booking.status)) {
+            throw new AppError(403, "This booking cannot be cancelled at its current stage.");
+        }
+
+        let paymentStatus = booking.paymentStatus;
+        if (booking.paymentIntentId) {
+            const intent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
+            if (intent.status === 'succeeded') {
+                await stripe.refunds.create({ payment_intent: booking.paymentIntentId });
+                paymentStatus = 'refunded';
+            } else if (intent.status === 'requires_capture') {
+                await stripe.paymentIntents.cancel(booking.paymentIntentId);
+                paymentStatus = 'cancelled';
+            }
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: booking.id },
+            data: {
+                status: BookingStatus.CANCELLED,
+                paymentStatus,
+                cancellationReason: reason,
+            },
+        });
+
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('booking_cancelled_by_provider', { bookingId: booking.id, reason });
+        }
+
+        return { success: true, booking: updatedBooking };
+    }
+
+    static async verifyTowOtp(bookingId: string, otp: string, towTruckOwnerId: string) {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, towTruck: { owner: { clerkId: towTruckOwnerId } } },
+            include: { user: true }
+        });
+
+        if (!booking) throw new AppError(404, "Booking not found or not assigned to you.");
+        if (!booking.otp || !booking.otpExpiresAt) throw new AppError(409, "OTP has not been generated yet.");
+        if (booking.otp !== otp) throw new AppError(400, "Invalid OTP provided.");
+        if (booking.otpExpiresAt && new Date() > booking.otpExpiresAt) throw new AppError(410, "The OTP has expired.");
+
+        await this.captureAuthorizedPayment(booking);
+
+        const isTowToGarage = booking.bookingType === 'TOW_TO_GARAGE';
+        const updatedBooking = await prisma.booking.update({
+            where: { id: booking.id },
+            data: isTowToGarage
+                ? {
+                    status: BookingStatus.IN_PROGRESS,
+                    subStatus: BookingSubStatus.AWAITING_GARAGE_QUOTE,
+                    otp: null,
+                    otpExpiresAt: null,
+                    paymentStatus: booking.paymentMethod === 'CASH' ? 'paid_in_cash' : 'paid',
+                  }
+                : {
+                    status: BookingStatus.COMPLETED,
+                    subStatus: BookingSubStatus.SERVICE_COMPLETED,
+                    serviceEndedAt: new Date(),
+                    otp: null,
+                    otpExpiresAt: null,
+                    paymentStatus: booking.paymentMethod === 'CASH' ? 'paid_in_cash' : 'paid',
+                  },
+        });
+
+        if (isTowToGarage && updatedBooking.garageId) {
+            const garageSocketId = providerSockets[updatedBooking.garageId];
+            if (garageSocketId) {
+                io.to(garageSocketId).emit('vehicle_delivered', { bookingId: updatedBooking.id });
+                io.to(garageSocketId).emit('booking_status_updated', { bookingId: updatedBooking.id, status: updatedBooking.status, subStatus: updatedBooking.subStatus });
+            }
+        }
+
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            const event = isTowToGarage ? 'vehicle_delivered' : 'service_completed';
+            io.to(customerSocketId).emit(event, { bookingId: updatedBooking.id });
+        }
+
+        return { success: true, booking: updatedBooking };
+    }
+
+    static async submitQuote(
+        bookingId: string,
+        garageOwnerId: string,
+        payload: { vehicleStatus: string; servicesRequired: string; servicesEstimate?: string; jobEstimate: number; notes?: string }
+    ) {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, garage: { owner: { clerkId: garageOwnerId } } },
+            include: { user: true }
+        });
+
+        if (!booking) throw new AppError(404, "Booking not found or not assigned to you.");
+        if (booking.bookingType !== 'TOW_TO_GARAGE') throw new AppError(400, "Quotes are only supported for tow-to-garage bookings.");
+        const canSubmitQuote =
+            (booking.status === BookingStatus.IN_PROGRESS &&
+                (booking.subStatus === BookingSubStatus.AWAITING_GARAGE_QUOTE || booking.subStatus === BookingSubStatus.QUOTE_REJECTED)) ||
+            (booking.status === BookingStatus.CONFIRMED &&
+                (booking.subStatus === BookingSubStatus.TOW_TRUCK_ASSIGNED || booking.subStatus === BookingSubStatus.VEHICLE_DELIVERED));
+        if (!canSubmitQuote) throw new AppError(409, "Booking is not ready for quote submission.");
+
+        const currentQuoteHistory = Array.isArray(booking.quoteHistory) ? booking.quoteHistory : [];
+        const quoteEntry = {
+            type: 'initial',
+            submittedAt: new Date().toISOString(),
+            vehicleStatus: payload.vehicleStatus,
+            servicesRequired: payload.servicesRequired,
+            servicesEstimate: payload.servicesEstimate || '',
+            jobEstimate: payload.jobEstimate,
+            notes: payload.notes || '',
+        };
+
+        const nextQuoteHistory = [...currentQuoteHistory, quoteEntry] as any;
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: booking.id },
+            data: {
+                status: BookingStatus.IN_PROGRESS,
+                vehicleStatus: payload.vehicleStatus,
+                servicesRequired: payload.servicesRequired,
+                servicesEstimate: payload.servicesEstimate || '',
+                jobEstimate: payload.jobEstimate,
+                notes: payload.notes || booking.notes || null,
+                initialEstimateAmount: payload.jobEstimate,
+                subStatus: BookingSubStatus.AWAITING_QUOTE_APPROVAL,
+                quoteHistory: nextQuoteHistory,
+            },
+        });
+
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('garage_quote_submitted', { bookingId: updatedBooking.id, quote: quoteEntry });
+        }
+
+        return { success: true, booking: updatedBooking };
+    }
+
+    static async submitFinalQuote(
+        bookingId: string,
+        garageOwnerId: string,
+        payload: { jobEstimate: number; notes?: string }
+    ) {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, garage: { owner: { clerkId: garageOwnerId } } },
+            include: { user: true }
+        });
+
+        if (!booking) throw new AppError(404, "Booking not found or not assigned to you.");
+        if (booking.bookingType !== 'TOW_TO_GARAGE') throw new AppError(400, "Final quote is only supported for tow-to-garage bookings.");
+        if (booking.status !== BookingStatus.IN_PROGRESS) throw new AppError(409, "Booking is not in progress.");
+
+        const currentQuoteHistory = Array.isArray(booking.quoteHistory) ? booking.quoteHistory : [];
+        const quoteEntry = {
+            type: 'final',
+            submittedAt: new Date().toISOString(),
+            jobEstimate: payload.jobEstimate,
+            notes: payload.notes || '',
+        };
+
+        const nextQuoteHistory = [...currentQuoteHistory, quoteEntry] as any;
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: booking.id },
+            data: {
+                finalEstimateAmount: payload.jobEstimate,
+                finalAmount: payload.jobEstimate,
+                // Tow-to-garage repair settlement is handled in cash at completion.
+                paymentMethod: 'CASH',
+                paymentStatus: 'pending_cash',
+                notes: payload.notes || booking.notes || null,
+                subStatus: BookingSubStatus.AWAITING_FINAL_APPROVAL,
+                quoteHistory: nextQuoteHistory,
+            },
+        });
+
+        const customerSocketId = customerSockets[booking.user.clerkId];
+        if (customerSocketId) {
+            io.to(customerSocketId).emit('garage_final_quote_submitted', { bookingId: updatedBooking.id, quote: quoteEntry });
+        }
+
+        return { success: true, booking: updatedBooking };
+    }
+
+    static async approveQuote(bookingId: string, customerClerkId: string) {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { garage: true },
+        });
+
+        if (!booking) throw new AppError(404, "Booking not found.");
+        if (booking.bookingType !== 'TOW_TO_GARAGE') throw new AppError(400, "Quote approval is only supported for tow-to-garage bookings.");
+
+        const approvingInitial = booking.subStatus === BookingSubStatus.AWAITING_QUOTE_APPROVAL;
+        const approvingFinal = booking.subStatus === BookingSubStatus.AWAITING_FINAL_APPROVAL;
+        if (!approvingInitial && !approvingFinal) {
+            throw new AppError(409, "There is no pending quote awaiting your approval.");
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: booking.id },
+            data: {
+                status: BookingStatus.IN_PROGRESS,
+                subStatus: BookingSubStatus.SERVICE_IN_PROGRESS,
+                quoteRejectionReason: null,
+            },
+        });
+
+        if (booking.garageId) {
+            const garageSocketId = providerSockets[booking.garageId];
+            if (garageSocketId) {
+                io.to(garageSocketId).emit(approvingInitial ? 'quote_approved_by_customer' : 'final_quote_approved_by_customer', {
+                    bookingId: booking.id,
+                });
+                io.to(garageSocketId).emit('booking_status_updated', {
+                    bookingId: booking.id,
+                    status: updatedBooking.status,
+                    subStatus: updatedBooking.subStatus,
+                });
+            }
+        }
+
+        return { success: true, booking: updatedBooking };
+    }
+
+    static async rejectQuote(bookingId: string, customerClerkId: string, reason?: string) {
+        const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, user: { clerkId: customerClerkId } },
+            include: { garage: true },
+        });
+
+        if (!booking) throw new AppError(404, "Booking not found.");
+        if (booking.bookingType !== 'TOW_TO_GARAGE') throw new AppError(400, "Quote rejection is only supported for tow-to-garage bookings.");
+
+        const rejectingInitial = booking.subStatus === BookingSubStatus.AWAITING_QUOTE_APPROVAL;
+        const rejectingFinal = booking.subStatus === BookingSubStatus.AWAITING_FINAL_APPROVAL;
+        if (!rejectingInitial && !rejectingFinal) {
+            throw new AppError(409, "There is no pending quote awaiting your response.");
+        }
+
+        const rejectionReason = reason?.trim() || 'Rejected by customer.';
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: booking.id },
+            data: rejectingInitial
+                ? {
+                    status: BookingStatus.IN_PROGRESS,
+                    subStatus: BookingSubStatus.QUOTE_REJECTED,
+                    quoteRejectionReason: rejectionReason,
+                  }
+                : {
+                    status: BookingStatus.IN_PROGRESS,
+                    subStatus: BookingSubStatus.SERVICE_IN_PROGRESS,
+                    finalEstimateAmount: null,
+                    quoteRejectionReason: rejectionReason,
+                  },
+        });
+
+        if (booking.garageId) {
+            const garageSocketId = providerSockets[booking.garageId];
+            if (garageSocketId) {
+                io.to(garageSocketId).emit(rejectingInitial ? 'quote_rejected_by_customer' : 'final_quote_rejected_by_customer', {
+                    bookingId: booking.id,
+                    reason: rejectionReason,
+                });
+                io.to(garageSocketId).emit('booking_status_updated', {
+                    bookingId: booking.id,
+                    status: updatedBooking.status,
+                    subStatus: updatedBooking.subStatus,
+                });
+            }
+        }
 
         return { success: true, booking: updatedBooking };
     }

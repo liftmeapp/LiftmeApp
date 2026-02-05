@@ -123,6 +123,18 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const readJsonResponse = async (response: Response) => {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return response.json();
+    }
+    const raw = await response.text();
+    if (raw.trim().startsWith('<')) {
+      throw new Error('Server returned HTML instead of JSON. Check API URL and backend status.');
+    }
+    throw new Error(raw || 'Server returned a non-JSON response.');
+  };
+
   // --- Data Fetching (Initial) ---
   const fetchUserVehicles = useCallback(async () => {
     setIsInitialLoading(true);
@@ -135,7 +147,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
       });
       if (!response.ok) throw new Error('Could not fetch vehicles.');
 
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       setVehicles(data);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Could not load your vehicle data.');
@@ -177,7 +189,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log('🎉 [Socket.IO] Received booking_accepted:', data);
         if (data.bookingId === currentBookingId) {
             clearPolling(); // Stop polling since we have a definitive answer
-            setConfirmedProvider(data.provider);
+            setConfirmedProvider({ ...data.provider, otp: data.otp || undefined });
             setCurrentStage(TowingBookingStage.PAYMENT);
         }
     });
@@ -188,6 +200,11 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
             setGarageForTow(data.garage);
             // The stage remains SEARCHING_FOR_PROVIDER, but the UI will now update
         }
+    });
+
+    socket.on('booking_otp_generated', (data) => {
+        if (data?.bookingId !== currentBookingId) return;
+        setConfirmedProvider((prev) => (prev ? { ...prev, otp: data.otp } : prev));
     });
 
     socket.on('disconnect', (reason) => {
@@ -236,11 +253,17 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
 
-        const data = await response.json();
+        const data = await readJsonResponse(response);
 
-        if (data.status === 'CONFIRMED') {
+        if (data.status === 'AWAITING_PAYMENT') {
           clearPolling();
-          setConfirmedProvider(data.provider);
+          if (data.provider) {
+            setConfirmedProvider({ ...data.provider, otp: data.otp || undefined });
+          }
+          setCurrentStage(TowingBookingStage.PAYMENT);
+        } else if (data.status === 'CONFIRMED') {
+          clearPolling();
+          setConfirmedProvider({ ...data.provider, otp: data.otp || undefined });
           setCurrentStage(TowingBookingStage.CONFIRMED);
         } else if (['EXPIRED', 'CANCELLED'].includes(data.status)) {
           clearPolling();
@@ -279,18 +302,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     if (currentStage === TowingBookingStage.SEARCHING_FOR_PROVIDER && !searchError) {
       setSearchCountdown(SEARCH_DURATION_SECONDS); // Reset countdown
       countdownInterval = setInterval(() => {
-        setSearchCountdown((prev) => {
-          if (prev <= 1) {
-            // If countdown reaches 0, and no provider is found, set to EXPIRED
-            if (currentBookingId && !selectedProvider) {
-                setCurrentStage(TowingBookingStage.CANCELLED); // Or EXPIRED, depending on desired flow
-                setSearchError("No tow trucks were available to accept your request in time.");
-            }
-            clearInterval(countdownInterval!); // Clear interval when done
-            return 0;
-          }
-          return prev - 1;
-        });
+        setSearchCountdown((prev) => (prev > 0 ? prev - 1 : 0));
       }, 1000);
     } else {
       if (countdownInterval) clearInterval(countdownInterval);
@@ -298,7 +310,41 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {
       if (countdownInterval) clearInterval(countdownInterval);
     };
-  }, [currentStage, searchError, currentBookingId, selectedProvider]);
+  }, [currentStage, searchError]);
+
+  useEffect(() => {
+    if (
+      currentStage !== TowingBookingStage.SEARCHING_FOR_PROVIDER ||
+      searchCountdown > 0 ||
+      !currentBookingId
+    ) {
+      return;
+    }
+
+    const finalizeExpiredSearch = async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+
+        const response = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await readJsonResponse(response);
+        if (data?.status === 'EXPIRED' || data?.status === 'CANCELLED') {
+          setSearchError('No tow trucks were available to accept your request in time.');
+          setCurrentStage(TowingBookingStage.CANCELLED);
+          return;
+        }
+      } catch (error) {
+        console.error('[TowingBookingContext] Finalize expiry check failed:', error);
+      }
+
+      setSearchError('No tow trucks were available to accept your request in time.');
+      setCurrentStage(TowingBookingStage.CANCELLED);
+    };
+
+    finalizeExpiredSearch();
+  }, [currentStage, searchCountdown, currentBookingId, getToken]);
 
   // --- Action Implementations ---
 
@@ -334,7 +380,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!token) throw new Error('Authentication token not found.');
       const payload = { vehicleId: selectedVehicle.id, vehicleType: selectedVehicle.type, pickup: pickupLocation, destination: destinationLocation };
       const response = await fetch(`${API_BASE_URL}/api/bookings/request-towing`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok) {
         // This will catch errors like "No providers found" and set them in the state
         throw new Error(data.reason || data.error || 'Failed to start the towing request.');
@@ -373,7 +419,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
         body: JSON.stringify(payload) 
       });
 
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok) {
         throw new Error(data.reason || data.error || 'Failed to start the tow-to-garage request.');
       }
@@ -404,7 +450,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
             const token = await getToken();
             if (!token) { Alert.alert('Error', 'Authentication required to cancel.'); return; }
             const response = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/cancel-by-user`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } });
-            const data = await response.json();
+            const data = await readJsonResponse(response);
             if (!response.ok) { throw new Error(data.error || 'Failed to cancel the booking.'); }
             Alert.alert('Success', 'Your towing request has been cancelled.');
             resetTowingBookingFlow();
@@ -433,7 +479,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      const { clientSecret, error: intentError } = await intentResponse.json();
+      const { clientSecret, error: intentError } = await readJsonResponse(intentResponse);
 
       if (intentError || !clientSecret) {
         throw new Error(intentError || 'Failed to create payment intent.');
@@ -457,7 +503,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` },
         });
-        const confirmData = await confirmResponse.json();
+        const confirmData = await readJsonResponse(confirmResponse);
         if (!confirmResponse.ok) {
           throw new Error(confirmData.error || 'Failed to confirm booking after payment.');
         }
@@ -496,7 +542,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
 
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok) {
         throw new Error(data.error || 'Failed to confirm cash booking.');
       }

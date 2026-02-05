@@ -18,15 +18,14 @@ export const initSocketIO = (httpServer: http.Server) => {
   io.use(async (socket: Socket, next) => {
     try {
       const token = socket.handshake.auth.token;
-      if (!token) {
-        return next(new Error('Authentication failed: Missing token'));
+      if (token) {
+        // Verify token with Clerk when available.
+        const verifiedToken = await clerkClient.verifyToken(token);
+        socket.data.userId = verifiedToken.sub;
+      } else {
+        // Keep compatibility with legacy clients that register themselves after connect.
+        socket.data.userId = socket.handshake.query?.clerkId || null;
       }
-
-      // Verify token with Clerk
-      const verifiedToken = await clerkClient.verifyToken(token);
-
-      // Store user ID in socket data for later use
-      socket.data.userId = verifiedToken.sub;
 
       next();
     } catch (error) {
@@ -51,7 +50,7 @@ export const initSocketIO = (httpServer: http.Server) => {
 
     socket.on('register_customer', (userId: string) => {
       // Validate that they are registering as themselves
-      if (userId === socket.data.userId) {
+      if (!socket.data.userId || userId === socket.data.userId) {
         customerSockets[userId] = socket.id;
         console.log(`✅ [Socket.IO] Customer registered: ${userId}`);
       } else {

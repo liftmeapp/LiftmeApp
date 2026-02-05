@@ -1,12 +1,13 @@
-import { useTowTruckStore } from '@/store/towtruckStore';
 import { useAuth } from '@clerk/clerk-expo';
+import { useTowTruckStore } from '@/store/towtruckStore';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Modal, Platform, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { io } from 'socket.io-client';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, Polyline } from 'react-native-maps';
+import io from 'socket.io-client';
 
 
 // --- CONFIGURATION ---
@@ -17,6 +18,8 @@ Notifications.setNotificationHandler({
         shouldShowAlert: true,
         shouldPlaySound: true,
         shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
     }),
 });
 
@@ -99,12 +102,42 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
                     <Text style={styles.customerName}>{booking.user.firstName} {booking.user.lastName}</Text>
                     <Text style={styles.vehicleInfo}>{booking.vehicle.brand} {booking.vehicle.name} • {booking.vehicle.plateNumber}</Text>
                     <View style={{ marginTop: 4 }}>
-                        <Text style={styles.bookingText} numberOfLines={1}><Text style={{ fontWeight: '600' }}>From:</Text> {booking.pickupLocation?.description || 'N/A'}</Text>
-                        <Text style={styles.bookingText} numberOfLines={1}><Text style={{ fontWeight: '600' }}>To:</Text> {booking.destinationLocation?.description || booking.garage?.name || 'N/A'}</Text>
+                        <Text style={styles.bookingText} numberOfLines={1}><Text style={{ fontWeight: '600' }}>From:</Text> {booking.pickupAddress || booking.pickupLocation?.description || 'N/A'}</Text>
+                        <Text style={styles.bookingText} numberOfLines={1}><Text style={{ fontWeight: '600' }}>To:</Text> {booking.destinationAddress || booking.destinationLocation?.description || booking.garage?.name || 'N/A'}</Text>
                     </View>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="#ccc" />
             </View>
+
+            {(pickupCoords && destinationCoords) && (
+                <View style={styles.mapPreviewContainer}>
+                    <MapView
+                        style={styles.mapPreview}
+                        pointerEvents="none"
+                        scrollEnabled={false}
+                        zoomEnabled={false}
+                        rotateEnabled={false}
+                        pitchEnabled={false}
+                        initialRegion={{
+                            latitude: (pickupCoords[1] + destinationCoords[1]) / 2,
+                            longitude: (pickupCoords[0] + destinationCoords[0]) / 2,
+                            latitudeDelta: Math.max(Math.abs(pickupCoords[1] - destinationCoords[1]) * 2.2, 0.03),
+                            longitudeDelta: Math.max(Math.abs(pickupCoords[0] - destinationCoords[0]) * 2.2, 0.03),
+                        }}
+                    >
+                        <Marker coordinate={{ latitude: pickupCoords[1], longitude: pickupCoords[0] }} title="Pickup" />
+                        <Marker coordinate={{ latitude: destinationCoords[1], longitude: destinationCoords[0] }} title="Drop-off" pinColor="#005C70" />
+                        <Polyline
+                            coordinates={[
+                                { latitude: pickupCoords[1], longitude: pickupCoords[0] },
+                                { latitude: destinationCoords[1], longitude: destinationCoords[0] },
+                            ]}
+                            strokeColor="#005C70"
+                            strokeWidth={3}
+                        />
+                    </MapView>
+                </View>
+            )}
 
             {(pickupCoords && destinationCoords) && (
                 <TouchableOpacity
@@ -162,32 +195,42 @@ const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComple
 
 const OtpVerificationModal = ({ visible, onClose, otp, setOtp, onVerify, isVerifying }: any) => (
     <Modal animationType="slide" transparent={true} visible={visible} onRequestClose={onClose}>
-        <View style={modalStyles.modalOverlay}>
-            <View style={modalStyles.modalContent}>
-                <Text style={modalStyles.modalTitle}>Complete Service</Text>
-                <Text style={modalStyles.modalSubtitle}>Enter the 6-digit OTP from the customer to verify.</Text>
-                <TextInput style={modalStyles.otpInput} keyboardType="number-pad" maxLength={6} value={otp} onChangeText={setOtp} placeholder="• • • • • •" placeholderTextColor="#ccc" />
-                <TouchableOpacity style={[styles.bookingButton, styles.acceptButton, isVerifying && styles.disabledButton]} onPress={onVerify} disabled={isVerifying}>
-                    {isVerifying ? <ActivityIndicator color="#fff" /> : <Text style={styles.bookingButtonText}>Verify & Complete</Text>}
-                </TouchableOpacity>
-                <TouchableOpacity style={{ marginTop: 16 }} onPress={onClose}><Text style={{ textAlign: 'center', color: '#999' }}>Cancel</Text></TouchableOpacity>
+        <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+        >
+            <View style={modalStyles.modalOverlay}>
+                <View style={modalStyles.modalContent}>
+                    <Text style={modalStyles.modalTitle}>Complete Service</Text>
+                    <Text style={modalStyles.modalSubtitle}>Enter the 6-digit OTP from the customer to verify.</Text>
+                    <TextInput style={modalStyles.otpInput} keyboardType="number-pad" maxLength={6} value={otp} onChangeText={setOtp} placeholder="123456" placeholderTextColor="#ccc" />
+                    <TouchableOpacity style={[styles.modalPrimaryButton, styles.acceptButton, isVerifying && styles.disabledButton]} onPress={onVerify} disabled={isVerifying}>
+                        {isVerifying ? <ActivityIndicator color="#fff" /> : <Text style={styles.bookingButtonText}>Verify & Complete</Text>}
+                    </TouchableOpacity>
+                    <TouchableOpacity style={{ marginTop: 16 }} onPress={onClose}><Text style={{ textAlign: 'center', color: '#999' }}>Cancel</Text></TouchableOpacity>
+                </View>
             </View>
-        </View>
+        </KeyboardAvoidingView>
     </Modal>
 );
+
+
+// ... (existing imports)
 
 export default function TowTruckDashboard() {
     const router = useRouter();
     const { getToken } = useAuth();
     const { towTruckId } = useLocalSearchParams<{ towTruckId: string }>();
     const { setDetails, setServices, reset: resetTowTruckStore } = useTowTruckStore();
+
     const [truck, setTruck] = useState<any>(null);
     const [bookings, setBookings] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [acceptingId, setAcceptingId] = useState<string | null>(null);
     const [decliningId, setDecliningId] = useState<string | null>(null);
-    const [mainTab, setMainTab] = useState<'Jobs' | 'Profile'>('Jobs');
+    const [mainTab, setMainTab] = useState<'Jobs' | 'Profile' | 'Analytics'>('Jobs');
+    const [analyticsData, setAnalyticsData] = useState<any>(null); // State for analytics
     const [jobsSubTab, setJobsSubTab] = useState<'Pending' | 'Current' | 'History'>('Pending');
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [selectedBooking, setSelectedBooking] = useState<any>(null);
@@ -195,6 +238,98 @@ export default function TowTruckDashboard() {
     const [bookingToComplete, setBookingToComplete] = useState<string | null>(null);
     const [otp, setOtp] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
+
+    // Live Location State
+    const [isOnline, setIsOnline] = useState(false);
+    const locationSubscription = React.useRef<Location.LocationSubscription | null>(null);
+
+    // cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (locationSubscription.current) {
+                locationSubscription.current.remove();
+            }
+        };
+    }, []);
+
+    const toggleOnlineStatus = async (value: boolean) => {
+        if (value) {
+            // Going Online
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission Denied', 'Allow location access to go online.');
+                return;
+            }
+
+            setIsOnline(true);
+            try {
+                // Start watching position
+                locationSubscription.current = await Location.watchPositionAsync(
+                    {
+                        accuracy: Location.Accuracy.High,
+                        timeInterval: 5000, // Update every 5 seconds
+                        distanceInterval: 10, // Or every 10 meters
+                    },
+                    async (location) => {
+                        const { latitude, longitude } = location.coords;
+                        // Send update to backend
+                        try {
+                            const token = await getToken();
+                            if (token) {
+                                await fetch(`${API_BASE_URL}/api/tow-trucks/location`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': `Bearer ${token}`
+                                    },
+                                    body: JSON.stringify({
+                                        latitude,
+                                        longitude,
+                                        isAvailable: true
+                                    })
+                                });
+                            }
+                        } catch (err) {
+                            console.error("Failed to update location", err);
+                        }
+                    }
+                );
+                Alert.alert("You are Online", "Your location is now being shared with customers.");
+            } catch (err) {
+                console.error("Error starting location watch", err);
+                setIsOnline(false);
+                Alert.alert("Error", "Could not start location tracking.");
+            }
+        } else {
+            // Going Offline
+            setIsOnline(false);
+            if (locationSubscription.current) {
+                locationSubscription.current.remove();
+                locationSubscription.current = null;
+            }
+            // Notify backend
+            try {
+                const token = await getToken();
+                if (token) {
+                    await fetch(`${API_BASE_URL}/api/tow-trucks/location`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            latitude: 0, // values don't matter as much as isAvailable
+                            longitude: 0,
+                            isAvailable: false
+                        })
+                    });
+                }
+            } catch (err) {
+                console.error("Failed to set offline status", err);
+            }
+            Alert.alert("You are Offline", "You will no longer receive new requests.");
+        }
+    };
 
     const handleChat = async (bookingId: string) => {
         try {
@@ -263,7 +398,23 @@ export default function TowTruckDashboard() {
         ])
     }
 
-    const handleOpenOtpModal = (bookingId: string) => { setBookingToComplete(bookingId); setOtpModalVisible(true); setOtp(''); };
+    const handleOpenOtpModal = async (bookingId: string) => {
+        try {
+            const token = await getToken();
+            const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/request-completion-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to request OTP.');
+
+            setBookingToComplete(bookingId);
+            setOtpModalVisible(true);
+            setOtp('');
+        } catch (error: any) {
+            Alert.alert('OTP Error', error.message || 'Could not request OTP.');
+        }
+    };
 
     const handleVerifyOtp = async () => {
         if (!bookingToComplete || otp.length !== 6) { Alert.alert("Invalid OTP", "Enter 6 digits."); return; }
@@ -273,7 +424,8 @@ export default function TowTruckDashboard() {
             const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingToComplete}/verify-otp-tow`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ otp }),
             });
-            if (!response.ok) throw new Error('OTP verification failed.');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'OTP verification failed.');
             Alert.alert('Service Complete!', 'Payment captured.');
             setOtpModalVisible(false); fetchData();
         } catch (error: any) { Alert.alert('Error', error.message); } finally { setIsVerifying(false); }
@@ -285,20 +437,34 @@ export default function TowTruckDashboard() {
         try {
             const token = await getToken();
             if (!token) throw new Error("Authentication failed.");
-            const allStatuses = ['SEARCHING', 'AWAITING_PAYMENT', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
-            const bookingStatusQuery = new URLSearchParams({ status: allStatuses.join(',') }).toString();
-            const [truckRes, bookingsRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_BASE_URL}/api/tow-truck/bookings?${bookingStatusQuery}`, { headers: { 'Authorization': `Bearer ${token}` } })
-            ]);
-            if (!truckRes.ok || !bookingsRes.ok) throw new Error("Failed to load data");
-            setTruck(await truckRes.json());
-            setBookings(await bookingsRes.json());
+
+            if (mainTab === 'Analytics') {
+                const statsRes = await fetch(`${API_BASE_URL}/api/analytics/stats?providerId=${towTruckId}&type=towTruck`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (statsRes.ok) {
+                    const stats = await statsRes.json();
+                    setAnalyticsData(stats);
+                }
+                // We also need truck data for header
+                const truckRes = await fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (truckRes.ok) setTruck(await truckRes.json());
+            } else {
+                const allStatuses = ['SEARCHING', 'AWAITING_PAYMENT', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
+                const bookingStatusQuery = new URLSearchParams({ status: allStatuses.join(',') }).toString();
+                const [truckRes, bookingsRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(`${API_BASE_URL}/api/tow-truck/bookings?${bookingStatusQuery}`, { headers: { 'Authorization': `Bearer ${token}` } })
+                ]);
+                if (!truckRes.ok || !bookingsRes.ok) throw new Error("Failed to load data");
+                setTruck(await truckRes.json());
+                setBookings(await bookingsRes.json());
+            }
         } catch (error: any) { console.error("Fetch error", error); } finally {
             if (isManualRefresh) setRefreshing(false);
             setLoading(false);
         }
-    }, [towTruckId, jobsSubTab]);
+    }, [towTruckId, jobsSubTab, mainTab]);
 
     useEffect(() => {
         if (!towTruckId) return;
@@ -374,8 +540,8 @@ export default function TowTruckDashboard() {
                         <InfoRow icon="card-outline" label="Plate" value={booking.vehicle.plateNumber} />
                         <View style={{ height: 1, backgroundColor: '#eee', marginVertical: 10 }} />
                         <Text style={{ fontWeight: '600', marginBottom: 4, color: '#005C70' }}>Locations:</Text>
-                        <Text style={{ fontSize: 13, marginBottom: 8 }}>From: {booking.pickupLocation?.description}</Text>
-                        <Text style={{ fontSize: 13, marginBottom: 8 }}>To: {booking.destinationLocation?.description || booking.garage?.name}</Text>
+                        <Text style={{ fontSize: 13, marginBottom: 8 }}>From: {booking.pickupAddress || booking.pickupLocation?.description || 'N/A'}</Text>
+                        <Text style={{ fontSize: 13, marginBottom: 8 }}>To: {booking.destinationAddress || booking.destinationLocation?.description || booking.garage?.name || 'N/A'}</Text>
                         <View style={{ height: 1, backgroundColor: '#eee', marginVertical: 10 }} />
                         <InfoRow icon="cash-outline" label="Total" value={`AED ${booking.finalAmount.toFixed(2)}`} />
                     </ScrollView>
@@ -393,17 +559,23 @@ export default function TowTruckDashboard() {
                         <Text style={styles.headerTitle}>{truck.name}</Text>
                         <Text style={styles.headerSubtitle}>{truck.plateNumber}</Text>
                     </View>
-                    <TouchableOpacity onPress={() => router.push('/settings/add-business/businesssetup/towtruck-setup/tow-truck-live-tracking')}>
-                        <LinearGradient colors={['#005C70', '#004252']} style={styles.liveButton}>
-                            <Ionicons name="map" size={16} color="#fff" style={{ marginRight: 6 }} />
-                            <Text style={styles.liveButtonText}>Track Live</Text>
-                        </LinearGradient>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={{ marginRight: 8, color: isOnline ? '#27ae60' : '#7f8c8d', fontWeight: 'bold' }}>
+                            {isOnline ? 'ONLINE' : 'OFFLINE'}
+                        </Text>
+                        <Switch
+                            trackColor={{ false: "#767577", true: "#27ae60" }}
+                            thumbColor={isOnline ? "#fff" : "#f4f3f4"}
+                            ios_backgroundColor="#3e3e3e"
+                            onValueChange={toggleOnlineStatus}
+                            value={isOnline}
+                        />
+                    </View>
                 </View>
 
                 {/* Custom Tab Bar */}
                 <View style={styles.tabBar}>
-                    {['Jobs', 'Profile'].map((tab) => (
+                    {['Jobs', 'Profile', 'Analytics'].map((tab) => (
                         <TouchableOpacity key={tab} onPress={() => setMainTab(tab as any)} style={[styles.tabItem, mainTab === tab && styles.tabItemActive]}>
                             <Text style={[styles.tabText, mainTab === tab && styles.tabTextActive]}>{tab}</Text>
                         </TouchableOpacity>
@@ -441,8 +613,58 @@ export default function TowTruckDashboard() {
                             </View>
                         )}
                     </View>
+                ) : mainTab === 'Analytics' ? (
+                    <View style={{ marginTop: 20 }}>
+                        <View style={styles.card}>
+                            <Text style={styles.cardTitle}>Business Analytics</Text>
+                            {analyticsData ? (
+                                <View>
+                                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 15 }}>
+                                        <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#e0f7fa', padding: 10, borderRadius: 10 }}>
+                                            <Ionicons name="cash-outline" size={24} color="#006064" />
+                                            <Text style={{ fontSize: 12, color: '#006064', marginTop: 5 }}>Total Revenue</Text>
+                                            <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#006064' }}>₹{analyticsData.totalRevenue.toLocaleString()}</Text>
+                                        </View>
+                                        <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#fff3e0', padding: 10, borderRadius: 10 }}>
+                                            <Ionicons name="calendar-outline" size={24} color="#e65100" />
+                                            <Text style={{ fontSize: 12, color: '#e65100', marginTop: 5 }}>Total Bookings</Text>
+                                            <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#e65100' }}>{analyticsData.totalBookings}</Text>
+                                        </View>
+                                        <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#f3e5f5', padding: 10, borderRadius: 10 }}>
+                                            <Ionicons name="trending-up-outline" size={24} color="#4a148c" />
+                                            <Text style={{ fontSize: 12, color: '#4a148c', marginTop: 5 }}>Avg. Order Value</Text>
+                                            <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#4a148c' }}>₹{analyticsData.averageRevenue.toFixed(0)}</Text>
+                                        </View>
+                                        <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#e8f5e9', padding: 10, borderRadius: 10 }}>
+                                            <Ionicons name="checkbox-outline" size={24} color="#1b5e20" />
+                                            <Text style={{ fontSize: 12, color: '#1b5e20', marginTop: 5 }}>Completed Jobs</Text>
+                                            <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1b5e20' }}>{analyticsData.completedBookings}</Text>
+                                        </View>
+                                    </View>
+                                    <View style={{ marginTop: 20, padding: 15, backgroundColor: '#f9f9f9', borderRadius: 10 }}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                                            <Ionicons name="trophy" size={20} color="#fbc02d" />
+                                            <Text style={{ fontSize: 16, fontWeight: 'bold', marginLeft: 8, color: '#333' }}>Top Customer</Text>
+                                        </View>
+                                        {analyticsData.topCustomer.name !== 'N/A' ? (
+                                            <View>
+                                                <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#005C70' }}>{analyticsData.topCustomer.name}</Text>
+                                                <Text style={{ color: '#666', fontSize: 14 }}>
+                                                    {analyticsData.topCustomer.bookings} Bookings
+                                                </Text>
+                                            </View>
+                                        ) : (
+                                            <Text style={{ color: '#999', fontStyle: 'italic' }}>No data yet.</Text>
+                                        )}
+                                    </View>
+                                </View>
+                            ) : (
+                                <ActivityIndicator size="large" color="#005C70" />
+                            )}
+                        </View>
+                    </View>
                 ) : (
-                    <View>
+                    <View style={{ marginTop: 20 }}>
                         <View style={styles.card}>
                             <Text style={styles.cardTitle}>Profile Details</Text>
                             <InfoRow icon="person-outline" label="Driver" value={truck.driverName} />
@@ -541,6 +763,17 @@ const styles = StyleSheet.create({
     vehicleInfo: { fontSize: 13, color: '#666' },
     bookingText: { fontSize: 13, color: '#555' },
 
+    mapPreviewContainer: {
+        borderRadius: 12,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#e1f5fe',
+        marginBottom: 10,
+    },
+    mapPreview: {
+        height: 130,
+        width: '100%',
+    },
     checkMapButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, backgroundColor: '#f5faff', borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: '#e1f5fe' },
     checkMapButtonText: { color: '#005C70', fontWeight: '600', marginLeft: 6, fontSize: 13 },
 
@@ -554,6 +787,7 @@ const styles = StyleSheet.create({
 
     bookingActions: { flexDirection: 'row', gap: 12 },
     bookingButton: { flex: 1, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    modalPrimaryButton: { width: '100%', height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 12 },
     declineButton: { backgroundColor: '#fee2e2' },
     acceptButton: { backgroundColor: '#005C70' },
     bookingButtonText: { fontWeight: '700', color: '#fff' },

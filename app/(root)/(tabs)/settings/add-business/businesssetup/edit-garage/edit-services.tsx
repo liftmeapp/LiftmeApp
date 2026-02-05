@@ -56,7 +56,7 @@ export default function EditServicesScreen() {
   const router = useRouter();
   const { garageId } = useLocalSearchParams<{ garageId: string }>();
   const { getToken, isSignedIn } = useAuth();
-  const { services: existingServices, setServices: saveServicesToStore, supportedVehicleTypes: existingSupportedVehicleTypes, setSupportedVehicleTypes } = useGarageStore();
+  const { details, location, services: existingServices, setServices: saveServicesToStore, supportedVehicleTypes: existingSupportedVehicleTypes, setSupportedVehicleTypes } = useGarageStore();
   console.log("EditServicesScreen: existingSupportedVehicleTypes from store:", existingSupportedVehicleTypes);
   const [masterServices, setMasterServices] = useState<ApiService[]>([]);
   const [selections, setSelections] = useState<ServiceSelectionState>({});
@@ -245,6 +245,68 @@ export default function EditServicesScreen() {
     }
   };
 
+  const handleSaveServicesOnly = async () => {
+    if (!garageId) return;
+    if (!location?.latitude || !location?.longitude) {
+      Alert.alert('Location Missing', 'Please update location first.');
+      return;
+    }
+
+    const selectedServices = Object.entries(selections)
+      .filter(([, value]) => value.selected)
+      .map(([serviceId, value]) => {
+        const service = masterServices.find(s => s.id === serviceId);
+        const isNoPriceCategory = service?.category === 'INGARAGE_CAR' || service?.category === 'INGARAGE_BIKE';
+        return {
+          serviceId,
+          garageId,
+          price: isNoPriceCategory ? 0 : parseFloat(value.price),
+          duration: 60,
+          _isNoPriceCategory: isNoPriceCategory,
+        };
+      });
+
+    if (selectedServices.length === 0) {
+      return Alert.alert('No Services Selected', 'You must offer at least one service.');
+    }
+    const invalidPriceService = selectedServices.find(s => !s._isNoPriceCategory && (isNaN(s.price) || s.price <= 0));
+    if (invalidPriceService) {
+      return Alert.alert('Invalid Price', 'Please enter a valid, positive price for all selected services that require pricing.');
+    }
+
+    try {
+      setIsNavigating(true);
+      const token = await getToken();
+      if (!token) throw new Error('Authentication failed.');
+
+      const servicesToStore = selectedServices.map(({ _isNoPriceCategory, ...rest }) => rest);
+      saveServicesToStore(servicesToStore);
+      setSupportedVehicleTypes(selectedVehicleCategories);
+
+      const response = await fetch(`${API_BASE_URL}/api/garages/${garageId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          details: { ...details },
+          services: servicesToStore,
+          supportedVehicleTypes: selectedVehicleCategories,
+          location: {
+            type: 'Point',
+            coordinates: [location.longitude, location.latitude],
+          },
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Failed to update services.');
+      Alert.alert('Success', 'Garage services updated.');
+      router.replace('/settings/add-business/garage-dashboard');
+    } catch (error: any) {
+      Alert.alert('Update Error', error.message || 'Failed to update services.');
+    } finally {
+      setIsNavigating(false);
+    }
+  };
+
   const categorizedServices = useMemo(() => {
     if (!masterServices.length) return [];
 
@@ -341,7 +403,7 @@ export default function EditServicesScreen() {
 
       <View style={styles.fabContainer}>
         <Pressable
-          onPress={handleNext}
+          onPress={garageId ? handleSaveServicesOnly : handleNext}
           disabled={loading || isNavigating}
           style={({ pressed }) => [
             styles.fab,
@@ -361,11 +423,11 @@ export default function EditServicesScreen() {
               <View style={styles.fabContent}>
                 <Text style={styles.fabText}>
                   {selectedCount > 0
-                    ? 'Next: Update Location'
+                    ? (garageId ? 'Save Service Changes' : 'Next: Update Location')
                     : 'Select Services to Continue'}
                 </Text>
                 {!isNavigating && selectedCount > 0 && (
-                  <Ionicons name="arrow-forward" size={20} color="#fff" style={styles.arrowIcon} />
+                  <Ionicons name={garageId ? "checkmark-done-circle" : "arrow-forward"} size={20} color="#fff" style={styles.arrowIcon} />
                 )}
               </View>
             )}
@@ -387,6 +449,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     elevation: 8,
     zIndex: 100,
+    gap: 10,
   },
   arrowIcon: {
     marginLeft: 8,

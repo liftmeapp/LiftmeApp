@@ -37,7 +37,7 @@ const IconInput = ({ icon, ...props }: { icon: keyof typeof Ionicons.glyphMap } 
 export default function EditGarageDetailsScreen() {
     const router = useRouter();
     const { garageId } = useLocalSearchParams<{ garageId: string }>();
-    const { details, setDetails, setStripeAccountId, setServices, setSupportedVehicleTypes } = useGarageStore();
+    const { details, services, location, supportedVehicleTypes, setDetails, setStripeAccountId, setServices, setSupportedVehicleTypes, setLocation } = useGarageStore();
     const { getToken } = useAuth();
 
     const [isLoading, setIsLoading] = useState(true);
@@ -100,6 +100,12 @@ export default function EditGarageDetailsScreen() {
                     setSupportedVehicleTypes([]); // Ensure it's always an array
                 }
                 console.log("EditGarageDetailsScreen: supportedVehicleTypes in store after population:", useGarageStore.getState().supportedVehicleTypes);
+                if (data.location?.coordinates && Array.isArray(data.location.coordinates)) {
+                    setLocation({
+                        latitude: data.location.coordinates[1],
+                        longitude: data.location.coordinates[0],
+                    });
+                }
 
             } catch (error: any) {
                 Alert.alert("Error Loading Data", error.message || "Could not load your existing garage data.");
@@ -132,6 +138,42 @@ export default function EditGarageDetailsScreen() {
             pathname: '/settings/add-business/businesssetup/edit-garage/edit-services',
             params: { garageId }
         });
+    };
+
+    const handleSaveProfileOnly = async () => {
+        if (!garageId) return;
+        if (!location?.latitude || !location?.longitude) {
+            Alert.alert('Location Missing', 'Please update location before saving.');
+            return;
+        }
+        if (!services || services.length === 0) {
+            Alert.alert('Services Missing', 'Please keep at least one service enabled.');
+            return;
+        }
+        try {
+            const token = await getToken();
+            if (!token) throw new Error('Authentication failed.');
+
+            const response = await fetch(`${API_BASE_URL}/api/garages/${garageId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    details: { ...details },
+                    services,
+                    supportedVehicleTypes,
+                    location: {
+                        type: 'Point',
+                        coordinates: [location.longitude, location.latitude],
+                    },
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Failed to update profile.');
+            Alert.alert('Success', 'Garage profile updated.');
+            router.replace('/settings/add-business/garage-dashboard');
+        } catch (error: any) {
+            Alert.alert('Update Error', error.message || 'Failed to update profile.');
+        }
     };
 
     if (isLoading) {
@@ -185,13 +227,13 @@ export default function EditGarageDetailsScreen() {
                         )}
                     </Card>
 
-                    <TouchableOpacity onPress={handleNext}>
+                    <TouchableOpacity onPress={garageId ? handleSaveProfileOnly : handleNext}>
                         <LinearGradient
                             colors={['#005C70', '#004252']}
                             style={styles.button}
                         >
-                            <Text style={styles.buttonText}>Next: Update Services</Text>
-                            <Ionicons name="arrow-forward-circle" size={22} color="#fff" />
+                            <Text style={styles.buttonText}>{garageId ? 'Save Profile Changes' : 'Next: Update Services'}</Text>
+                            <Ionicons name={garageId ? "checkmark-done-circle" : "arrow-forward-circle"} size={22} color="#fff" />
                         </LinearGradient>
                     </TouchableOpacity>
                 </ScrollView>
