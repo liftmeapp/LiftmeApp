@@ -16,10 +16,41 @@ export default function TowTruckLiveTrackingScreen() {
     const { getToken, isLoaded, isSignedIn } = useAuth();
     const router = useRouter();
     const [isAvailable, setIsAvailable] = useState(true);
+    const [isLoadingStatus, setIsLoadingStatus] = useState(true);
     const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
     const locationSubscription = useRef<{ remove: () => void } | null>(null);
     const isUpdating = useRef(false);
+    const availabilityRef = useRef(true); // Track current availability for location callbacks
     const { towTruckId, towTruckName } = useLocalSearchParams<{ towTruckId: string, towTruckName: string }>();
+
+    // Fetch initial availability status from server
+    useEffect(() => {
+        const fetchInitialStatus = async () => {
+            if (!isLoaded || !isSignedIn || !towTruckId) return;
+            try {
+                const token = await getToken();
+                if (!token) return;
+
+                const response = await fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}/status`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const serverAvailability = data.isAvailable ?? true; // Default to true if not set
+                    setIsAvailable(serverAvailability);
+                    availabilityRef.current = serverAvailability;
+                }
+            } catch (error) {
+                console.error('Failed to fetch initial availability status:', error);
+                // Default to true if fetch fails
+            } finally {
+                setIsLoadingStatus(false);
+            }
+        };
+
+        fetchInitialStatus();
+    }, [isLoaded, isSignedIn, towTruckId]);
 
     // This function securely sends the driver's location and status to your backend.
     const updateLocationOnServer = async (location: Location.LocationObject, availability: boolean) => {
@@ -49,7 +80,7 @@ export default function TowTruckLiveTrackingScreen() {
 
     // This effect runs when the component mounts to start tracking the driver's location.
     useEffect(() => {
-        if (!isLoaded || !isSignedIn) return;
+        if (!isLoaded || !isSignedIn || isLoadingStatus) return;
 
         const startWatching = async () => {
             let { status } = await Location.requestForegroundPermissionsAsync();
@@ -65,7 +96,8 @@ export default function TowTruckLiveTrackingScreen() {
                 distanceInterval: 50,  // Or every 50 meters
             }, (location) => {
                 setCurrentLocation(location);
-                updateLocationOnServer(location, isAvailable);
+                // Use ref to get current availability (avoids stale closure)
+                updateLocationOnServer(location, availabilityRef.current);
             });
         };
 
@@ -78,10 +110,36 @@ export default function TowTruckLiveTrackingScreen() {
                 locationSubscription.current.remove();
             }
         };
-    }, [isLoaded, isSignedIn, isAvailable]);
+    }, [isLoaded, isSignedIn, isLoadingStatus]);
 
-    const handleAvailabilityChange = (value: boolean) => {
+    const handleAvailabilityChange = async (value: boolean) => {
         setIsAvailable(value);
+        availabilityRef.current = value; // Keep ref in sync
+
+        // Always update status on server using the dedicated endpoint (doesn't require GPS)
+        try {
+            const token = await getToken();
+            if (!token) {
+                console.warn("Auth token not available, skipping status update.");
+                return;
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ isAvailable: value }),
+            });
+
+            if (response.ok) {
+                console.log(`✅ Status updated on server: isAvailable=${value}`);
+            } else {
+                console.error('Failed to update status on server');
+            }
+        } catch (error) {
+            console.error('Failed to update availability status:', error);
+        }
+
+        // Also update location if available (for broadcasting to customers)
         if (currentLocation) {
             updateLocationOnServer(currentLocation, value);
         }

@@ -66,7 +66,8 @@ const TowingServiceMapContent = () => {
         startTowingBooking, startTowToGarageBooking, cancelTowingBooking,
         resetTowingBookingFlow,
         searchCountdown, eligibleTruckCount,
-        fetchUserVehicles
+        fetchUserVehicles,
+        driverLocation  // Live driver location for Uber-like tracking
     } = useTowingBooking();
     const [isAddVehicleModalVisible, setIsAddVehicleModalVisible] = useState(false);
     const [isAddingVehicle, setIsAddingVehicle] = useState(false);
@@ -532,6 +533,7 @@ const TowingServiceMapContent = () => {
                     pickupMarker={pickupLocation}
                     destinationMarker={destinationLocation}
                     currentStage={currentStage}
+                    driverLocation={driverLocation}  // Live driver location for Uber-like tracking
                 />
                 <BottomSheet
                     ref={bottomSheetRef}

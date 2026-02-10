@@ -11,8 +11,7 @@ const CLERK_WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 const googleMapsClient = new Client();
 
 async function getEtaAndDistance(
-    origin: { lat: number; lon: number }, destination: { lat: number; lon: number })
-    {
+    origin: { lat: number; lon: number }, destination: { lat: number; lon: number }) {
     try {
         const response = await googleMapsClient.directions({
             params: {
@@ -84,9 +83,9 @@ router.get(
                     {
                         '$lookup': {
                             from: "garage_services",
-                            let: { 
+                            let: {
                                 garage_id: "$_id",
-                                service_id_string: serviceId 
+                                service_id_string: serviceId
                             },
                             pipeline: [
                                 {
@@ -94,7 +93,7 @@ router.get(
                                         '$expr': {
                                             '$and': [
                                                 { '$eq': ["$garageId", "$$garage_id"] },
-                                                { '$eq': ["$serviceId", { '$toObjectId': "$$service_id_string" }] } 
+                                                { '$eq': ["$serviceId", { '$toObjectId': "$$service_id_string" }] }
                                             ]
                                         }
                                     }
@@ -105,14 +104,14 @@ router.get(
                     },
                     {
                         '$match': {
-                            "offeredServices": { '$ne': [] } 
+                            "offeredServices": { '$ne': [] }
                         }
                     }
                 );
             }
 
             pipeline.push({ '$limit': 20 });
-            
+
             console.log('[API /garages/nearby] Executing Pipeline:', JSON.stringify(pipeline, null, 2));
 
             const nearbyGarages = await prisma.garage.aggregateRaw({
@@ -167,13 +166,13 @@ router.post(
             return res.status(401).json({ error: 'Unauthorized: No user ID in token.' });
         }
         const { details, services, location, supportedVehicleTypes } = req.body;
-        const { name, licenseNumber, address, ownerName, numberOfEmployees, contactEmail, contactPhone, operatingHours, stripeAccountId } = details;
+        const { name, licenseNumber, address, ownerName, numberOfEmployees, contactEmail, contactPhone, operatingHours, razorpayAccountId } = details;
 
-        if (!name || !licenseNumber || !location || !services || !stripeAccountId) {
+        if (!name || !licenseNumber || !location || !services) {
             return res.status(400).json({ error: 'Missing required fields.' });
         }
         if (!Array.isArray(services) || services.length === 0) {
-            return res.status(400).json({ error: 'At least one service must be provided.'});
+            return res.status(400).json({ error: 'At least one service must be provided.' });
         }
         try {
             const user = await prisma.user.findUnique({ where: { clerkId: ownerId } });
@@ -181,7 +180,7 @@ router.post(
                 return res.status(404).json({ error: 'Your user profile could not be found.' });
             }
             const garageData = {
-                name, licenseNumber, address, ownerName, stripeAccountId, location,
+                name, licenseNumber, address, ownerName, razorpayAccountId: razorpayAccountId || null, location,
                 contactEmail: contactEmail || null,
                 contactPhone: contactPhone || null,
                 operatingHours: operatingHours && typeof operatingHours === 'object' ? operatingHours : {},
@@ -236,7 +235,7 @@ router.get(
                     contactEmail: true,
                     numberOfEmployees: true,
                     operatingHours: true,
-                    stripeAccountId: true,
+                    razorpayAccountId: true,
                     status: true,
                     location: true, // Keep location for editing purposes
                     services: {
@@ -345,7 +344,7 @@ router.delete(
             });
             if (!garage) return res.status(403).json({ error: 'You are not authorized to delete this garage.' });
 
-            await prisma.garageService.deleteMany({ where: { garageId: garageId }});
+            await prisma.garageService.deleteMany({ where: { garageId: garageId } });
             await prisma.garage.delete({ where: { id: garageId } });
             return res.status(200).json({ message: 'Garage deleted successfully' });
         } catch (error) {

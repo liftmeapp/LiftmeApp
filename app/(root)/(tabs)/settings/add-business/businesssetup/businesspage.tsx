@@ -1,5 +1,6 @@
 //app/(root)/(tabs)/settings/add-business/businesssetup/businesspage.tsx
 import RotatingLoader from '@/components/RotatingLoader';
+import { useGarageStore } from '@/store/garageStore';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useRouter } from "expo-router";
@@ -135,6 +136,8 @@ export default function ServicesHome() {
         );
     };
 
+
+
     const handleGaragePress = () => {
         const garage = userBusiness?.garage;
         if (!garage) return;
@@ -157,12 +160,45 @@ export default function ServicesHome() {
                     "Application Rejected",
                     `Your garage application was rejected for the following reason: ${garage.rejectionReason || 'No reason provided.'}`,
                     [
-                        { text: "OK", style: "cancel" },
+                        { text: "Cancel", style: "cancel" },
                         {
-                            text: "Re-apply", onPress: () => router.push({
-                                pathname: '/settings/add-business/businesssetup/edit-garage/edit-details',
-                                params: { garageId: garage.id }
-                            } as any)
+                            text: "Fix Application", onPress: () => {
+                                // Seed the store with existing data
+                                useGarageStore.getState().setDetails({
+                                    name: garage.name,
+                                    licenseNumber: garage.licenseNumber,
+                                    address: garage.address,
+                                    ownerName: garage.ownerName,
+                                    numberOfEmployees: garage.numberOfEmployees,
+                                    contactEmail: garage.contactEmail,
+                                    contactPhone: garage.contactPhone,
+                                    operatingHours: garage.operatingHours,
+                                    stripeAccountId: garage.razorpayAccountId, // Using the new field mapping if store handles it, or just generic
+                                    status: 'PENDING' // Reset status to PENDING so it can be reviewed again
+                                });
+                                // Seed services if possible, though format might differ. 
+                                // Simplified seeding for now as per dashboard logic
+                                const services = (garage.services || []).map((s: any) => ({
+                                    serviceId: s.service.id,
+                                    price: s.price,
+                                    garageId: garage.id,
+                                    duration: 60
+                                }));
+                                useGarageStore.getState().setServices(services);
+                                useGarageStore.getState().setSupportedVehicleTypes(garage.supportedVehicleTypes || []);
+
+                                if (garage.location?.coordinates) {
+                                    useGarageStore.getState().setLocation({
+                                        latitude: garage.location.coordinates[1],
+                                        longitude: garage.location.coordinates[0]
+                                    });
+                                }
+
+                                router.push({
+                                    pathname: '/settings/add-business/businesssetup/garage-setup/garage-sign',
+                                    params: { garageId: garage.id }
+                                } as any);
+                            }
                         }
                     ]
                 );
@@ -196,7 +232,7 @@ export default function ServicesHome() {
                     [
                         { text: "OK", style: "cancel" },
                         {
-                            text: "Re-apply", onPress: () => router.push({
+                            text: "Fix Application", onPress: () => router.push({
                                 pathname: '/settings/add-business/businesssetup/edit-tow-truck/edit-tow-truck-details',
                                 params: { towTruckId: towTruck.id }
                             } as any)

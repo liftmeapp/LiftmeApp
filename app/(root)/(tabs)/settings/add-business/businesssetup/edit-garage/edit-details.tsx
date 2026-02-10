@@ -1,4 +1,5 @@
 // /app/(root)/(tabs)/settings/add-business/businesssetup/edit-garage/edit-details.tsx
+import PayoutsSection from '@/components/PayoutsSection';
 import RotatingLoader from '@/components/RotatingLoader';
 import { useGarageStore } from '@/store/garageStore';
 import { useAuth } from '@clerk/clerk-expo';
@@ -7,7 +8,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
@@ -41,99 +41,95 @@ export default function EditGarageDetailsScreen() {
     const { getToken } = useAuth();
 
     const [isLoading, setIsLoading] = useState(true);
-    const [isConnectingStripe, setIsConnectingStripe] = useState(false);
+
+
+    const normalizedGarageId = Array.isArray(garageId) ? garageId[0] : garageId;
+
+    const fetchGarageData = React.useCallback(async () => {
+        if (!normalizedGarageId) return;
+
+        console.log("EditGarageDetailsScreen: Fetching existing garage data...");
+        try {
+            const token = await getToken();
+            if (!token) throw new Error("Authentication failed.");
+
+            const response = await fetch(`${API_BASE_URL}/api/garages/${normalizedGarageId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Failed to fetch garage details: ${errorText}`);
+            }
+
+            const data = await response.json();
+            console.log("EditGarageDetailsScreen: Full garage data fetched from API:", data);
+            console.log("EditGarageDetailsScreen: Data fetched, populating store.");
+
+            // Populate the store with all the fetched details
+            setDetails({
+                name: data.name || '',
+                licenseNumber: data.licenseNumber || '',
+                ownerName: data.ownerName || '',
+                address: data.address || '',
+                contactEmail: data.contactEmail || '',
+                contactPhone: data.contactPhone || '',
+                numberOfEmployees: data.numberOfEmployees ? String(data.numberOfEmployees) : '0',
+                stripeAccountId: data.stripeAccountId || null,
+                razorpayAccountId: data.razorpayAccountId || null,
+                status: data.status,
+            });
+
+            // Also populate the services in the store so the next screen is pre-filled
+            if (data.services && Array.isArray(data.services)) {
+                console.log("EditGarageDetailsScreen: Populating services with:", data.services);
+                setServices(data.services.map((s: any) => ({ serviceId: s.serviceId, price: s.price })));
+            } else {
+                console.log("EditGarageDetailsScreen: data.services is empty or not an array:", data.services);
+                setServices([]); // Ensure it's always an array
+            }
+            console.log("EditGarageDetailsScreen: Services in store after population:", useGarageStore.getState().services);
+
+            // Populate supportedVehicleTypes in the store
+            if (data.supportedVehicleTypes && Array.isArray(data.supportedVehicleTypes)) {
+                console.log("EditGarageDetailsScreen: Populating supportedVehicleTypes with:", data.supportedVehicleTypes);
+                setSupportedVehicleTypes(data.supportedVehicleTypes);
+            } else {
+                console.log("EditGarageDetailsScreen: data.supportedVehicleTypes is empty or not an array:", data.supportedVehicleTypes);
+                setSupportedVehicleTypes([]); // Ensure it's always an array
+            }
+            console.log("EditGarageDetailsScreen: supportedVehicleTypes in store after population:", useGarageStore.getState().supportedVehicleTypes);
+            if (data.location?.coordinates && Array.isArray(data.location.coordinates)) {
+                setLocation({
+                    latitude: data.location.coordinates[1],
+                    longitude: data.location.coordinates[0],
+                });
+            }
+
+        } catch (error: any) {
+            Alert.alert("Error Loading Data", error.message || "Could not load your existing garage data.");
+            router.back(); // Go back if we can't load the data
+        } finally {
+            setIsLoading(false);
+        }
+    }, [normalizedGarageId, getToken, setDetails, setServices, setSupportedVehicleTypes, setLocation, router]);
 
     // Effect to pre-populate the form with existing garage data
     useEffect(() => {
-        if (!garageId) {
+        if (normalizedGarageId) {
+            fetchGarageData();
+        } else {
             setIsLoading(false);
-            return;
-        };
+        }
+    }, [normalizedGarageId]);
 
-        const fetchGarageData = async () => {
-            console.log("EditGarageDetailsScreen: Fetching existing garage data...");
-            try {
-                const token = await getToken();
-                if (!token) throw new Error("Authentication failed.");
 
-                const response = await fetch(`${API_BASE_URL}/api/garages/${garageId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Failed to fetch garage details: ${errorText}`);
-                }
-
-                const data = await response.json();
-                console.log("EditGarageDetailsScreen: Full garage data fetched from API:", data);
-                console.log("EditGarageDetailsScreen: Data fetched, populating store.");
-
-                // Populate the store with all the fetched details
-                setDetails({
-                    name: data.name || '',
-                    licenseNumber: data.licenseNumber || '',
-                    ownerName: data.ownerName || '',
-                    address: data.address || '',
-                    contactEmail: data.contactEmail || '',
-                    contactPhone: data.contactPhone || '',
-                    numberOfEmployees: data.numberOfEmployees ? String(data.numberOfEmployees) : '0',
-                    stripeAccountId: data.stripeAccountId || null,
-                });
-
-                // Also populate the services in the store so the next screen is pre-filled
-                if (data.services && Array.isArray(data.services)) {
-                    console.log("EditGarageDetailsScreen: Populating services with:", data.services);
-                    setServices(data.services.map((s: any) => ({ serviceId: s.serviceId, price: s.price })));
-                } else {
-                    console.log("EditGarageDetailsScreen: data.services is empty or not an array:", data.services);
-                    setServices([]); // Ensure it's always an array
-                }
-                console.log("EditGarageDetailsScreen: Services in store after population:", useGarageStore.getState().services);
-
-                // Populate supportedVehicleTypes in the store
-                if (data.supportedVehicleTypes && Array.isArray(data.supportedVehicleTypes)) {
-                    console.log("EditGarageDetailsScreen: Populating supportedVehicleTypes with:", data.supportedVehicleTypes);
-                    setSupportedVehicleTypes(data.supportedVehicleTypes);
-                } else {
-                    console.log("EditGarageDetailsScreen: data.supportedVehicleTypes is empty or not an array:", data.supportedVehicleTypes);
-                    setSupportedVehicleTypes([]); // Ensure it's always an array
-                }
-                console.log("EditGarageDetailsScreen: supportedVehicleTypes in store after population:", useGarageStore.getState().supportedVehicleTypes);
-                if (data.location?.coordinates && Array.isArray(data.location.coordinates)) {
-                    setLocation({
-                        latitude: data.location.coordinates[1],
-                        longitude: data.location.coordinates[0],
-                    });
-                }
-
-            } catch (error: any) {
-                Alert.alert("Error Loading Data", error.message || "Could not load your existing garage data.");
-                router.back(); // Go back if we can't load the data
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        fetchGarageData();
-    }, [garageId]);
-
-    const handleConnectStripe = async () => {
-        setIsConnectingStripe(true);
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        const fakeStripeId = 'acct_' + Math.random().toString(36).substring(2, 15);
-        setStripeAccountId(fakeStripeId);
-        setIsConnectingStripe(false);
-        Alert.alert("Stripe Connected! (Simulation)", `Your account is now linked with ID: ${fakeStripeId}`);
-    };
 
     const handleNext = () => {
         if (!details.name || !details.licenseNumber || !details.ownerName || !details.address) {
             return Alert.alert('Missing Information', 'Please fill in all required fields marked with *.');
         }
-        if (!details.stripeAccountId) {
-            return Alert.alert('Payouts Not Set Up', 'Please connect a Stripe account to receive payments before continuing.');
-        }
+
         router.push({
             pathname: '/settings/add-business/businesssetup/edit-garage/edit-services',
             params: { garageId }
@@ -154,11 +150,16 @@ export default function EditGarageDetailsScreen() {
             const token = await getToken();
             if (!token) throw new Error('Authentication failed.');
 
+            const payloadDetails = { ...details };
+            if (payloadDetails.status === 'REJECTED') {
+                payloadDetails.status = 'PENDING';
+            }
+
             const response = await fetch(`${API_BASE_URL}/api/garages/${garageId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
-                    details: { ...details },
+                    details: payloadDetails,
                     services,
                     supportedVehicleTypes,
                     location: {
@@ -207,25 +208,14 @@ export default function EditGarageDetailsScreen() {
                         <IconInput icon="people-outline" placeholder="Number of Employees" value={String(details.numberOfEmployees)} onChangeText={(text) => setDetails({ numberOfEmployees: text })} keyboardType="numeric" />
                     </Card>
 
-                    <Card title="Payouts Setup">
-                        <Text style={styles.payoutsInfo}>We use Stripe to handle secure payments directly to your bank account. Connect your account to get paid.</Text>
-
-                        {details.stripeAccountId ? (
-                            <View style={styles.stripeConnectedContainer}>
-                                <Ionicons name="shield-checkmark" size={24} color="#4CAF50" />
-                                <Text style={styles.stripeConnectedText}>Stripe Account Connected!</Text>
-                            </View>
-                        ) : (
-                            <TouchableOpacity style={styles.stripeButton} onPress={handleConnectStripe} disabled={isConnectingStripe}>
-                                {isConnectingStripe ? <ActivityIndicator color="#fff" /> : (
-                                    <>
-                                        <Ionicons name="card" size={20} color="#fff" style={{ marginRight: 10 }} />
-                                        <Text style={styles.stripeButtonText}>Connect with Stripe</Text>
-                                    </>
-                                )}
-                            </TouchableOpacity>
-                        )}
-                    </Card>
+                    {garageId && (
+                        <PayoutsSection
+                            providerId={garageId}
+                            providerType="garage"
+                            currentAccountId={details.razorpayAccountId || null}
+                            onRefresh={() => fetchGarageData()}
+                        />
+                    )}
 
                     <TouchableOpacity onPress={garageId ? handleSaveProfileOnly : handleNext}>
                         <LinearGradient
@@ -365,5 +355,26 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '700',
         marginRight: 8,
+    },
+    infoSection: {
+        backgroundColor: '#E0F2F1',
+        borderColor: '#005C70',
+        borderWidth: 1,
+        borderRadius: 16,
+        alignItems: 'center',
+        paddingVertical: 20,
+        paddingHorizontal: 16,
+    },
+    infoTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#005C70',
+        marginBottom: 8,
+    },
+    infoText: {
+        fontSize: 14,
+        color: '#004D40',
+        textAlign: 'center',
+        lineHeight: 20,
     },
 });

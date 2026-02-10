@@ -1,9 +1,11 @@
 // app/(root)/(tabs)/profile.tsx
 import CustomButton from '@/components/CustomButton';
+import UserBookingDetailsModal from '@/components/UserBookingDetailsModal';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Order } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -14,12 +16,17 @@ export default function ProfileScreen() {
   const { isLoaded: isClerkLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [orderHistory, setOrderHistory] = useState<Order[]>([]);
   const [dbUser, setDbUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('ALL');
   const [filteredOrderHistory, setFilteredOrderHistory] = useState<Order[]>([]);
+
+  // Modal State
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
   const isFetchingRef = useRef(false);
 
@@ -88,6 +95,12 @@ export default function ProfileScreen() {
   const displayEmail = user?.primaryEmailAddress?.emailAddress || '';
   const displayPhone = user?.primaryPhoneNumber?.phoneNumber || '';
 
+  const handleOrderPress = (order: Order) => {
+    // console.log("Order pressed:", order.id);
+    setSelectedOrder(order);
+    setModalVisible(true);
+  };
+
   if (!isClerkLoaded || isLoading) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -106,7 +119,11 @@ export default function ProfileScreen() {
   }
 
   const renderFilterButtons = () => (
-    <View style={styles.filterContainer}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.filterContainer}
+    >
       {(['ALL', 'COMPLETED', 'CANCELLED'] as FilterStatus[]).map((status) => (
         <TouchableOpacity
           key={status}
@@ -118,13 +135,13 @@ export default function ProfileScreen() {
           </Text>
         </TouchableOpacity>
       ))}
-    </View>
+    </ScrollView>
   );
 
   return (
     <View style={styles.container}>
       {/* Header Profile Section */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 18 }]}>
         <View style={styles.avatarContainer}>
           <Image
             source={user.imageUrl ? { uri: user.imageUrl } : require('@/assets/images/profile.jpg')}
@@ -154,9 +171,14 @@ export default function ProfileScreen() {
           <FlatList
             data={filteredOrderHistory}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <OrderHistoryCard order={item} />}
+            renderItem={({ item }) => (
+              <OrderHistoryCard
+                order={item}
+                onPress={() => handleOrderPress(item)}
+              />
+            )}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(insets.bottom + 18, 28) }]}
           />
         ) : (
           <View style={styles.emptyContainer}>
@@ -168,17 +190,21 @@ export default function ProfileScreen() {
           </View>
         )}
       </View>
+
+      <UserBookingDetailsModal
+        visible={modalVisible}
+        booking={selectedOrder}
+        onClose={() => setModalVisible(false)}
+      />
     </View>
   );
 }
 
-const OrderHistoryCard = ({ order }: { order: any }) => {
-  const status = order.status?.replace('_', ' ') || 'N/A';
-
+const OrderHistoryCard = ({ order, onPress }: { order: any, onPress: () => void }) => {
   // Logic to determine display values (Price, Provider, etc.)
   // Simplified for brevity, ensuring key fields are shown
   let title = order.service?.name || 'Service Booking';
-  let providerName = order.garage?.name || order.towTruck?.name || 'Beautiful Garage 101'; // Fallback for demo
+  let providerName = order.garage?.name || order.towTruck?.name || 'Searching...';
   const bookingDate = new Date(order.bookedAt).toLocaleDateString("en-GB"); // DD/MM/YYYY
 
   // Format Price
@@ -193,25 +219,30 @@ const OrderHistoryCard = ({ order }: { order: any }) => {
   };
 
   return (
-    <View style={styles.card}>
+    <TouchableOpacity style={styles.card} onPress={onPress}>
       <View style={styles.cardHeaderRow}>
-        <Text style={styles.cardTitle}>{title}</Text>
+        <Text style={styles.cardTitle} numberOfLines={1}>{title}</Text>
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]}>
           <Text style={styles.statusText}>{order.status}</Text>
         </View>
       </View>
       <View style={styles.divider} />
 
-      <View style={styles.cardRow}>
+      <View style={styles.cardRowTop}>
         <Text style={styles.label}>Provider : </Text>
-        <Text style={styles.value}>{providerName}</Text>
+        <Text style={styles.value} numberOfLines={1}>{providerName}</Text>
         <Text style={styles.price}>INR {finalPrice.toFixed(2)}</Text>
       </View>
       <View style={styles.cardRow}>
         <Text style={styles.label}>Booked : </Text>
         <Text style={styles.value}>{bookingDate}</Text>
       </View>
-    </View>
+
+      {/* Visual cue that card is clickable */}
+      <View style={{ marginTop: 5, alignSelf: 'flex-end' }}>
+        <Text style={{ fontSize: 10, color: '#005C70', fontWeight: 'bold' }}>Tap for Details</Text>
+      </View>
+    </TouchableOpacity>
   );
 };
 
@@ -226,8 +257,9 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: 24,
     paddingBottom: 20,
+    paddingHorizontal: 16,
   },
   avatarContainer: {
     marginBottom: 10,
@@ -253,7 +285,8 @@ const styles = StyleSheet.create({
   },
   manageAccountButton: {
     backgroundColor: '#005C70',
-    width: '90%',
+    width: '92%',
+    maxWidth: 520,
     paddingVertical: 12,
     borderRadius: 8,
     marginTop: 15,
@@ -269,13 +302,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 20,
   },
   summaryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 15,
   },
   summaryTitle: {
@@ -288,6 +319,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
     borderRadius: 20,
     padding: 3,
+    marginTop: 10,
   },
   filterButton: {
     paddingVertical: 6,
@@ -339,6 +371,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
+    flex: 1,
+    paddingRight: 10,
   },
   statusBadge: {
     paddingVertical: 4,
@@ -357,11 +391,16 @@ const styles = StyleSheet.create({
     opacity: 0.2,
     marginBottom: 10,
   },
+  cardRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    minHeight: 22,
+  },
   cardRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 4,
-    flexWrap: 'wrap',
   },
   label: {
     color: '#888',
@@ -371,6 +410,7 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 14,
     flex: 1,
+    minWidth: 0,
   },
   price: {
     fontWeight: 'bold',

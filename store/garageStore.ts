@@ -1,18 +1,18 @@
 // /app/store/garageStore.ts
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 type GarageService = {
-  id?: string;
-  serviceId: string;
-  garageId: string;
-  price: number;
-  duration: number; // in minutes
-  description?: string;
-  isActive?: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
+    id?: string;
+    serviceId: string;
+    garageId: string;
+    price: number;
+    duration: number; // in minutes
+    description?: string;
+    isActive?: boolean;
+    createdAt?: Date;
+    updatedAt?: Date;
 };
 
 export type GarageStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'INACTIVE';
@@ -27,6 +27,7 @@ interface GarageDetails {
     contactPhone: string;
     operatingHours: any; // Can be a simple object
     stripeAccountId: string;
+    razorpayAccountId?: string | null;
     status?: GarageStatus;
 }
 

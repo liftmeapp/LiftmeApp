@@ -1,4 +1,5 @@
 import RotatingLoader from '@/components/RotatingLoader';
+import VehicleDetailModal from '@/components/VehicleDetailModal';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useRouter } from "expo-router";
@@ -8,8 +9,8 @@ import { Alert, FlatList, Platform, RefreshControl, SafeAreaView, StyleSheet, Te
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 // Reusable Vehicle Card Component
-const VehicleCard = ({ vehicle, onDelete }: { vehicle: any, onDelete: (id: string) => void }) => (
-    <View style={styles.card}>
+const VehicleCard = ({ vehicle, onDelete, onPress }: { vehicle: any, onDelete: (id: string) => void, onPress: (vehicle: any) => void }) => (
+    <TouchableOpacity activeOpacity={0.9} onPress={() => onPress(vehicle)} style={styles.card}>
         <View style={styles.cardIcon}>
             <Ionicons name="car-sport" size={24} color="#005C70" />
         </View>
@@ -20,7 +21,7 @@ const VehicleCard = ({ vehicle, onDelete }: { vehicle: any, onDelete: (id: strin
         <TouchableOpacity style={styles.deleteButton} onPress={() => onDelete(vehicle.id)}>
             <Ionicons name="trash-outline" size={20} color="#e74c3c" />
         </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
 );
 
 export default function VehicleDashboard() {
@@ -31,6 +32,10 @@ export default function VehicleDashboard() {
     const [vehicles, setVehicles] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+
+    // Modal State
+    const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
+    const [modalVisible, setModalVisible] = useState(false);
 
     // Use ref to ensure getToken doesn't trigger effect re-runs if it changes identity
     const getTokenRef = React.useRef(getToken);
@@ -61,6 +66,11 @@ export default function VehicleDashboard() {
         setRefreshing(true);
         fetchData();
     }, [fetchData]);
+
+    const handleCardPress = (vehicle: any) => {
+        setSelectedVehicle(vehicle);
+        setModalVisible(true);
+    };
 
     const handleDelete = (vehicleId: string) => {
         Alert.alert(
@@ -112,7 +122,7 @@ export default function VehicleDashboard() {
             <FlatList
                 data={vehicles}
                 keyExtractor={(item) => item.id}
-                renderItem={({ item }) => <VehicleCard vehicle={item} onDelete={handleDelete} />}
+                renderItem={({ item }) => <VehicleCard vehicle={item} onDelete={handleDelete} onPress={handleCardPress} />}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
@@ -121,7 +131,7 @@ export default function VehicleDashboard() {
                         <Text style={styles.emptySubtext}>Add your first vehicle to get started!</Text>
                     </View>
                 }
-                contentContainerStyle={{ paddingBottom: 150 }} // Increased space for FAB
+                contentContainerStyle={{ paddingBottom: 100 }} // Ensure space for FAB
             />
 
             <View style={styles.fabContainer}>
@@ -134,6 +144,13 @@ export default function VehicleDashboard() {
                     <Text style={styles.fabText}>Add New Vehicle</Text>
                 </TouchableOpacity>
             </View>
+
+            {/* Vehicle Detail Modal */}
+            <VehicleDetailModal
+                visible={modalVisible}
+                vehicle={selectedVehicle}
+                onClose={() => setModalVisible(false)}
+            />
         </SafeAreaView>
     );
 }
@@ -186,7 +203,7 @@ const styles = StyleSheet.create({
     emptyText: { marginTop: 15, fontSize: 18, fontWeight: '600', color: '#999' },
     emptySubtext: { marginTop: 5, fontSize: 14, color: '#aaa' },
 
-    fabContainer: { position: 'absolute', bottom: 100, left: 0, right: 0, alignItems: 'center' },
+    fabContainer: { position: 'absolute', bottom: 30, left: 0, right: 0, alignItems: 'center' }, // Reduced bottom margin
     fab: {
         flexDirection: 'row',
         paddingVertical: 15,

@@ -41,41 +41,43 @@ async function dropIndexIfExists(collection: string, indexName: string) {
 async function main() {
   console.log('Attempting to create or verify database indexes...\n');
 
-  // 1. Ensure Stripe customer IDs are unique only when a value exists.
-  await dropIndexIfExists('users', 'users_stripeCustomerId_key');
+  // 1. Ensure Razorpay customer IDs are unique only when a value exists.
+  await dropIndexIfExists('users', 'users_stripeCustomerId_key'); // Cleanup old index
   await createIndex(
     'users',
     {
-      key: { stripeCustomerId: 1 },
-      name: 'users_stripeCustomerId_key',
+      key: { razorpayCustomerId: 1 },
+      name: 'users_razorpayCustomerId_key',
       unique: true,
-      partialFilterExpression: { stripeCustomerId: { $type: 'string' } },
+      partialFilterExpression: { razorpayCustomerId: { $type: 'string' } },
     },
-    'Created filtered unique index on users.stripeCustomerId.'
+    'Created filtered unique index on users.razorpayCustomerId.'
   );
 
   // 2. Create sparse index for Garages.
+  await dropIndexIfExists('garages', 'garages_stripeAccountId_key'); // Cleanup old index
   await createIndex(
     'garages',
     {
-      key: { stripeAccountId: 1 },
-      name: 'garages_stripeAccountId_key',
+      key: { razorpayAccountId: 1 },
+      name: 'garages_razorpayAccountId_key',
       unique: true,
       sparse: true,
     },
-    'Ensured sparse unique index on garages.stripeAccountId.'
+    'Ensured sparse unique index on garages.razorpayAccountId.'
   );
 
   // 3. Create sparse index for Tow Trucks.
+  await dropIndexIfExists('tow_trucks', 'tow_trucks_stripeAccountId_key'); // Cleanup old index
   await createIndex(
     'tow_trucks',
     {
-      key: { stripeAccountId: 1 },
-      name: 'tow_trucks_stripeAccountId_key',
+      key: { razorpayAccountId: 1 },
+      name: 'tow_trucks_razorpayAccountId_key',
       unique: true,
       sparse: true,
     },
-    'Ensured sparse unique index on tow_trucks.stripeAccountId.'
+    'Ensured sparse unique index on tow_trucks.razorpayAccountId.'
   );
 
   // 4. Create geospatial index for Spare Parts.

@@ -1,18 +1,33 @@
 import Coupons from "@/components/Coupons";
 import NavOptions from "@/components/NavOptions";
 import NavOptionSec from "@/components/NavOptionSec";
+import SkeletonHome from "@/components/SkeletonHome";
 import { useAuth, useUser } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 export default function Index() {
   const { signOut } = useAuth();
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
   const [menuVisible, setMenuVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+
+  useEffect(() => {
+    // Simulate initial data loading or wait for user to be loaded
+    if (isLoaded) {
+      // Add a small delay for aesthetic purposes if needed, 
+      // or just set false immediately if data is ready.
+      // For now, let's show skeleton for at least 1.5s to demo the effect.
+      const timer = setTimeout(() => {
+        setIsLoading(false);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoaded]);
 
   const handleSignOut = async () => {
     try {
@@ -40,88 +55,92 @@ export default function Index() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F5F5F5" />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {isLoading ? (
+        <SkeletonHome />
+      ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={toggleMenu}>
-            <Icon name="menu" size={30} color="#333" />
-          </TouchableOpacity>
-          {/* Menu Modal */}
-          <Modal
-            transparent={true}
-            animationType="fade"
-            visible={menuVisible}
-            onRequestClose={() => setMenuVisible(false)}
-          >
-            <TouchableOpacity
-              style={styles.modalOverlay}
-              activeOpacity={1}
-              onPress={() => setMenuVisible(false)}
-            >
-              <View style={styles.menuContainer}>
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={navigateToProfile}
-                >
-                  <Icon name="account" size={20} color="#333" style={styles.menuIcon} />
-                  <Text style={styles.menuText}>Profile</Text>
-                </TouchableOpacity>
-
-                <View style={styles.divider} />
-
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={navigateToBusinessSetup}
-                >
-                  <Icon name="store" size={20} color="#333" style={styles.menuIcon} />
-                  <Text style={styles.menuText}>Business Page</Text>
-                </TouchableOpacity>
-
-                <View style={styles.divider} />
-
-                <TouchableOpacity
-                  style={[styles.menuItem, styles.logoutItem]}
-                  onPress={handleSignOut}
-                >
-                  <Icon name="logout" size={20} color="#e74c3c" style={styles.menuIcon} />
-                  <Text style={[styles.menuText, styles.logoutText]}>Logout</Text>
-                </TouchableOpacity>
-              </View>
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity onPress={toggleMenu}>
+              <Icon name="menu" size={30} color="#333" />
             </TouchableOpacity>
-          </Modal>
-        </View>
+            {/* Menu Modal */}
+            <Modal
+              transparent={true}
+              animationType="fade"
+              visible={menuVisible}
+              onRequestClose={() => setMenuVisible(false)}
+            >
+              <TouchableOpacity
+                style={styles.modalOverlay}
+                activeOpacity={1}
+                onPress={() => setMenuVisible(false)}
+              >
+                <View style={styles.menuContainer}>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={navigateToProfile}
+                  >
+                    <Icon name="account" size={20} color="#333" style={styles.menuIcon} />
+                    <Text style={styles.menuText}>Profile</Text>
+                  </TouchableOpacity>
 
-        {/* Greeting */}
-        <View style={styles.greetingContainer}>
-          <Text style={styles.greetingText}>Hai, {user?.firstName || 'User'}</Text>
-        </View>
+                  <View style={styles.divider} />
 
-        {/* Services Section */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Services</Text>
-          <View style={styles.sectionDivider} />
-        </View>
-        <NavOptions />
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={navigateToBusinessSetup}
+                  >
+                    <Icon name="store" size={20} color="#333" style={styles.menuIcon} />
+                    <Text style={styles.menuText}>Business Page</Text>
+                  </TouchableOpacity>
 
-        {/* Other Services Section */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Other Services</Text>
-          <View style={styles.sectionDivider} />
-        </View>
-        <NavOptionSec />
+                  <View style={styles.divider} />
 
-        {/* Coupons Section */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Coupons</Text>
-          <View style={styles.sectionDivider} />
-        </View>
-        <Coupons />
+                  <TouchableOpacity
+                    style={[styles.menuItem, styles.logoutItem]}
+                    onPress={handleSignOut}
+                  >
+                    <Icon name="logout" size={20} color="#e74c3c" style={styles.menuIcon} />
+                    <Text style={[styles.menuText, styles.logoutText]}>Logout</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            </Modal>
+          </View>
 
-        {/* Bottom Padding for Tab Bar */}
-        <View style={{ height: 100 }} />
+          {/* Greeting */}
+          <View style={styles.greetingContainer}>
+            <Text style={styles.greetingText}>Hai, {user?.firstName || 'User'}</Text>
+          </View>
 
-      </ScrollView>
+          {/* Services Section */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Services</Text>
+            <View style={styles.sectionDivider} />
+          </View>
+          <NavOptions />
+
+          {/* Other Services Section */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Other Services</Text>
+            <View style={styles.sectionDivider} />
+          </View>
+          <NavOptionSec />
+
+          {/* Coupons Section */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Coupons</Text>
+            <View style={styles.sectionDivider} />
+          </View>
+          <Coupons />
+
+          {/* Bottom Padding for Tab Bar */}
+          <View style={{ height: 100 }} />
+
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }

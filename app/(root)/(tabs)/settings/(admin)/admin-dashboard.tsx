@@ -1,6 +1,6 @@
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, useRouter } from "expo-router";
+import { Stack, useNavigation, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -480,13 +480,22 @@ export default function AdminVerificationDashboard() {
     );
   };
 
+  // Hide bottom tabs
+  const navigation = useNavigation();
+  useEffect(() => {
+    navigation.getParent()?.setOptions({ tabBarStyle: { display: "none" } });
+    return () => {
+      navigation.getParent()?.setOptions({ tabBarStyle: undefined });
+    };
+  }, [navigation]);
+
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* Custom Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 15 }}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={colors.dark} />
         </TouchableOpacity>
         <View>
@@ -584,12 +593,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'android' ? 50 : 20,
     paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    borderRadius: 10
+    borderBottomWidth: 0, // Clean look, remove border
+    elevation: 2, // Add shadow instead
+    shadowColor: colors.dark,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    flexDirection: 'row', // Align items in row
+    alignItems: 'center', // Center vertically
+    zIndex: 10,
+  },
+  backButton: {
+    marginRight: 15,
+    padding: 5,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 24, // Slightly smaller to fit better side-by-side
     fontWeight: 'bold',
     fontFamily: 'Poppins_600SemiBold',
     color: colors.dark,
@@ -600,9 +619,9 @@ const styles = StyleSheet.create({
     marginRight: 4
   },
   headerSubtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: colors.gray,
-    marginTop: 2,
+    marginTop: 0,
   },
   statsContainerWrapper: {
     height: 160, // Adjusted height for better fit

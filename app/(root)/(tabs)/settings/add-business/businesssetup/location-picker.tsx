@@ -185,7 +185,7 @@ export default function LocationPickerScreen() {
             key: GOOGLE_API_KEY,
             language: 'en',
             components: 'country:in',
-            types: '(cities)',
+            // types: '(cities)', // Removed to allow searching for establishments/landmarks
             fields: 'formatted_address,geometry,name,place_id',
           }}
           styles={{
@@ -217,7 +217,7 @@ export default function LocationPickerScreen() {
         <Ionicons name="location" size={50} color="#005C70" style={styles.pinShadow} />
       </View>
 
-      <View style={[styles.overlayContainer, { paddingBottom: Math.max(insets.bottom + 74, 96) }]}>
+      <View style={[styles.overlayContainer, { paddingBottom: Math.max(insets.bottom + 90, 140) }]}>
         <View style={styles.instructionsContainer}>
           <Text style={styles.instructionsTitle}>Set Your Location</Text>
           <Text style={styles.instructionsSubtitle} numberOfLines={2}>{geocodedAddress}</Text>

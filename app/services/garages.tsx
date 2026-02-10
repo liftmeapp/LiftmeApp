@@ -45,9 +45,9 @@ const ServiceItem = ({ service, isSelected, onPress }: any) => (
                 paddingHorizontal: 20,
                 borderRadius: 12,
                 marginBottom: 12,
-                backgroundColor: isSelected ? '#f8f4ff' : '#ffffff',
+                backgroundColor: isSelected ? '#e0f7fa' : '#ffffff',
                 borderWidth: 1.5,
-                borderColor: isSelected ? '#b95528' : '#e8e8e8',
+                borderColor: isSelected ? '#005C70' : '#e8e8e8',
                 shadowColor: '#000',
                 shadowOffset: { width: 0, height: 1 },
                 shadowOpacity: 0.1,
@@ -64,7 +64,7 @@ const ServiceItem = ({ service, isSelected, onPress }: any) => (
             {
                 fontSize: 16,
                 fontWeight: isSelected ? '600' : '500',
-                color: isSelected ? '#b95528' : '#2d3748',
+                color: isSelected ? '#005C70' : '#2d3748',
                 flex: 1,
             }
         ]}>
@@ -74,7 +74,7 @@ const ServiceItem = ({ service, isSelected, onPress }: any) => (
             <Ionicons
                 name="checkmark-circle"
                 size={24}
-                color="#b95528"
+                color="#005C70"
                 style={{ marginLeft: 8 }}
             />
         )}
@@ -281,7 +281,7 @@ const GaragesScreen = () => {
                 >
                     <BottomSheetFlatList
                         data={filteredGarages}
-                        keyExtractor={(item : any) => getGarageId(item)}
+                        keyExtractor={(item: any) => getGarageId(item)}
                         renderItem={renderGarageItem}
                         contentContainerStyle={bottomSheetStyles.contentContainer}
                         ListHeaderComponent={<Text style={bottomSheetStyles.headerText}>Nearby Garages</Text>}
@@ -300,7 +300,7 @@ const GaragesScreen = () => {
                         <View style={modalStyles.modalContent}>
                             <Text style={modalStyles.modalTitle}>Select a Service</Text>
                             {loadingServices ? (
-                                <ActivityIndicator size="large" color="#b95528" />
+                                <ActivityIndicator size="large" color="#005C70" />
                             ) : (
                                 <FlatList
                                     data={selectedCategoryServices}
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
         marginHorizontal: 5,
     },
     activeFilterButton: {
-        backgroundColor: '#b95528',
+        backgroundColor: '#005C70',
     },
     filterButtonText: {
         marginLeft: 8,
@@ -411,8 +411,8 @@ const modalStyles = StyleSheet.create({
         alignItems: 'center',
     },
     selectedServiceItem: {
-        backgroundColor: '#f0f8ff',
-        borderColor: '#b95528',
+        backgroundColor: '#e0f7fa',
+        borderColor: '#005C70',
     },
     serviceItemText: {
         fontSize: 18,
@@ -420,7 +420,7 @@ const modalStyles = StyleSheet.create({
     },
     selectedServiceItemText: {
         fontWeight: 'bold',
-        color: '#b95528',
+        color: '#005C70',
     },
     emptyText: {
         textAlign: 'center',
@@ -430,7 +430,7 @@ const modalStyles = StyleSheet.create({
     closeButton: {
         marginTop: 20,
         padding: 12,
-        backgroundColor: '#b95528',
+        backgroundColor: '#005C70',
         borderRadius: 8,
         alignItems: 'center',
     },
@@ -446,7 +446,7 @@ const bottomSheetStyles = StyleSheet.create({
         backgroundColor: '#f8f9fa',
     },
     handleIndicator: {
-        backgroundColor: '#b95528',
+        backgroundColor: '#005C70',
     },
     contentContainer: {
         paddingHorizontal: 16,
@@ -474,7 +474,7 @@ const bottomSheetStyles = StyleSheet.create({
         elevation: 2,
     },
     selectedItemContainer: {
-        backgroundColor: '#fff8f2',
+        backgroundColor: '#e0f7fa',
     },
     itemDetails: {
         flex: 1,
@@ -492,7 +492,7 @@ const bottomSheetStyles = StyleSheet.create({
     },
     itemDistance: {
         fontSize: 14,
-        color: '#b95528',
+        color: '#005C70',
         fontWeight: '500',
         marginTop: 4,
     },
@@ -502,7 +502,7 @@ const bottomSheetStyles = StyleSheet.create({
     },
     directionButton: {
         flexDirection: 'row',
-        backgroundColor: '#b95528',
+        backgroundColor: '#005C70',
         paddingHorizontal: 12,
         paddingVertical: 10,
         borderRadius: 8,

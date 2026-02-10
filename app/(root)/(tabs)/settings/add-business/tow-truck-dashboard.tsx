@@ -1,14 +1,15 @@
-import { useAuth } from '@clerk/clerk-expo';
+import BusinessBookingModal from '@/components/BusinessBookingModal';
+import { OtpVerificationModal } from '@/components/GarageModals';
+import TowTruckBookingCard from '@/components/TowTruckBookingCard';
 import { useTowTruckStore } from '@/store/towtruckStore';
+import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Platform, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import io from 'socket.io-client';
-
 
 // --- CONFIGURATION ---
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -67,161 +68,11 @@ const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap,
     ) : null
 );
 
-const BookingCard = ({ booking, onAccept, onDecline, onCancel, onPress, onComplete, onChat, isAccepting, isDeclining, jobsSubTab }: { booking: any, onAccept: (id: string) => void, onDecline: (id: string) => void, onCancel: (id: string) => void, onPress: (booking: any) => void, onComplete: (id: string) => void, onChat: (bookingId: string) => void, isAccepting: boolean, isDeclining: boolean, jobsSubTab: 'Pending' | 'Current' | 'History' }) => {
-    const getCoords = (loc: any) => {
-        if (loc?.coordinates) return loc.coordinates;
-        if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
-            return [loc.longitude, loc.latitude];
-        }
-        return null;
-    };
-
-    const pickupCoords = getCoords(booking.pickupLocation);
-    const destinationCoords = getCoords(booking.destinationLocation);
-
-    return (
-        <TouchableOpacity style={styles.bookingCard} onPress={() => onPress(booking)}>
-            <View style={[styles.badge,
-            booking.status === 'SEARCHING' ? styles.badgePending :
-                booking.status === 'CONFIRMED' ? styles.badgeActive :
-                    booking.status === 'IN_PROGRESS' ? styles.badgeActive : styles.badgeCompleted
-            ]}>
-                <Text style={styles.badgeText}>{booking.status.replace(/_/g, ' ')}</Text>
-            </View>
-
-            <View style={styles.bookingHeader}>
-                <Text style={styles.bookingDate}>{new Date(booking.bookedAt).toLocaleDateString()} • {new Date(booking.bookedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                <Text style={styles.bookingPrice}>AED {booking.finalAmount.toFixed(2)}</Text>
-            </View>
-
-            <View style={styles.bookingDetails}>
-                <View style={styles.serviceIconContainer}>
-                    <Ionicons name="car-sport" size={24} color="#005C70" />
-                </View>
-                <View style={{ flex: 1 }}>
-                    <Text style={styles.customerName}>{booking.user.firstName} {booking.user.lastName}</Text>
-                    <Text style={styles.vehicleInfo}>{booking.vehicle.brand} {booking.vehicle.name} • {booking.vehicle.plateNumber}</Text>
-                    <View style={{ marginTop: 4 }}>
-                        <Text style={styles.bookingText} numberOfLines={1}><Text style={{ fontWeight: '600' }}>From:</Text> {booking.pickupAddress || booking.pickupLocation?.description || 'N/A'}</Text>
-                        <Text style={styles.bookingText} numberOfLines={1}><Text style={{ fontWeight: '600' }}>To:</Text> {booking.destinationAddress || booking.destinationLocation?.description || booking.garage?.name || 'N/A'}</Text>
-                    </View>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#ccc" />
-            </View>
-
-            {(pickupCoords && destinationCoords) && (
-                <View style={styles.mapPreviewContainer}>
-                    <MapView
-                        style={styles.mapPreview}
-                        pointerEvents="none"
-                        scrollEnabled={false}
-                        zoomEnabled={false}
-                        rotateEnabled={false}
-                        pitchEnabled={false}
-                        initialRegion={{
-                            latitude: (pickupCoords[1] + destinationCoords[1]) / 2,
-                            longitude: (pickupCoords[0] + destinationCoords[0]) / 2,
-                            latitudeDelta: Math.max(Math.abs(pickupCoords[1] - destinationCoords[1]) * 2.2, 0.03),
-                            longitudeDelta: Math.max(Math.abs(pickupCoords[0] - destinationCoords[0]) * 2.2, 0.03),
-                        }}
-                    >
-                        <Marker coordinate={{ latitude: pickupCoords[1], longitude: pickupCoords[0] }} title="Pickup" />
-                        <Marker coordinate={{ latitude: destinationCoords[1], longitude: destinationCoords[0] }} title="Drop-off" pinColor="#005C70" />
-                        <Polyline
-                            coordinates={[
-                                { latitude: pickupCoords[1], longitude: pickupCoords[0] },
-                                { latitude: destinationCoords[1], longitude: destinationCoords[0] },
-                            ]}
-                            strokeColor="#005C70"
-                            strokeWidth={3}
-                        />
-                    </MapView>
-                </View>
-            )}
-
-            {(pickupCoords && destinationCoords) && (
-                <TouchableOpacity
-                    style={styles.checkMapButton}
-                    onPress={() => {
-                        const waypoints = `${pickupCoords[1]},${pickupCoords[0]}`;
-                        const dest = `${destinationCoords[1]},${destinationCoords[0]}`;
-                        const url = `https://www.google.com/maps/dir/?api=1&destination=${dest}&waypoints=${waypoints}`;
-                        Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
-                    }}
-                >
-                    <Ionicons name="map" size={16} color="#005C70" />
-                    <Text style={styles.checkMapButtonText}>Open Route</Text>
-                </TouchableOpacity>
-            )}
-
-            {/* Action Buttons Row */}
-            {(booking.status === 'CONFIRMED' || booking.status === 'IN_PROGRESS') && (
-                <View style={styles.cardActionsRow}>
-                    <TouchableOpacity style={[styles.cardActionButton, styles.chatButtonStyle]} onPress={() => onChat(booking.id)}>
-                        <Ionicons name="chatbubble-ellipses-outline" size={20} color="#005C70" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={[styles.cardActionButton, styles.completeButtonStyle]} onPress={() => onComplete(booking.id)}>
-                        <Text style={styles.completeButtonText}>{booking.bookingType === 'TOW_TO_GARAGE' ? 'Confirm Delivery' : 'Complete Job'}</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={[styles.cardActionButton, styles.cancelButtonStyle]} onPress={() => onCancel(booking.id)}>
-                        <Ionicons name="close-circle-outline" size={24} color="#e74c3c" />
-                    </TouchableOpacity>
-                </View>
-            )}
-
-            {booking.status === 'SEARCHING' && (
-                <View style={styles.cardActionsRow}>
-                    <TouchableOpacity
-                        style={[styles.bookingButton, styles.declineButton]}
-                        onPress={() => onDecline(booking.id)}
-                        disabled={isDeclining || isAccepting}
-                    >
-                        {isDeclining ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.bookingButtonText}>Decline</Text>}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.bookingButton, styles.acceptButton]}
-                        onPress={() => onAccept(booking.id)}
-                        disabled={isAccepting || isDeclining}
-                    >
-                        {isAccepting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.bookingButtonText}>Accept Job</Text>}
-                    </TouchableOpacity>
-                </View>
-            )}
-        </TouchableOpacity>
-    );
-};
-
-const OtpVerificationModal = ({ visible, onClose, otp, setOtp, onVerify, isVerifying }: any) => (
-    <Modal animationType="slide" transparent={true} visible={visible} onRequestClose={onClose}>
-        <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={{ flex: 1 }}
-        >
-            <View style={modalStyles.modalOverlay}>
-                <View style={modalStyles.modalContent}>
-                    <Text style={modalStyles.modalTitle}>Complete Service</Text>
-                    <Text style={modalStyles.modalSubtitle}>Enter the 6-digit OTP from the customer to verify.</Text>
-                    <TextInput style={modalStyles.otpInput} keyboardType="number-pad" maxLength={6} value={otp} onChangeText={setOtp} placeholder="123456" placeholderTextColor="#ccc" />
-                    <TouchableOpacity style={[styles.modalPrimaryButton, styles.acceptButton, isVerifying && styles.disabledButton]} onPress={onVerify} disabled={isVerifying}>
-                        {isVerifying ? <ActivityIndicator color="#fff" /> : <Text style={styles.bookingButtonText}>Verify & Complete</Text>}
-                    </TouchableOpacity>
-                    <TouchableOpacity style={{ marginTop: 16 }} onPress={onClose}><Text style={{ textAlign: 'center', color: '#999' }}>Cancel</Text></TouchableOpacity>
-                </View>
-            </View>
-        </KeyboardAvoidingView>
-    </Modal>
-);
-
-
-// ... (existing imports)
-
 export default function TowTruckDashboard() {
     const router = useRouter();
     const { getToken } = useAuth();
     const { towTruckId } = useLocalSearchParams<{ towTruckId: string }>();
-    const { setDetails, setServices, reset: resetTowTruckStore } = useTowTruckStore();
+    const { setDetails, setServices } = useTowTruckStore();
 
     const [truck, setTruck] = useState<any>(null);
     const [bookings, setBookings] = useState<any[]>([]);
@@ -232,16 +83,19 @@ export default function TowTruckDashboard() {
     const [mainTab, setMainTab] = useState<'Jobs' | 'Profile' | 'Analytics'>('Jobs');
     const [analyticsData, setAnalyticsData] = useState<any>(null); // State for analytics
     const [jobsSubTab, setJobsSubTab] = useState<'Pending' | 'Current' | 'History'>('Pending');
-    const [isModalVisible, setIsModalVisible] = useState(false);
+
+    // Modals
+    const [isBusinessModalVisible, setIsBusinessModalVisible] = useState(false);
     const [selectedBooking, setSelectedBooking] = useState<any>(null);
     const [otpModalVisible, setOtpModalVisible] = useState(false);
     const [bookingToComplete, setBookingToComplete] = useState<string | null>(null);
     const [otp, setOtp] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
+    const getTokenRef = useRef(getToken);
 
     // Live Location State
-    const [isOnline, setIsOnline] = useState(false);
-    const locationSubscription = React.useRef<Location.LocationSubscription | null>(null);
+    const [isOnline, setIsOnline] = useState(true);
+    const locationSubscription = useRef<Location.LocationSubscription | null>(null);
 
     // cleanup on unmount
     useEffect(() => {
@@ -251,84 +105,101 @@ export default function TowTruckDashboard() {
             }
         };
     }, []);
+    useEffect(() => {
+        getTokenRef.current = getToken;
+    }, [getToken]);
+
+    const stopLocationTracking = useCallback(async (showAlert = true) => {
+        setIsOnline(false);
+        if (locationSubscription.current) {
+            locationSubscription.current.remove();
+            locationSubscription.current = null;
+        }
+        try {
+            const token = await getTokenRef.current();
+            if (token) {
+                await fetch(`${API_BASE_URL}/api/tow-trucks/location`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        latitude: 0,
+                        longitude: 0,
+                        isAvailable: false
+                    })
+                });
+            }
+        } catch (err) {
+            console.error("Failed to set offline status", err);
+        }
+
+        if (showAlert) {
+            Alert.alert("You are Offline", "You will no longer receive new requests.");
+        }
+    }, []);
+
+    const startLocationTracking = useCallback(async (showAlert = true) => {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+            setIsOnline(false);
+            Alert.alert('Permission Denied', 'Allow location access to go online.');
+            return;
+        }
+
+        if (locationSubscription.current) {
+            locationSubscription.current.remove();
+            locationSubscription.current = null;
+        }
+
+        setIsOnline(true);
+        try {
+            locationSubscription.current = await Location.watchPositionAsync(
+                {
+                    accuracy: Location.Accuracy.High,
+                    timeInterval: 5000,
+                    distanceInterval: 10,
+                },
+                async (location) => {
+                    const { latitude, longitude } = location.coords;
+                    try {
+                        const token = await getTokenRef.current();
+                        if (token) {
+                            await fetch(`${API_BASE_URL}/api/tow-trucks/location`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${token}`
+                                },
+                                body: JSON.stringify({
+                                    latitude,
+                                    longitude,
+                                    isAvailable: true
+                                })
+                            });
+                        }
+                    } catch (err) {
+                        console.error("Failed to update location", err);
+                    }
+                }
+            );
+            if (showAlert) {
+                Alert.alert("You are Online", "Your location is now being shared with customers.");
+            }
+        } catch (err) {
+            console.error("Error starting location watch", err);
+            setIsOnline(false);
+            Alert.alert("Error", "Could not start location tracking.");
+        }
+    }, []);
 
     const toggleOnlineStatus = async (value: boolean) => {
         if (value) {
-            // Going Online
-            const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permission Denied', 'Allow location access to go online.');
-                return;
-            }
-
-            setIsOnline(true);
-            try {
-                // Start watching position
-                locationSubscription.current = await Location.watchPositionAsync(
-                    {
-                        accuracy: Location.Accuracy.High,
-                        timeInterval: 5000, // Update every 5 seconds
-                        distanceInterval: 10, // Or every 10 meters
-                    },
-                    async (location) => {
-                        const { latitude, longitude } = location.coords;
-                        // Send update to backend
-                        try {
-                            const token = await getToken();
-                            if (token) {
-                                await fetch(`${API_BASE_URL}/api/tow-trucks/location`, {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json',
-                                        'Authorization': `Bearer ${token}`
-                                    },
-                                    body: JSON.stringify({
-                                        latitude,
-                                        longitude,
-                                        isAvailable: true
-                                    })
-                                });
-                            }
-                        } catch (err) {
-                            console.error("Failed to update location", err);
-                        }
-                    }
-                );
-                Alert.alert("You are Online", "Your location is now being shared with customers.");
-            } catch (err) {
-                console.error("Error starting location watch", err);
-                setIsOnline(false);
-                Alert.alert("Error", "Could not start location tracking.");
-            }
-        } else {
-            // Going Offline
-            setIsOnline(false);
-            if (locationSubscription.current) {
-                locationSubscription.current.remove();
-                locationSubscription.current = null;
-            }
-            // Notify backend
-            try {
-                const token = await getToken();
-                if (token) {
-                    await fetch(`${API_BASE_URL}/api/tow-trucks/location`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({
-                            latitude: 0, // values don't matter as much as isAvailable
-                            longitude: 0,
-                            isAvailable: false
-                        })
-                    });
-                }
-            } catch (err) {
-                console.error("Failed to set offline status", err);
-            }
-            Alert.alert("You are Offline", "You will no longer receive new requests.");
+            await startLocationTracking(true);
+            return;
         }
+        await stopLocationTracking(true);
     };
 
     const handleChat = async (bookingId: string) => {
@@ -353,6 +224,7 @@ export default function TowTruckDashboard() {
             });
             if (!response.ok) throw new Error("Failed to accept booking.");
             await fetchData();
+            setIsBusinessModalVisible(false);
         } catch (error: any) {
             Alert.alert("Error", error.message);
         } finally {
@@ -371,6 +243,7 @@ export default function TowTruckDashboard() {
             });
             if (!response.ok) throw new Error("Failed to decline booking.");
             await fetchData();
+            setIsBusinessModalVisible(false);
         } catch (error: any) {
             Alert.alert("Error", error.message);
         } finally {
@@ -392,13 +265,17 @@ export default function TowTruckDashboard() {
                         });
                         if (!response.ok) throw new Error("Failed to cancel.");
                         fetchData();
+                        setIsBusinessModalVisible(false);
                     } catch (err: any) { Alert.alert("Error", err.message); }
                 }
             }
         ])
     }
 
+    const [isRequestingOtp, setIsRequestingOtp] = useState(false);
+
     const handleOpenOtpModal = async (bookingId: string) => {
+        setIsRequestingOtp(true);
         try {
             const token = await getToken();
             const response = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/request-completion-otp`, {
@@ -413,6 +290,8 @@ export default function TowTruckDashboard() {
             setOtp('');
         } catch (error: any) {
             Alert.alert('OTP Error', error.message || 'Could not request OTP.');
+        } finally {
+            setIsRequestingOtp(false);
         }
     };
 
@@ -435,7 +314,7 @@ export default function TowTruckDashboard() {
         if (!towTruckId) return;
         if (!isManualRefresh) setLoading(true);
         try {
-            const token = await getToken();
+            const token = await getTokenRef.current();
             if (!token) throw new Error("Authentication failed.");
 
             if (mainTab === 'Analytics') {
@@ -446,7 +325,6 @@ export default function TowTruckDashboard() {
                     const stats = await statsRes.json();
                     setAnalyticsData(stats);
                 }
-                // We also need truck data for header
                 const truckRes = await fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}`, { headers: { 'Authorization': `Bearer ${token}` } });
                 if (truckRes.ok) setTruck(await truckRes.json());
             } else {
@@ -456,7 +334,9 @@ export default function TowTruckDashboard() {
                     fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
                     fetch(`${API_BASE_URL}/api/tow-truck/bookings?${bookingStatusQuery}`, { headers: { 'Authorization': `Bearer ${token}` } })
                 ]);
-                if (!truckRes.ok || !bookingsRes.ok) throw new Error("Failed to load data");
+                if (!truckRes.ok || !bookingsRes.ok) {
+                    throw new Error("Failed to load data.");
+                }
                 setTruck(await truckRes.json());
                 setBookings(await bookingsRes.json());
             }
@@ -464,7 +344,7 @@ export default function TowTruckDashboard() {
             if (isManualRefresh) setRefreshing(false);
             setLoading(false);
         }
-    }, [towTruckId, jobsSubTab, mainTab]);
+    }, [towTruckId, mainTab]);
 
     useEffect(() => {
         if (!towTruckId) return;
@@ -479,9 +359,46 @@ export default function TowTruckDashboard() {
     }, [towTruckId, fetchData]);
 
     useEffect(() => {
-        if (towTruckId) { registerForPushNotificationsAsync(towTruckId, 'towTruck', getToken); }
+        if (towTruckId) { registerForPushNotificationsAsync(towTruckId, 'towTruck', () => getTokenRef.current()); }
         fetchData();
     }, [fetchData, towTruckId]);
+
+    useEffect(() => {
+        let isMounted = true;
+        if (!towTruckId) return;
+
+        const syncOnlineStatus = async () => {
+            try {
+                const token = await getToken();
+                if (!token) return;
+
+                const response = await fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}/status`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                const nextOnlineStatus = response.ok
+                    ? (await response.json()).isAvailable ?? true
+                    : true;
+
+                if (!isMounted) return;
+
+                setIsOnline(nextOnlineStatus);
+                if (nextOnlineStatus) {
+                    await startLocationTracking(false);
+                } else if (locationSubscription.current) {
+                    locationSubscription.current.remove();
+                    locationSubscription.current = null;
+                }
+            } catch {
+                if (!isMounted) return;
+                setIsOnline(true);
+                await startLocationTracking(false);
+            }
+        };
+
+        syncOnlineStatus();
+        return () => { isMounted = false; };
+    }, [towTruckId, getToken, startLocationTracking]);
     const onRefresh = useCallback(() => { fetchData(true); }, [fetchData]);
 
 
@@ -523,33 +440,56 @@ export default function TowTruckDashboard() {
         return false;
     });
 
+    const renderModalActions = () => {
+        if (!selectedBooking) return null;
+        const b = selectedBooking;
+        const isHistory = jobsSubTab === 'History';
+
+        return (
+            <View style={{ gap: 10 }}>
+                {!isHistory && (b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS') && (
+                    <TouchableOpacity style={[styles.mainActionButton, styles.chatButtonStyle]} onPress={() => { setIsBusinessModalVisible(false); handleChat(b.id); }}>
+                        <Ionicons name="chatbubble-ellipses-outline" size={20} color="#005C70" style={{ marginRight: 8 }} />
+                        <Text style={[styles.mainActionButtonText, { color: '#005C70' }]}>Chat with Customer</Text>
+                    </TouchableOpacity>
+                )}
+
+                {jobsSubTab === 'Pending' && !isHistory && (
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TouchableOpacity style={[styles.mainActionButton, styles.declineButtonNew, { flex: 1 }]} onPress={() => handleDecline(b.id)} disabled={acceptingId === b.id || decliningId === b.id}>
+                            {decliningId === b.id ? <ActivityIndicator color="#fff" /> : <Text style={styles.mainActionButtonText}>Decline</Text>}
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.mainActionButton, styles.acceptButtonNew, { flex: 1 }]} onPress={() => handleAccept(b.id)} disabled={acceptingId === b.id || decliningId === b.id}>
+                            {acceptingId === b.id ? <ActivityIndicator color="#fff" /> : <Text style={styles.mainActionButtonText}>Accept Job</Text>}
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {!isHistory && (b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS') && (
+                    <View style={{ gap: 10 }}>
+                        <TouchableOpacity
+                            style={[styles.mainActionButton, styles.completeButtonStyle]}
+                            onPress={() => { setIsBusinessModalVisible(false); handleOpenOtpModal(b.id); }}
+                            disabled={isRequestingOtp}
+                        >
+                            {isRequestingOtp ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <Text style={styles.mainActionButtonText}>{b.bookingType === 'TOW_TO_GARAGE' ? 'Confirm Delivery' : 'Complete Job'}</Text>
+                            )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={[styles.mainActionButton, styles.cancelButtonStyle]} onPress={() => handleCancel(b.id)}>
+                            <Text style={[styles.mainActionButtonText, { color: '#e74c3c' }]}>Cancel Booking</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </View>
+        );
+    };
+
     if (loading && !truck) return <View style={styles.centered}><ActivityIndicator size="large" color="#005C70" /></View>;
     if (!truck) return <View style={styles.centered}><Text style={styles.errorText}>Could not load your tow truck data.</Text></View>;
-
-    const BookingDetailsModal = ({ booking, onClose }: { booking: any, onClose: () => void }) => {
-        if (!booking) return null;
-        return (
-            <View style={modalStyles.modalOverlay}>
-                <View style={modalStyles.modalContent}>
-                    <TouchableOpacity onPress={onClose} style={modalStyles.closeButton}><Ionicons name="close-circle" size={30} color="#e74c3c" /></TouchableOpacity>
-                    <ScrollView>
-                        <Text style={modalStyles.modalTitle}>Booking Details</Text>
-                        <InfoRow icon="person-circle-outline" label="Customer" value={`${booking.user.firstName} ${booking.user.lastName}`} />
-                        <InfoRow icon="call-outline" label="Phone" value={booking.user.phone} />
-                        <InfoRow icon="car-outline" label="Vehicle" value={`${booking.vehicle.brand} ${booking.vehicle.name}`} />
-                        <InfoRow icon="card-outline" label="Plate" value={booking.vehicle.plateNumber} />
-                        <View style={{ height: 1, backgroundColor: '#eee', marginVertical: 10 }} />
-                        <Text style={{ fontWeight: '600', marginBottom: 4, color: '#005C70' }}>Locations:</Text>
-                        <Text style={{ fontSize: 13, marginBottom: 8 }}>From: {booking.pickupAddress || booking.pickupLocation?.description || 'N/A'}</Text>
-                        <Text style={{ fontSize: 13, marginBottom: 8 }}>To: {booking.destinationAddress || booking.destinationLocation?.description || booking.garage?.name || 'N/A'}</Text>
-                        <View style={{ height: 1, backgroundColor: '#eee', marginVertical: 10 }} />
-                        <InfoRow icon="cash-outline" label="Total" value={`AED ${booking.finalAmount.toFixed(2)}`} />
-                    </ScrollView>
-                </View>
-            </View>
-        )
-    }
-
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -593,18 +533,10 @@ export default function TowTruckDashboard() {
                         </View>
                         {filteredBookings.length > 0 ? (
                             filteredBookings.map(b => (
-                                <BookingCard
+                                <TowTruckBookingCard
                                     key={b.id}
                                     booking={b}
-                                    onAccept={handleAccept}
-                                    onDecline={handleDecline}
-                                    onCancel={handleCancel}
-                                    onComplete={handleOpenOtpModal}
-                                    onChat={handleChat}
-                                    onPress={(b) => { setSelectedBooking(b); setIsModalVisible(true); }}
-                                    isAccepting={acceptingId === b.id}
-                                    isDeclining={decliningId === b.id}
-                                    jobsSubTab={jobsSubTab}
+                                    onPress={(b) => { setSelectedBooking(b); setIsBusinessModalVisible(true); }}
                                 />
                             ))
                         ) : (
@@ -670,6 +602,15 @@ export default function TowTruckDashboard() {
                             <InfoRow icon="person-outline" label="Driver" value={truck.driverName} />
                             <InfoRow icon="car-outline" label="Vehicle" value={`${truck.make} ${truck.model} (${truck.year})`} />
                             <InfoRow icon="card-outline" label="License" value={truck.licenseNumber} />
+                            <View style={styles.detailsDivider} />
+                            <Text style={styles.sectionSubtitle}>Payment Details</Text>
+                            <InfoRow icon="card-outline" label="Partner" value="Razorpay" />
+                            <InfoRow
+                                icon={truck.razorpayAccountId ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+                                label="Status"
+                                value={truck.razorpayAccountId ? 'Connected' : 'Not connected'}
+                            />
+                            <InfoRow icon="wallet-outline" label="Payout ID" value={truck.razorpayAccountId || '-'} />
                         </View>
 
                         <View style={styles.card}>
@@ -695,6 +636,7 @@ export default function TowTruckDashboard() {
                                 ))
                             ) : <Text>No services.</Text>}
                         </View>
+
                         <View style={styles.actionsRow}>
                             <TouchableOpacity style={[styles.actionButtonOutline]} onPress={handleEdit}>
                                 <Text style={styles.actionButtonOutlineText}>Edit Profile</Text>
@@ -706,20 +648,26 @@ export default function TowTruckDashboard() {
                     </View>
                 )}
             </ScrollView>
-            {isModalVisible && <BookingDetailsModal booking={selectedBooking} onClose={() => setIsModalVisible(false)} />}
-            <OtpVerificationModal visible={otpModalVisible} onClose={() => setOtpModalVisible(false)} otp={otp} setOtp={setOtp} onVerify={handleVerifyOtp} isVerifying={isVerifying} />
+
+            <BusinessBookingModal
+                visible={isBusinessModalVisible}
+                onClose={() => setIsBusinessModalVisible(false)}
+                booking={selectedBooking}
+            >
+                {renderModalActions()}
+            </BusinessBookingModal>
+
+            <OtpVerificationModal
+                visible={otpModalVisible}
+                onClose={() => setOtpModalVisible(false)}
+                otp={otp}
+                setOtp={setOtp}
+                onVerify={handleVerifyOtp}
+                isVerifying={isVerifying}
+            />
         </SafeAreaView>
     );
 }
-
-const modalStyles = StyleSheet.create({
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-    modalContent: { backgroundColor: '#fff', width: '90%', borderRadius: 24, padding: 24, elevation: 5, maxHeight: '80%' },
-    modalTitle: { fontSize: 20, fontWeight: '700', color: '#005C70', marginBottom: 15, textAlign: 'center' },
-    modalSubtitle: { fontSize: 13, color: '#666', textAlign: 'center', marginBottom: 20 },
-    closeButton: { position: 'absolute', top: 16, right: 16, zIndex: 10 },
-    otpInput: { height: 60, borderRadius: 12, backgroundColor: '#f5f5f5', textAlign: 'center', fontSize: 24, letterSpacing: 8, marginBottom: 20, color: '#333' }
-});
 
 const styles = StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: '#f8f9fa' },
@@ -740,76 +688,42 @@ const styles = StyleSheet.create({
     tabText: { fontSize: 16, color: '#999', fontWeight: '600' },
     tabTextActive: { color: '#005C70' },
 
-    subTabContainer: { flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 12 },
-    subTabItem: { marginRight: 12, paddingVertical: 6, paddingHorizontal: 14, borderRadius: 20, backgroundColor: '#eef2f5' },
+    subTabContainer: { flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 16 },
+    subTabItem: { marginRight: 12, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, backgroundColor: '#eef2f5' },
     subTabItemActive: { backgroundColor: '#005C70' },
     subTabText: { fontSize: 13, color: '#666', fontWeight: '600' },
     subTabTextActive: { color: '#fff' },
 
-    bookingCard: { backgroundColor: '#fff', marginHorizontal: 20, marginBottom: 16, borderRadius: 20, padding: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
-    badge: { position: 'absolute', top: 16, right: 16, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, backgroundColor: '#e0f2f1' },
-    badgePending: { backgroundColor: '#fff3e0' },
-    badgeActive: { backgroundColor: '#e8f5e9' },
-    badgeCompleted: { backgroundColor: '#f5f5f5' },
-    badgeText: { fontSize: 10, fontWeight: '700', color: '#005C70', textTransform: 'uppercase' },
+    emptyState: { alignItems: 'center', marginTop: 40 },
+    emptyStateText: { fontSize: 16, color: '#999', fontStyle: 'italic' },
 
-    bookingHeader: { marginBottom: 12 },
-    bookingDate: { fontSize: 12, color: '#999', fontWeight: '500' },
-    bookingPrice: { fontSize: 18, fontWeight: '700', color: '#333', marginTop: 4 },
+    card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginHorizontal: 20, marginBottom: 16, elevation: 2 },
+    cardTitle: { fontSize: 18, fontWeight: '700', color: '#005C70', marginBottom: 12 },
+    sectionSubtitle: { fontSize: 14, fontWeight: '700', color: '#005C70', marginTop: 4, marginBottom: 8 },
+    detailsDivider: { height: 1, backgroundColor: '#eef2f5', marginTop: 2, marginBottom: 10 },
+    infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+    infoIcon: { width: 24, textAlign: 'center', marginRight: 10 },
+    infoLabel: { fontSize: 14, color: '#666', width: 70 },
+    infoValue: { fontSize: 14, color: '#333', fontWeight: '600', flex: 1 },
 
-    bookingDetails: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-    serviceIconContainer: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#e0f7fa', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-    customerName: { fontSize: 15, fontWeight: '700', color: '#333' },
-    vehicleInfo: { fontSize: 13, color: '#666' },
-    bookingText: { fontSize: 13, color: '#555' },
+    serviceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+    serviceName: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 4 },
+    servicePrice: { fontSize: 14, color: '#005C70', fontWeight: '700' },
+    activeLabel: { fontSize: 10, color: '#005C70', fontWeight: '700', marginRight: 6 },
 
-    mapPreviewContainer: {
-        borderRadius: 12,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#e1f5fe',
-        marginBottom: 10,
+    actionsRow: { flexDirection: 'row', gap: 12, marginHorizontal: 20, marginTop: 10, marginBottom: 40 },
+    actionButtonOutline: { flex: 1, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: '#005C70', alignItems: 'center' },
+    actionButtonOutlineText: { color: '#005C70', fontWeight: '700' },
+    deleteButtonOutline: { borderColor: '#e74c3c' },
+
+    mainActionButton: {
+        flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 14,
+        shadowColor: '#000', shadowOffset: { height: 2, width: 0 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2, backgroundColor: '#fff', borderWidth: 1, borderColor: '#eee'
     },
-    mapPreview: {
-        height: 130,
-        width: '100%',
-    },
-    checkMapButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, backgroundColor: '#f5faff', borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: '#e1f5fe' },
-    checkMapButtonText: { color: '#005C70', fontWeight: '600', marginLeft: 6, fontSize: 13 },
-
-    cardActionsRow: { flexDirection: 'row', gap: 10 },
-    cardActionButton: { flex: 1, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexDirection: 'row' },
-    chatButtonStyle: { flex: 0.25, backgroundColor: '#f0f9fa' },
-    completeButtonStyle: { flex: 1, backgroundColor: '#005C70' },
-    cancelButtonStyle: { flex: 0.25, backgroundColor: '#fff5f5' },
-
-    completeButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-
-    bookingActions: { flexDirection: 'row', gap: 12 },
-    bookingButton: { flex: 1, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-    modalPrimaryButton: { width: '100%', height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 12 },
-    declineButton: { backgroundColor: '#fee2e2' },
-    acceptButton: { backgroundColor: '#005C70' },
-    bookingButtonText: { fontWeight: '700', color: '#fff' },
-    disabledButton: { opacity: 0.6 },
-
-    emptyState: { alignItems: 'center', padding: 40 },
-    emptyStateText: { color: '#999' },
-
-    card: { backgroundColor: '#fff', borderRadius: 20, padding: 20, marginHorizontal: 20, marginBottom: 16 },
-    cardTitle: { fontSize: 16, fontWeight: '700', color: '#005C70', marginBottom: 16 },
-    infoRow: { flexDirection: 'row', marginBottom: 12 },
-    infoIcon: { width: 24, marginRight: 12 },
-    infoLabel: { width: 80, fontSize: 14, color: '#888' },
-    infoValue: { flex: 1, fontSize: 14, color: '#333', fontWeight: '500' },
-
-    serviceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f9f9f9' },
-    serviceName: { fontSize: 15, fontWeight: '600', color: '#333' },
-    servicePrice: { fontSize: 13, color: '#666', marginTop: 2 },
-    activeLabel: { fontSize: 10, fontWeight: '700', color: '#005C70', marginRight: 6 },
-
-    actionsRow: { paddingHorizontal: 20, marginBottom: 40 },
-    actionButtonOutline: { borderWidth: 1, borderColor: '#ddd', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 12 },
-    actionButtonOutlineText: { fontWeight: '600', color: '#555' },
-    deleteButtonOutline: { borderColor: '#fee2e2', backgroundColor: '#fff5f5' }
+    mainActionButtonText: { fontWeight: '700', fontSize: 15, color: '#fff' },
+    acceptButtonNew: { backgroundColor: '#005C70', borderColor: '#005C70' },
+    declineButtonNew: { backgroundColor: '#e74c3c', borderColor: '#e74c3c' },
+    completeButtonStyle: { backgroundColor: '#27ae60', borderColor: '#27ae60' },
+    chatButtonStyle: { backgroundColor: '#fff', borderColor: '#005C70' },
+    cancelButtonStyle: { backgroundColor: '#fff', borderColor: '#e74c3c' }
 });

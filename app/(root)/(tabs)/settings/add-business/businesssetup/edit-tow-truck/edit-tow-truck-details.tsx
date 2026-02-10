@@ -1,10 +1,11 @@
+import PayoutsSection from '@/components/PayoutsSection';
 import RotatingLoader from '@/components/RotatingLoader';
 import { TowableVehicleType } from '@/store/towtruckStore';
 import { useAuth } from '@clerk/clerk-expo';
 import { Picker } from '@react-native-picker/picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -39,6 +40,7 @@ export default function EditTowTruckDetailsScreen() {
   const router = useRouter();
   const { getToken } = useAuth();
   const { towTruckId } = useLocalSearchParams<{ towTruckId: string }>();
+  const getTokenRef = useRef(getToken);
 
   // --- FORM STATE ---
   const [isLoading, setIsLoading] = useState(true);
@@ -54,55 +56,60 @@ export default function EditTowTruckDetailsScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentTowTruckData, setCurrentTowTruckData] = useState<any>(null);
 
-  // Pre-populate the form with existing data on load
   useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
+  const fetchTowTruckData = React.useCallback(async () => {
     if (!towTruckId) {
       setIsLoading(false);
       Alert.alert("Error", "No Tow Truck ID provided.");
       return;
     }
 
-    const fetchTowTruckData = async () => {
-      console.log("EditTowTruckDetailsScreen: Fetching existing data...");
-      try {
-        const token = await getToken();
-        const response = await fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!response.ok) throw new Error("Failed to fetch tow truck details.");
+    console.log("EditTowTruckDetailsScreen: Fetching existing data...");
+    try {
+      const token = await getTokenRef.current();
+      const response = await fetch(`${API_BASE_URL}/api/tow-trucks/${towTruckId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error("Failed to fetch tow truck details.");
 
-        const data = await response.json();
-        setCurrentTowTruckData(data); // Save original data for status check
+      const data = await response.json();
+      setCurrentTowTruckData(data); // Save original data for status check
 
-        // Pre-fill form state
-        setName(data.name || '');
-        setDriverName(data.driverName || '');
-        setContactEmail(data.contactEmail || '');
-        setModel(data.model || '');
-        setYear(String(data.year || ''));
-        setMake(data.make || '');
-        setLicenseNumber(data.licenseNumber || '');
-        setPlateNumber(data.plateNumber || '');
+      // Pre-fill form state
+      setName(data.name || '');
+      setDriverName(data.driverName || '');
+      setContactEmail(data.contactEmail || '');
+      setModel(data.model || '');
+      setYear(String(data.year || ''));
+      setMake(data.make || '');
+      setLicenseNumber(data.licenseNumber || '');
+      setPlateNumber(data.plateNumber || '');
 
-        // Pre-fill services
-        if (data.services && Array.isArray(data.services)) {
-          const existingServicesMap = new Map(data.services.map((s: any) => [s.vehicleType, s.price]));
-          setServiceSelections(ALL_SERVICE_TYPES.map(s => {
-            const price = existingServicesMap.get(s.type);
-            return { ...s, selected: price !== undefined, price: price !== undefined ? String(price) : '' };
-          }));
-        }
-
-      } catch (error: any) {
-        console.error("Error fetching tow truck details:", error);
-        Alert.alert("Error", "Could not load existing tow truck details.");
-      } finally {
-        setIsLoading(false);
+      // Pre-fill services
+      if (data.services && Array.isArray(data.services)) {
+        const existingServicesMap = new Map(data.services.map((s: any) => [s.vehicleType, s.price]));
+        setServiceSelections(ALL_SERVICE_TYPES.map(s => {
+          const price = existingServicesMap.get(s.type);
+          return { ...s, selected: price !== undefined, price: price !== undefined ? String(price) : '' };
+        }));
       }
-    };
 
-    fetchTowTruckData();
+    } catch (error: any) {
+      console.error("Error fetching tow truck details:", error);
+      Alert.alert("Error", "Could not load existing tow truck details.");
+    } finally {
+      setIsLoading(false);
+    }
   }, [towTruckId]);
+
+  // Pre-populate the form with existing data on load
+  useEffect(() => {
+    if (!towTruckId) return;
+    fetchTowTruckData();
+  }, [towTruckId, fetchTowTruckData]);
 
   const handleServiceToggle = (index: number) => {
     const newSelections = [...serviceSelections];
@@ -247,6 +254,15 @@ export default function EditTowTruckDetailsScreen() {
             ))}
           </View>
 
+          {towTruckId && (
+            <PayoutsSection
+              providerId={towTruckId}
+              providerType="tow-truck"
+              currentAccountId={currentTowTruckData?.razorpayAccountId || null}
+              onRefresh={() => fetchTowTruckData()}
+            />
+          )}
+
           <TouchableOpacity onPress={handleUpdate} disabled={isSubmitting}>
             <LinearGradient colors={['#005C70', '#004252']} style={styles.button}>
               {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save Changes & Re-apply</Text>}
@@ -284,4 +300,26 @@ const styles = StyleSheet.create({
   priceInput: { flex: 1, height: 40, borderWidth: 1, borderColor: '#eee', borderRadius: 8, paddingHorizontal: 10, backgroundColor: '#fff', fontSize: 15 },
   button: { height: 54, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 4, flexDirection: 'row' },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  infoSection: {
+    backgroundColor: '#E0F2F1',
+    borderColor: '#005C70',
+    borderWidth: 1,
+    borderRadius: 16,
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#005C70',
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#004D40',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
 });

@@ -1,50 +1,65 @@
-import { useAuth } from "@clerk/clerk-expo";
+import { useAuth, useUser } from "@clerk/clerk-expo";
 import { FontAwesome5 } from "@expo/vector-icons";
-import { StripeProvider, useStripe } from "@stripe/stripe-react-native";
 import React, { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import RazorpayCheckout from 'react-native-razorpay';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
-function PremiumScreen() {
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+export default function PremiumScreen() {
   const { getToken } = useAuth();
-  const [isPremium, setIsPremium] = useState(false);
+  const { user } = useUser();
+  const [isPremium, setIsPremium] = useState(false); // Ideally fetch this from user profile
   const [isSubscribing, setIsSubscribing] = useState(false);
 
   const handleSubscribe = async () => {
     setIsSubscribing(true);
     try {
       const token = await getToken();
-      // 1. Create a payment intent on the server
-      const response = await fetch(`${API_BASE_URL}/api/stripe/create-premium-intent`, {
+      // 1. Create a Razorpay Order on the server
+      const response = await fetch(`${API_BASE_URL}/api/razorpay/create-premium-order`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      const { clientSecret, error: intentError } = await response.json();
-      if (intentError) throw new Error(intentError);
 
-      // 2. Initialize the payment sheet
-      const { error: initError } = await initPaymentSheet({
-        paymentIntentClientSecret: clientSecret,
-        merchantDisplayName: 'Afthuliftme Inc.',
-      });
-      if (initError) throw new Error(initError.message);
-
-      // 3. Present the payment sheet
-      const { error: presentError } = await presentPaymentSheet();
-      if (presentError) {
-        if (presentError.code !== 'Canceled') {
-          throw new Error(presentError.message);
-        }
-        setIsSubscribing(false);
-        return; // User cancelled
+      const orderData = await response.json();
+      if (!response.ok) {
+        throw new Error(orderData.error || "Failed to create subscription order.");
       }
+
+      // 2. Open Razorpay Checkout
+      const options = {
+        description: 'Premium Subscription',
+        image: 'https://your-logo-url.com/logo.png', // Replace with your logo
+        currency: orderData.currency,
+        key: orderData.key,
+        amount: orderData.amount,
+        name: 'Afthu Lift Me',
+        order_id: orderData.orderId,
+        prefill: {
+          email: user?.emailAddresses[0]?.emailAddress,
+          contact: user?.phoneNumbers[0]?.phoneNumber,
+          name: user?.fullName || ''
+        },
+        theme: { color: '#635BFF' }
+      };
+
+      const data = await RazorpayCheckout.open(options);
+
+      // 3. Verify Payment (Optional but recommended: Verify signature on backend)
+      // For now, we assume success if checkout returns without error and we get payment_id
+      // In production, send data.razorpay_signature to backend for verification.
+
+      console.log("Payment Success:", data);
       Alert.alert("Payment Successful", "You are now a premium member!");
       setIsPremium(true);
 
     } catch (error: any) {
-      Alert.alert("Subscription Failed", error.message || "An unknown error occurred.");
+      if (error.code === 'PAYMENT_CANCELLED') {
+        console.log("User cancelled payment");
+      } else {
+        Alert.alert("Subscription Failed", error.description || error.message || "An unknown error occurred.");
+      }
     } finally {
       setIsSubscribing(false);
     }
@@ -106,25 +121,6 @@ function PremiumScreen() {
   );
 }
 
-export default function PremiumScreenWrapper() {
-  const STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-
-  if (!STRIPE_KEY) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Text>Stripe configuration error.</Text>
-      </View>
-    );
-  }
-
-  return (
-    <StripeProvider publishableKey={STRIPE_KEY}>
-      <PremiumScreen />
-    </StripeProvider>
-  );
-}
-
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff", padding: 20, paddingTop: 60 },
   title: { fontSize: 24, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
@@ -141,7 +137,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 40,
     borderRadius: 10,
-    minHeight: 48, // Ensure button height is consistent
+    minHeight: 48,
     justifyContent: 'center',
   },
   subscribeText: { color: "#fff", fontSize: 16, fontWeight: "bold" },

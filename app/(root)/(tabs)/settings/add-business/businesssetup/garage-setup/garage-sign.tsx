@@ -2,10 +2,9 @@
 import { useGarageStore } from '@/store/garageStore'; // Adjust path if needed
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient'; // For a nice button gradient
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React from 'react';
 import {
-    ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
@@ -34,28 +33,18 @@ const IconInput = ({ icon, ...props }: { icon: keyof typeof Ionicons.glyphMap } 
 
 export default function GarageSignUpScreen() {
     const router = useRouter();
-    const { details, setDetails, setStripeAccountId } = useGarageStore();
-    const [isConnectingStripe, setIsConnectingStripe] = useState(false);
-
-    // This simulates the flow of connecting to Stripe
-    const handleConnectStripe = async () => {
-        setIsConnectingStripe(true);
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        const fakeStripeId = 'acct_' + Math.random().toString(36).substring(2, 15);
-        setStripeAccountId(fakeStripeId);
-        setIsConnectingStripe(false);
-        Alert.alert("Stripe Connected! (Simulation)", `Your account is now linked with ID: ${fakeStripeId}`);
-    };
+    const { garageId } = useLocalSearchParams<{ garageId: string }>();
+    const { details, setDetails } = useGarageStore();
 
     const handleNext = () => {
         if (!details.name || !details.licenseNumber || !details.ownerName || !details.address) {
             return Alert.alert('Missing Information', 'Please fill in all required fields marked with *.');
         }
-        if (!details.stripeAccountId) {
-            return Alert.alert('Payouts Not Set Up', 'Please connect a Stripe account to receive payments before continuing.');
-        }
         // Navigate to the next step
-        router.push('/settings/add-business/businesssetup/garage-setup/addservices');
+        router.push({
+            pathname: '/settings/add-business/businesssetup/garage-setup/addservices',
+            params: { garageId }
+        });
     };
 
     return (
@@ -81,23 +70,16 @@ export default function GarageSignUpScreen() {
                     </Card>
 
                     <Card title="Payouts Setup">
-                        <Text style={styles.payoutsInfo}>We use Stripe to handle secure payments directly to your bank account. Connect your account to get paid.</Text>
-
-                        {details.stripeAccountId ? (
-                            <View style={styles.stripeConnectedContainer}>
-                                <Ionicons name="shield-checkmark" size={24} color="#4CAF50" />
-                                <Text style={styles.stripeConnectedText}>Stripe Account Connected!</Text>
-                            </View>
-                        ) : (
-                            <TouchableOpacity style={styles.stripeButton} onPress={handleConnectStripe} disabled={isConnectingStripe}>
-                                {isConnectingStripe ? <ActivityIndicator color="#fff" /> : (
-                                    <>
-                                        <Ionicons name="card" size={20} color="#fff" style={{ marginRight: 10 }} />
-                                        <Text style={styles.stripeButtonText}>Connect with Stripe</Text>
-                                    </>
-                                )}
-                            </TouchableOpacity>
-                        )}
+                        <Text style={styles.payoutsInfo}>
+                            To receive payments, you can set up your bank account or UPI details in <Text style={{ fontWeight: 'bold' }}>Settings {'>'} Payments</Text> after your garage is registered.
+                        </Text>
+                        <View style={styles.infoSection}>
+                            <Ionicons name="time-outline" size={32} color="#005C70" style={{ marginBottom: 10 }} />
+                            <Text style={styles.infoTitle}>Payouts Coming Soon</Text>
+                            <Text style={styles.infoText}>
+                                We are finalizing our automated payout system. You can complete your registration now, and we will notify you when you can link your bank account for receiving payments.
+                            </Text>
+                        </View>
                     </Card>
 
                     <TouchableOpacity onPress={handleNext}>
@@ -122,7 +104,7 @@ const styles = StyleSheet.create({
     },
     scrollContainer: {
         paddingHorizontal: 16,
-        paddingBottom: 40,
+        paddingBottom: 150, // Increased to ensure content clears floating tab bar
     },
     headerContainer: {
         alignItems: 'center',
@@ -173,6 +155,25 @@ const styles = StyleSheet.create({
         marginRight: 12,
         opacity: 0.6, // Softer icons
     },
+    infoSection: {
+        backgroundColor: '#E0F2F1',
+        borderColor: '#005C70',
+        borderWidth: 1,
+        alignItems: 'center',
+        paddingVertical: 20,
+    },
+    infoTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#005C70',
+        marginBottom: 8,
+    },
+    infoText: {
+        fontSize: 14,
+        color: '#004D40',
+        textAlign: 'center',
+        lineHeight: 20,
+    },
     input: {
         flex: 1,
         height: '100%',
@@ -206,12 +207,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 16,
         borderRadius: 14,
-        backgroundColor: '#E8F5E9',
+        backgroundColor: '#E0F7FA',
         borderWidth: 1,
-        borderColor: '#C8E6C9'
+        borderColor: '#B2EBF2'
     },
     stripeConnectedText: {
-        color: '#2E7D32',
+        color: '#006064',
         fontSize: 16,
         fontWeight: '700',
         marginLeft: 12,

@@ -179,6 +179,13 @@ export default function TowTruckSignupScreen() {
             ))}
           </View>
 
+          <View style={styles.infoSection}>
+            <Text style={styles.infoTitle}>Payouts Coming Soon</Text>
+            <Text style={styles.infoText}>
+              We are finalizing our automated payout system. You can complete your registration now, and we will notify you when you can link your bank account.
+            </Text>
+          </View>
+
           <TouchableOpacity onPress={handleContinue}>
             <LinearGradient colors={['#005C70', '#004252']} style={styles.button}>
               <Text style={styles.buttonText}>Continue to Set Location</Text>
@@ -218,4 +225,26 @@ const styles = StyleSheet.create({
   priceInput: { flex: 1, height: 40, borderWidth: 1, borderColor: '#eee', borderRadius: 8, paddingHorizontal: 10, backgroundColor: '#fff', fontSize: 15 },
   button: { height: 54, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 5, },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  infoSection: {
+    backgroundColor: '#E0F2F1',
+    borderColor: '#005C70',
+    borderWidth: 1,
+    borderRadius: 16,
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#005C70',
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#004D40',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
 });

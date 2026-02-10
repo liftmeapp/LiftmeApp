@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { GiftedChat, IMessage } from 'react-native-gifted-chat';
+import { Bubble, Composer, GiftedChat, IMessage, InputToolbar, Send } from 'react-native-gifted-chat';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -139,6 +139,30 @@ export default function ConversationScreen() {
         return chatRoomDetails?.otherParticipantName || 'Conversation';
     };
 
+    const renderInputToolbar = (props: any) => (
+        <InputToolbar
+            {...props}
+            containerStyle={styles.inputToolbar}
+            primaryStyle={styles.inputPrimary}
+        />
+    );
+
+    const renderComposer = (props: any) => (
+        <Composer
+            {...props}
+            textInputStyle={styles.composer}
+            placeholderTextColor="#888"
+        />
+    );
+
+    const renderSend = (props: any) => (
+        <Send {...props}>
+            <View style={styles.sendButton}>
+                <Ionicons name="send" size={18} color="#fff" style={{ marginLeft: 2 }} />
+            </View>
+        </Send>
+    );
+
     if (loading || !userId) {
         return (
             <View style={styles.centered}>
@@ -152,7 +176,7 @@ export default function ConversationScreen() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color="#333" />
+                    <Ionicons name="arrow-back" size={24} color="#fff" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>{getOtherParticipantName()}</Text>
                 <View style={styles.backButtonPlaceholder} />
@@ -168,10 +192,26 @@ export default function ConversationScreen() {
                     messages={messages}
                     onSend={messages => onSend(messages)}
                     user={{ _id: userId }}
-                    messagesContainerStyle={styles.messagesContainer}
                     renderUsernameOnMessage
-                    bottomOffset={Platform.OS === 'android' ? -70 : 0}
-                    minInputToolbarHeight={44}
+                    renderInputToolbar={renderInputToolbar}
+                    renderComposer={renderComposer}
+                    renderSend={renderSend}
+                    renderBubble={props => (
+                        <Bubble
+                            {...props}
+                            wrapperStyle={{
+                                right: { backgroundColor: '#005C70' },
+                                left: { backgroundColor: '#e0e0e0' }
+                            }}
+                            textStyle={{
+                                right: { color: '#fff' },
+                                left: { color: '#000' }
+                            }}
+                        />
+                    )}
+                    bottomOffset={Platform.OS === 'ios' ? 90 : 0} // Adjusted for tab bar if visible, or safe area
+                    minInputToolbarHeight={60}
+                    messagesContainerStyle={styles.messagesContainer}
                 />
             </KeyboardAvoidingView>
         </View>
@@ -192,20 +232,24 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     header: {
-        paddingTop: 40,
-        paddingBottom: 10,
+        paddingTop: 50,
+        paddingBottom: 15,
         paddingHorizontal: 10,
-        backgroundColor: '#fff',
+        backgroundColor: '#005C70', // Teal background
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e0e0e0',
+        borderBottomWidth: 0, // Remove border for cleaner look
+        elevation: 4, // Add shadow for depth
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
     },
     headerTitle: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#333',
+        color: '#fff', // White text
     },
     backButton: {
         padding: 5,
@@ -214,6 +258,45 @@ const styles = StyleSheet.create({
         width: 34,
     },
     messagesContainer: {
-        paddingBottom: 0,
+        paddingBottom: 20,
+    },
+    inputToolbar: {
+        backgroundColor: 'transparent',
+        borderTopWidth: 0,
+        marginBottom: 10,
+        paddingHorizontal: 10,
+    },
+    inputPrimary: {
+        backgroundColor: '#fff',
+        borderRadius: 25,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        paddingHorizontal: 5,
+        alignItems: 'center',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    composer: {
+        color: '#333',
+        backgroundColor: '#f5f5f5',
+        borderRadius: 20,
+        paddingHorizontal: 15,
+        paddingVertical: 8,
+        marginVertical: 5,
+        marginRight: 10,
+        lineHeight: 20,
+        fontSize: 16,
+    },
+    sendButton: {
+        marginRight: 5,
+        backgroundColor: '#005C70',
+        borderRadius: 20,
+        width: 38,
+        height: 38,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 });

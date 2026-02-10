@@ -309,38 +309,38 @@ export default function SparePartsMarketplace() {
                     <View style={{ position: 'absolute', top: 40, left: 10, right: 10, flexDirection: 'row' }}>
                         <View style={{ flex: 1, marginRight: 10 }}>
                             {GOOGLE_API_KEY && (
-                            <GooglePlacesAutocomplete
-                                placeholder='Search City/Area'
-                                fetchDetails={true}
-                                onPress={(data, details = null) => {
-                                    if (details) {
-                                        const lat = details.geometry.location.lat;
-                                        const lng = details.geometry.location.lng;
-                                        const nextRegion = {
-                                            latitude: lat,
-                                            longitude: lng,
-                                            latitudeDelta: pickerRegion.latitudeDelta,
-                                            longitudeDelta: pickerRegion.longitudeDelta,
-                                        };
-                                        setPendingLocation({ latitude: lat, longitude: lng });
-                                        setPickerRegion(nextRegion);
-                                        mapRef.current?.animateToRegion(nextRegion, 300);
-                                        setDisplayLocation(data.description);
-                                    }
-                                }}
-                                query={{ key: GOOGLE_API_KEY, language: 'en' }}
-                                styles={{ textInput: { height: 44, borderRadius: 8 } }}
-                                debounce={300}
-                                minLength={2}
-                                onFail={(error) => console.error('GooglePlacesAutocomplete Error:', error)}
-                                onNotFound={() => console.warn('GooglePlacesAutocomplete: Location not found')}
-                                enablePoweredByContainer={false}
-                                predefinedPlaces={[]}
-                                keyboardShouldPersistTaps="handled"
-                                textInputProps={{
-                                    placeholderTextColor: '#999',
-                                }}
-                            />
+                                <GooglePlacesAutocomplete
+                                    placeholder='Search City/Area'
+                                    fetchDetails={true}
+                                    onPress={(data, details = null) => {
+                                        if (details) {
+                                            const lat = details.geometry.location.lat;
+                                            const lng = details.geometry.location.lng;
+                                            const nextRegion = {
+                                                latitude: lat,
+                                                longitude: lng,
+                                                latitudeDelta: pickerRegion.latitudeDelta,
+                                                longitudeDelta: pickerRegion.longitudeDelta,
+                                            };
+                                            setPendingLocation({ latitude: lat, longitude: lng });
+                                            setPickerRegion(nextRegion);
+                                            mapRef.current?.animateToRegion(nextRegion, 300);
+                                            setDisplayLocation(data.description);
+                                        }
+                                    }}
+                                    query={{ key: GOOGLE_API_KEY, language: 'en', components: 'country:in' }}
+                                    styles={{ textInput: { height: 44, borderRadius: 8 } }}
+                                    debounce={300}
+                                    minLength={2}
+                                    onFail={(error) => console.error('GooglePlacesAutocomplete Error:', error)}
+                                    onNotFound={() => console.warn('GooglePlacesAutocomplete: Location not found')}
+                                    enablePoweredByContainer={false}
+                                    predefinedPlaces={[]}
+                                    keyboardShouldPersistTaps="handled"
+                                    textInputProps={{
+                                        placeholderTextColor: '#999',
+                                    }}
+                                />
                             )}
                         </View>
                         <TouchableOpacity

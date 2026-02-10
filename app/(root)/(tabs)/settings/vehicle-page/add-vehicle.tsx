@@ -250,3 +250,9 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
 });
+
+
+/*
+ *In the preservation of the modal system then there is no way there can  
+ * 
+*/

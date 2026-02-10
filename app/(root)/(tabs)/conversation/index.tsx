@@ -9,13 +9,13 @@ import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, T
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,  // Add this line
-    shouldShowList: true     // Add this line
-  }),
+    handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,  // Add this line
+        shouldShowList: true     // Add this line
+    }),
 });
 
 interface Chat {
@@ -49,7 +49,7 @@ const ChatListItem = ({ chat, onPress, onDelete }: { chat: Chat; onPress: () => 
     return (
         <TouchableOpacity style={styles.chatItem} onPress={onPress}>
             <View style={styles.avatar}>
-                <Ionicons name="person-circle-outline" size={40} color="#b95528" />
+                <Ionicons name="person-circle-outline" size={40} color="#005C70" />
             </View>
             <View style={styles.chatDetails}>
                 <View style={styles.chatHeader}>
@@ -57,7 +57,7 @@ const ChatListItem = ({ chat, onPress, onDelete }: { chat: Chat; onPress: () => 
                     <View style={styles.chatHeaderActions}>
                         <Text style={styles.lastMessageTime}>{lastMessageTime}</Text>
                         <TouchableOpacity onPress={onDelete} style={styles.deleteButton}>
-                            <Ionicons name="trash-outline" size={18} color="#b95528" />
+                            <Ionicons name="trash-outline" size={18} color="#005C70" />
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -181,7 +181,7 @@ export default function ConversationsScreen() {
     if (loading) {
         return (
             <View style={styles.centered}>
-                <ActivityIndicator size="large" color="#b95528" />
+                <ActivityIndicator size="large" color="#005C70" />
                 <Text>Loading Chats...</Text>
             </View>
         );
@@ -222,17 +222,21 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
     },
     header: {
-        paddingTop: 50,
-        paddingBottom: 15,
+        paddingTop: 60,
+        paddingBottom: 20,
         paddingHorizontal: 20,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e0e0e0',
+        backgroundColor: '#005C70', // Teal background
+        borderBottomWidth: 0,
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
     },
     headerTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#333',
+        color: '#fff', // White text
     },
     centered: {
         flex: 1,
@@ -251,6 +255,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderBottomWidth: 1,
         borderBottomColor: '#f0f0f0',
+        backgroundColor: '#fff',
     },
     avatar: {
         marginRight: 15,

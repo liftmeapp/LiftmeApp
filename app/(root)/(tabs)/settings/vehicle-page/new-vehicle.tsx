@@ -1,12 +1,20 @@
 import RotatingLoader from '@/components/RotatingLoader';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
 import { Stack, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+
+const VEHICLE_TYPES = [
+    { label: 'Sedan', value: 'SEDAN' },
+    { label: 'Hatchback', value: 'HATCHBACK' },
+    { label: 'SUV', value: 'SUV' },
+    { label: 'Electric Vehicle (EV)', value: 'EV' },
+    { label: 'Motorcycle / Bike', value: 'BIKE' },
+    { label: 'Truck / Van', value: 'TRUCK' },
+];
 
 // Custom Input Component (Gray Box)
 const GrayInput = ({ containerStyle, ...props }: { containerStyle?: any } & React.ComponentProps<typeof TextInput>) => (
@@ -32,6 +40,7 @@ export default function AddVehicleScreen() {
     const [type, setType] = useState('SEDAN');
 
     const [isLoading, setIsLoading] = useState(false);
+    const [typeModalVisible, setTypeModalVisible] = useState(false);
 
     // Generate Years (Example: 1990 - 2026)
     const currentYear = new Date().getFullYear();
@@ -156,21 +165,61 @@ export default function AddVehicleScreen() {
                             onChangeText={setColorVal}
                         />
 
-                        <View style={styles.pickerWrapper}>
-                            <Picker
-                                selectedValue={type}
-                                onValueChange={(itemValue) => setType(itemValue)}
-                                style={styles.picker}
+                        <TouchableOpacity
+                            style={styles.pickerWrapper}
+                            onPress={() => setTypeModalVisible(true)}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={[styles.pickerText, !type && { color: '#7D7D7D' }]}>
+                                {type ? VEHICLE_TYPES.find(v => v.value === type)?.label : 'Vehicle Type*'}
+                            </Text>
+                            <Ionicons name="chevron-down" size={20} color="#7D7D7D" />
+                        </TouchableOpacity>
+
+                        {/* Vehicle Type Modal */}
+                        <Modal
+                            visible={typeModalVisible}
+                            transparent
+                            animationType="fade"
+                            onRequestClose={() => setTypeModalVisible(false)}
+                        >
+                            <TouchableOpacity
+                                style={styles.modalOverlay}
+                                activeOpacity={1}
+                                onPress={() => setTypeModalVisible(false)}
                             >
-                                <Picker.Item label="Vehicle Type*" value="" enabled={false} color="#7D7D7D" />
-                                <Picker.Item label="Sedan" value="SEDAN" />
-                                <Picker.Item label="Hatchback" value="HATCHBACK" />
-                                <Picker.Item label="SUV" value="SUV" />
-                                <Picker.Item label="Electric Vehicle (EV)" value="EV" />
-                                <Picker.Item label="Motorcycle / Bike" value="BIKE" />
-                                <Picker.Item label="Truck / Van" value="TRUCK" />
-                            </Picker>
-                        </View>
+                                <View style={styles.modalContent}>
+                                    <Text style={styles.modalTitle}>Select Vehicle Type</Text>
+                                    <View style={styles.modalDivider} />
+                                    <FlatList
+                                        data={VEHICLE_TYPES}
+                                        keyExtractor={(item) => item.value}
+                                        renderItem={({ item }) => (
+                                            <TouchableOpacity
+                                                style={[
+                                                    styles.modalOption,
+                                                    type === item.value && styles.modalOptionSelected,
+                                                ]}
+                                                onPress={() => {
+                                                    setType(item.value);
+                                                    setTypeModalVisible(false);
+                                                }}
+                                            >
+                                                <Text style={[
+                                                    styles.modalOptionText,
+                                                    type === item.value && styles.modalOptionTextSelected,
+                                                ]}>
+                                                    {item.label}
+                                                </Text>
+                                                {type === item.value && (
+                                                    <Ionicons name="checkmark" size={20} color="#005C70" />
+                                                )}
+                                            </TouchableOpacity>
+                                        )}
+                                    />
+                                </View>
+                            </TouchableOpacity>
+                        </Modal>
 
                     </View>
 
@@ -243,14 +292,58 @@ const styles = StyleSheet.create({
         backgroundColor: '#D9D9D9',
         borderRadius: 8,
         height: 50,
-        justifyContent: 'center',
-        marginBottom: 15, // Match other inputs
-        overflow: 'hidden', // For borderRadius
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 15,
+        marginBottom: 15,
     },
-    picker: {
-        width: '100%',
-        height: 50,
+    pickerText: {
+        fontSize: 15,
         color: '#000',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalContent: {
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        width: '85%',
+        maxHeight: '60%',
+        paddingVertical: 20,
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#005C70',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    modalDivider: {
+        height: 1,
+        backgroundColor: '#eee',
+        marginBottom: 5,
+    },
+    modalOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+    },
+    modalOptionSelected: {
+        backgroundColor: '#E8F5F7',
+    },
+    modalOptionText: {
+        fontSize: 16,
+        color: '#333',
+    },
+    modalOptionTextSelected: {
+        color: '#005C70',
+        fontWeight: '600',
     },
     saveButton: {
         backgroundColor: '#005C70', // Teal

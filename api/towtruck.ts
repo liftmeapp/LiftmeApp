@@ -2,6 +2,7 @@ import { ClerkExpressWithAuth, clerkClient } from '@clerk/clerk-sdk-node';
 import cors from 'cors';
 import express, { Request, Response } from 'express';
 import prisma from './lib/prisma'; // Import the shared prisma instance
+import { io, customerSockets } from './socket';
 
 
 const router = express.Router();
@@ -72,6 +73,42 @@ router.post(
                     ...(typeof isAvailable === 'boolean' && { isAvailable }),
                 }
             });
+
+            // Broadcast live location to customers with active bookings
+            try {
+                const activeBookings = await prisma.booking.findMany({
+                    where: {
+                        towTruckId: truck.id,
+                        status: { in: ['PENDING', 'AWAITING_PAYMENT', 'CONFIRMED', 'IN_PROGRESS'] }
+                    },
+                    include: {
+                        user: { select: { clerkId: true } }
+                    }
+                });
+
+                if (activeBookings.length > 0 && io) {
+                    activeBookings.forEach(booking => {
+                        const customerSocketId = customerSockets[booking.user.clerkId];
+                        if (customerSocketId) {
+                            io.to(customerSocketId).emit('driver_location_update', {
+                                bookingId: booking.id,
+                                towTruckId: truck.id,
+                                driverName: truck.driverName || truck.name,
+                                location: {
+                                    latitude,
+                                    longitude
+                                },
+                                timestamp: new Date().toISOString()
+                            });
+                            console.log(`📍 [Socket.IO] Emitted driver_location_update to customer ${booking.user.clerkId}`);
+                        }
+                    });
+                }
+            } catch (broadcastError) {
+                // Don't fail the location update if broadcast fails
+                console.error("Failed to broadcast driver location:", broadcastError);
+            }
+
             return res.status(200).json(updatedLocation);
         } catch (error) {
             console.error("Failed to update tow truck location:", error);
@@ -131,6 +168,80 @@ router.post(
 
 
 // --- Parameterized and nested routes last ---
+
+// Get tow truck availability status
+router.get(
+    '/api/tow-trucks/:truckId/status',
+    ClerkExpressWithAuth(),
+    async (req: Request, res: Response) => {
+        const ownerId = req.auth.userId;
+        if (!ownerId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        try {
+            const { truckId } = req.params;
+            const truck = await prisma.towTruck.findFirst({
+                where: { id: truckId, owner: { clerkId: ownerId } },
+                include: { liveLocation: true }
+            });
+
+            if (!truck) {
+                return res.status(403).json({ error: 'You are not authorized to view this truck.' });
+            }
+
+            return res.status(200).json({
+                isAvailable: truck.liveLocation?.isAvailable ?? true,
+                location: truck.liveLocation?.location ?? null
+            });
+        } catch (error) {
+            console.error('Failed to fetch tow truck status:', error);
+            return res.status(500).json({ error: 'Failed to fetch status.' });
+        }
+    }
+);
+
+// Update tow truck availability status only (without requiring location)
+router.patch(
+    '/api/tow-trucks/:truckId/status',
+    ClerkExpressWithAuth(),
+    async (req: Request, res: Response) => {
+        const ownerId = req.auth.userId;
+        if (!ownerId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        try {
+            const { truckId } = req.params;
+            const { isAvailable } = req.body;
+
+            if (typeof isAvailable !== 'boolean') {
+                return res.status(400).json({ error: 'isAvailable must be a boolean.' });
+            }
+
+            const truck = await prisma.towTruck.findFirst({
+                where: { id: truckId, owner: { clerkId: ownerId } },
+            });
+
+            if (!truck) {
+                return res.status(403).json({ error: 'You are not authorized to update this truck.' });
+            }
+
+            const updatedLocation = await prisma.liveTruckLocation.update({
+                where: { towTruckId: truckId },
+                data: { isAvailable }
+            });
+
+            console.log(`📡 [Tow Truck] Status updated for ${truckId}: isAvailable=${isAvailable}`);
+
+            return res.status(200).json({
+                isAvailable: updatedLocation.isAvailable,
+                message: 'Status updated successfully'
+            });
+        } catch (error) {
+            console.error('Failed to update tow truck status:', error);
+            return res.status(500).json({ error: 'Failed to update status.' });
+        }
+    }
+);
 
 router.get(
     '/api/tow-trucks/:truckId/bookings',

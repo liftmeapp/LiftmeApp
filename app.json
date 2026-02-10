@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "liftme",
+    "name": "Lift Me",
     "slug": "liftme",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/lmicon.png",
-    "scheme": "liftme",
+    "icon": "./assets/icons/Liftme App icon black.png",
+    "scheme": "Lift Me",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.afthuliftme.app",

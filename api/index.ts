@@ -12,11 +12,11 @@ import analyticsRouter from './analytics';
 import bookingsRouter from './bookings';
 import chatRoutes from './chat';
 import garagesRouter from './garages';
+import razorpayRouter from './razorpay';
+import { BookingService } from './services/booking.service';
 import { initSocketIO, io } from './socket'; // Import initSocketIO
 import sparePartRoutes from './spareparts';
-import stripeRouter from './stripe';
 import towTruckRoutes from './towtruck';
-import { BookingService } from './services/booking.service';
 import { ensureUserRecord } from './utils/ensureUserRecord';
 import vehiclesRouter from './vehicles';
 
@@ -179,7 +179,7 @@ app.post(
 app.use(express.json({ limit: '50mb' }));
 app.use(garagesRouter); // Mount garagesRouter directly
 app.use(towTruckRoutes); // Mount towTruckRoutes directly
-app.use('/api/stripe', stripeRouter);
+app.use('/api/razorpay', razorpayRouter);
 app.use('/api/admin', adminRouter);
 app.use(vehiclesRouter);
 app.use('/api', bookingsRouter);

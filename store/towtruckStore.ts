@@ -13,6 +13,7 @@ interface TowTruckDetails {
     contactEmail: string;
     plateNumber: string;
     licenseNumber: string; // The UI has "License No"
+    razorpayAccountId?: string | null;
 }
 
 // This matches the Prisma Enum `VehicleType`
@@ -61,8 +62,8 @@ export const useTowTruckStore = create<TowTruckState>((set) => ({
      * Merges the provided details with the existing ones.
      * @param {Partial<TowTruckDetails>} details - The details from the first form screen.
      */
-    setDetails: (details) => set((state) => ({ 
-        details: { ...state.details, ...details } 
+    setDetails: (details) => set((state) => ({
+        details: { ...state.details, ...details }
     })),
     setServices: (services) => set({ services }), // <-- UPDATED
     /**
@@ -81,9 +82,9 @@ export const useTowTruckStore = create<TowTruckState>((set) => ({
      * Resets the entire store back to its initial empty state.
      * Called after a successful sign-up to clear the form for the next time.
      */
-    reset: () => set({ 
-        details: {}, 
-        towedVehicleTypes: [], 
-        location: {} 
+    reset: () => set({
+        details: {},
+        towedVehicleTypes: [],
+        location: {}
     }),
 }));

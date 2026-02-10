@@ -2,7 +2,6 @@ import 'react-native-get-random-values';
 // app/_layout.tsx
 import RotatingLoader from "@/components/RotatingLoader";
 import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-expo";
-import { StripeProvider } from '@stripe/stripe-react-native';
 import { Slot, SplashScreen, usePathname, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
@@ -35,15 +34,13 @@ export default function RootLayout() {
     return (
         <ClerkProvider tokenCache={tokenCache} publishableKey={CLERK_PUBLISHABLE_KEY as string}>
             <SocketProvider>
-                <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY!}>
-                    <BookingProvider>
-                        <TowingBookingProvider>
-                            <GestureHandlerRootView style={{ flex: 1 }}>
-                                <InitialLayout />
-                            </GestureHandlerRootView>
-                        </TowingBookingProvider>
-                    </BookingProvider>
-                </StripeProvider>
+                <BookingProvider>
+                    <TowingBookingProvider>
+                        <GestureHandlerRootView style={{ flex: 1 }}>
+                            <InitialLayout />
+                        </GestureHandlerRootView>
+                    </TowingBookingProvider>
+                </BookingProvider>
             </SocketProvider>
         </ClerkProvider>
     );

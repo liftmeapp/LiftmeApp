@@ -136,7 +136,7 @@
     towTruck TowTruck?
     sparePartStore SparePartStore?
     bookings Booking[]
-    stripeCustomerId String?
+    razorpayCustomerId String?
 
     messages Message[] @relation("UserMessages")
     notificationTokens NotificationToken[]
@@ -210,7 +210,7 @@
     reviewCount       Int?     @default(0)
     isOpen            Boolean  @default(true)
     operatingHours    Json?
-    stripeAccountId   String?
+    razorpayAccountId   String?
     location          Json
     supportedVehicleTypes String[] // <--- ADD THIS LINE
     
@@ -266,7 +266,7 @@
     services      TowTruckService[] // Correctly points to the single TowTruckService model
     bookings      Booking[]
     liveLocation  LiveTruckLocation?
-    stripeAccountId String?
+    razorpayAccountId String?
 
     @@map("tow_trucks")
   }
@@ -367,7 +367,7 @@
     discountAmount  Float?        @default(0)
     finalAmount     Float
     paymentStatus   String        @default("pending")
-    paymentIntentId String?
+    razorpayOrderId String?
     paymentMethod   PaymentMethod @default(CARD)
 
     // Garage-specific quote and payment for Tow-to-Garage flow
@@ -376,7 +376,7 @@
     servicesEstimate  String?
     jobEstimate       Float?
     garagePaymentStatus   String?   @default("pending")
-    garagePaymentIntentId String?
+    garageRazorpayOrderId String?
 
     quoteRejectionReason  String?
     initialEstimateAmount Float?

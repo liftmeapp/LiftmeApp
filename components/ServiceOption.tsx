@@ -1,23 +1,23 @@
 // RideOptionCard.js or inside same file
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 type RideOptionCardProps = {
-    name: string;
-    description: string;
-    selected?: boolean;
-    onPress: () => void;
-  };
-  
+  name: string;
+  description: string;
+  selected?: boolean;
+  onPress: () => void;
+};
+
 
 const RideOptionCard = ({ name, description, onPress, selected }: RideOptionCardProps) => {
   return (
-    <TouchableOpacity 
-    onPress={onPress}
+    <TouchableOpacity
+      onPress={onPress}
       style={[
         styles.card,
-        selected && { borderColor: '#b95528', borderWidth: 1.5, backgroundColor: '#FFF6F0' },
+        selected && { borderColor: '#005C70', borderWidth: 1.5, backgroundColor: '#e0f7fa' },
       ]}
     >
       <View style={styles.details}>
@@ -37,7 +37,7 @@ const styles = StyleSheet.create({
     marginVertical: 4,
     marginHorizontal: 8,
     padding: 12,
-    paddingVertical:18,
+    paddingVertical: 18,
     elevation: 0.5,
   },
   iconSection: {

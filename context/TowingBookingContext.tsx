@@ -1,6 +1,5 @@
 // context/TowingBookingContext.tsx
 import { useAuth, useUser } from '@clerk/clerk-expo';
-import { useConfirmPayment } from '@stripe/stripe-react-native';
 import { router } from 'expo-router';
 import React, {
   createContext,
@@ -11,6 +10,7 @@ import React, {
   useState,
 } from 'react';
 import { Alert } from 'react-native';
+import RazorpayCheckout from 'react-native-razorpay';
 import { io } from 'socket.io-client';
 
 // --- Enums and Interfaces ---
@@ -43,6 +43,12 @@ export interface TowingProviderInfo {
   // Add other provider details as needed
 }
 
+export interface DriverLocationUpdate {
+  latitude: number;
+  longitude: number;
+  timestamp: string;
+}
+
 export interface TowingBookingState {
   currentStage: TowingBookingStage;
   currentBookingId: string | null;
@@ -58,6 +64,7 @@ export interface TowingBookingState {
   isConfirmingPayment: boolean;
   vehicles: any[]; // List of user's vehicles
   isInitialLoading: boolean; // For initial vehicle fetch
+  driverLocation: DriverLocationUpdate | null; // Live driver location
 }
 
 export interface TowingBookingContextType extends TowingBookingState {
@@ -70,7 +77,7 @@ export interface TowingBookingContextType extends TowingBookingState {
   startTowToGarageBooking: () => Promise<void>; // New action for tow-to-garage
   cancelTowingBooking: () => Promise<void>;
   resetTowingBookingFlow: () => void;
-  confirmPayment: (options: { paymentMethodId: string }) => Promise<void>; // Modified
+  confirmPayment: () => Promise<void>;
   confirmCashBooking: () => Promise<void>; // Added
   setSearchError: (error: string | null) => void;
   setGarageForTow: (garage: any | null) => void; // Setter for the assigned garage
@@ -120,6 +127,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [driverLocation, setDriverLocation] = useState<DriverLocationUpdate | null>(null);
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -159,9 +167,9 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     // Only fetch vehicles if the user is signed in.
     if (isSignedIn) {
-        fetchUserVehicles();
+      fetchUserVehicles();
     }
-  }, [isSignedIn, fetchUserVehicles]); 
+  }, [isSignedIn, fetchUserVehicles]);
 
   // --- Polling and Real-time Logic ---
   useEffect(() => {
@@ -174,41 +182,53 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // WebSocket connection
     const socket = io(API_BASE_URL!, {
-        reconnection: true,
-        transports: ['websocket'],
+      reconnection: true,
+      transports: ['websocket'],
     });
 
     socket.on('connect', () => {
-        console.log('[Socket.IO] Customer connected with ID:', socket.id);
-        if (user?.id) {
-            socket.emit('register_customer', user.id);
-        }
+      console.log('[Socket.IO] Customer connected with ID:', socket.id);
+      if (user?.id) {
+        socket.emit('register_customer', user.id);
+      }
     });
 
     socket.on('booking_accepted', (data) => {
-        console.log('🎉 [Socket.IO] Received booking_accepted:', data);
-        if (data.bookingId === currentBookingId) {
-            clearPolling(); // Stop polling since we have a definitive answer
-            setConfirmedProvider({ ...data.provider, otp: data.otp || undefined });
-            setCurrentStage(TowingBookingStage.PAYMENT);
-        }
+      console.log('🎉 [Socket.IO] Received booking_accepted:', data);
+      if (data.bookingId === currentBookingId) {
+        clearPolling(); // Stop polling since we have a definitive answer
+        setConfirmedProvider({ ...data.provider, otp: data.otp || undefined });
+        setCurrentStage(TowingBookingStage.PAYMENT);
+      }
     });
 
     socket.on('garage_found_for_tow', (data) => {
-        console.log('🏠 [Socket.IO] Received garage_found_for_tow:', data);
-        if (data.bookingId === currentBookingId) {
-            setGarageForTow(data.garage);
-            // The stage remains SEARCHING_FOR_PROVIDER, but the UI will now update
-        }
+      console.log('🏠 [Socket.IO] Received garage_found_for_tow:', data);
+      if (data.bookingId === currentBookingId) {
+        setGarageForTow(data.garage);
+        // The stage remains SEARCHING_FOR_PROVIDER, but the UI will now update
+      }
     });
 
     socket.on('booking_otp_generated', (data) => {
-        if (data?.bookingId !== currentBookingId) return;
-        setConfirmedProvider((prev) => (prev ? { ...prev, otp: data.otp } : prev));
+      if (data?.bookingId !== currentBookingId) return;
+      setConfirmedProvider((prev) => (prev ? { ...prev, otp: data.otp } : prev));
+    });
+
+    // Listen for live driver location updates (Uber-like tracking)
+    socket.on('driver_location_update', (data) => {
+      console.log('📍 [Socket.IO] Received driver_location_update:', data);
+      if (data.bookingId === currentBookingId && data.location) {
+        setDriverLocation({
+          latitude: data.location.latitude,
+          longitude: data.location.longitude,
+          timestamp: data.timestamp || new Date().toISOString(),
+        });
+      }
     });
 
     socket.on('disconnect', (reason) => {
-        console.log('[Socket.IO] Customer disconnected:', reason);
+      console.log('[Socket.IO] Customer disconnected:', reason);
     });
 
     const pollStatus = async () => {
@@ -291,8 +311,8 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     return () => {
-        clearPolling();
-        socket.disconnect();
+      clearPolling();
+      socket.disconnect();
     };
   }, [currentStage, currentBookingId, searchError, isSignedIn, user]);
 
@@ -360,6 +380,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsBroadcasting(false);
     setSearchCountdown(SEARCH_DURATION_SECONDS); // New reset
     setEligibleTruckCount(0); // New reset
+    setDriverLocation(null); // Reset driver location
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
@@ -407,26 +428,26 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       const token = await getToken();
       if (!token) throw new Error('Authentication token not found.');
-      
-      const payload = { 
-        vehicleId: selectedVehicle.id, 
-        pickup: pickupLocation 
+
+      const payload = {
+        vehicleId: selectedVehicle.id,
+        pickup: pickupLocation
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/bookings/request-tow-to-garage`, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, 
-        body: JSON.stringify(payload) 
+      const response = await fetch(`${API_BASE_URL}/api/bookings/request-tow-to-garage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload)
       });
 
       const data = await readJsonResponse(response);
       if (!response.ok) {
         throw new Error(data.reason || data.error || 'Failed to start the tow-to-garage request.');
       }
-      
+
       setBookingId(data.bookingId);
       // We can use eligibleTruckCount to show the number of garages found
-      setEligibleTruckCount(data.eligibleGarageCount || 0); 
+      setEligibleTruckCount(data.eligibleGarageCount || 0);
 
     } catch (error: any) {
       setSearchError(error.message || 'An error occurred while finding a garage.');
@@ -463,70 +484,81 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     ]);
   }, [currentBookingId, resetTowingBookingFlow, router, getToken]);
 
-  const { confirmPayment: confirmStripePayment } = useConfirmPayment(); // Added
-
-  const confirmPayment = useCallback(async ({ paymentMethodId }: { paymentMethodId: string }) => { // Modified signature
-    if (!currentBookingId || !selectedProvider) {
-      Alert.alert('Error', 'No active booking or provider to confirm payment.');
+  const confirmPayment = useCallback(async () => {
+    if (!currentBookingId) {
+      Alert.alert('Error', 'No active booking to confirm payment.');
       return;
     }
     setIsConfirmingPayment(true);
 
     try {
-      // 1. Create Payment Intent on the server
       const token = await getToken();
-      const intentResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/create-payment-intent`, {
+      // 1. Create Razorpay Order
+      const orderResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/create-razorpay-order`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      const { clientSecret, error: intentError } = await readJsonResponse(intentResponse);
+      const orderData = await readJsonResponse(orderResponse);
 
-      if (intentError || !clientSecret) {
-        throw new Error(intentError || 'Failed to create payment intent.');
+      if (!orderResponse.ok) {
+        throw new Error(orderData.error || 'Failed to create razorpay order.');
       }
 
-      // 2. Confirm the payment on the client
-      const { paymentIntent, error: paymentError } = await confirmStripePayment(clientSecret, {
-        paymentMethodType: 'Card',
-        paymentMethodData: {
-          paymentMethodId: paymentMethodId,
+      const options = {
+        description: 'Towing Service Payment',
+        image: 'https://your-logo-url.com/logo.png',
+        currency: orderData.currency,
+        key: orderData.key,
+        amount: orderData.amount,
+        name: 'Afthu Lift Me',
+        order_id: orderData.orderId,
+        prefill: {
+          email: user?.emailAddresses[0]?.emailAddress,
+          contact: user?.phoneNumbers[0]?.phoneNumber,
+          name: user?.fullName || ''
         },
-      });
+        theme: { color: '#53a20e' }
+      };
 
-      if (paymentError) {
-        throw new Error(paymentError.message);
+      // 2. Open Razorpay Checkout
+      const data = await RazorpayCheckout.open(options);
+
+      // 3. Confirm on Backend
+      const confirmResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/confirm-payment`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          paymentId: data.razorpay_payment_id,
+          signature: data.razorpay_signature
+        })
+      });
+      const confirmData = await readJsonResponse(confirmResponse);
+      if (!confirmResponse.ok) {
+        throw new Error(confirmData.error || 'Failed to confirm booking after payment.');
       }
 
-      // 3. If payment is successful, confirm on the backend
-      if (paymentIntent && (paymentIntent.status === 'Succeeded' || paymentIntent.status === 'RequiresCapture')) {
-        const confirmResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/confirm-payment`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        const confirmData = await readJsonResponse(confirmResponse);
-        if (!confirmResponse.ok) {
-          throw new Error(confirmData.error || 'Failed to confirm booking after payment.');
-        }
-
-        // Update UI to CONFIRMED stage
+      // Update UI
+      if (confirmData.success) {
         setConfirmedProvider(prev => {
-          if (!prev) return null; // Handle the case where prev is null
-          return { 
-            ...prev, 
-            otp: confirmData.booking.otp 
-          };
+          if (!prev) return null;
+          return { ...prev, otp: confirmData.booking?.otp };
         });
         setCurrentStage(TowingBookingStage.CONFIRMED);
-      } else {
-        throw new Error('Payment was not successful.');
       }
 
     } catch (error: any) {
-      Alert.alert('Payment Failed', error.message);
+      if (error.code === 'PAYMENT_CANCELLED') {
+        console.log("User cancelled payment");
+      } else {
+        Alert.alert('Payment Failed', error.description || error.message);
+      }
     } finally {
       setIsConfirmingPayment(false);
     }
-  }, [currentBookingId, selectedProvider,confirmStripePayment]); // Added confirmStripePayment to dependencies
+  }, [currentBookingId, user, getToken]);
 
   const confirmCashBooking = useCallback(async () => { // Added confirmCashBooking
     if (!currentBookingId || !selectedProvider) {
@@ -549,9 +581,9 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
 
       setConfirmedProvider(prev => {
         if (!prev) return null; // Handle the case where prev is null
-        return { 
-          ...prev, 
-          otp: data.booking.otp 
+        return {
+          ...prev,
+          otp: data.booking.otp
         };
       });
       setCurrentStage(TowingBookingStage.CONFIRMED);
@@ -578,6 +610,7 @@ export const TowingBookingProvider: React.FC<{ children: React.ReactNode }> = ({
     isConfirmingPayment,
     vehicles,
     isInitialLoading,
+    driverLocation, // Live driver location for tracking
     setCurrentStage,
     setSelectedVehicle,
     setPickupLocation,

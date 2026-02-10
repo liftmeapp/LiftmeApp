@@ -289,16 +289,16 @@ export class BookingsController {
         }
     }
 
-    static async createPaymentIntent(req: Request, res: Response) {
+    static async createRazorpayOrder(req: Request, res: Response) {
         try {
             const customerClerkId = req.auth.userId;
             if (!customerClerkId) return res.status(401).json({ error: "Unauthorized" });
             const { bookingId } = req.params;
 
-            const result = await BookingService.createPaymentIntent(bookingId, customerClerkId);
+            const result = await BookingService.createRazorpayOrder(bookingId, customerClerkId);
             return res.status(200).json(result);
         } catch (error: any) {
-            console.error("Failed to create payment intent:", error);
+            console.error("Failed to create razorpay order:", error);
             if (error instanceof AppError) return res.status(error.statusCode).json({ error: error.message });
             return res.status(500).json({ error: "Internal server error" });
         }
@@ -309,8 +309,13 @@ export class BookingsController {
             const customerClerkId = req.auth.userId;
             if (!customerClerkId) return res.status(401).json({ error: "Unauthorized" });
             const { bookingId } = req.params;
+            const { paymentId, signature } = req.body;
 
-            const result = await BookingService.confirmPayment(bookingId, customerClerkId);
+            if (!paymentId || !signature) {
+                return res.status(400).json({ error: "Missing paymentId or signature" });
+            }
+
+            const result = await BookingService.confirmPayment(bookingId, customerClerkId, paymentId, signature);
             return res.status(200).json(result);
         } catch (error: any) {
             console.error("Failed to confirm payment:", error);

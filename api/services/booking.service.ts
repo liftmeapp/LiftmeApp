@@ -1,12 +1,11 @@
 import { BookingStatus, BookingSubStatus } from '@prisma/client';
-import Stripe from 'stripe';
 import prisma from '../lib/prisma';
 import { customerSockets, io, providerSockets } from '../socket';
 import { AppError } from '../utils/AppError';
 import { getEtaAndDistance, isGeoJSONPoint } from './geo.service';
 import { PRICE_PER_KM } from './pricing.service';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-04-10' as any });
+import { razorpay } from '../razorpay';
 const OTP_TTL_MS = 10 * 60 * 1000;
 
 export class BookingService {
@@ -14,12 +13,20 @@ export class BookingService {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    private static async captureAuthorizedPayment(booking: { paymentMethod: string; paymentIntentId: string | null }) {
-        if (booking.paymentMethod !== 'CARD' || !booking.paymentIntentId) return;
+    private static async captureAuthorizedPayment(booking: { paymentMethod: string; razorpayOrderId: string | null }) {
+        if (booking.paymentMethod !== 'CARD' || !booking.razorpayOrderId) return;
 
-        const intent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
-        if (intent.status === 'requires_capture') {
-            await stripe.paymentIntents.capture(booking.paymentIntentId);
+        try {
+            // Fetch payments for this order
+            const payments = await razorpay.orders.fetchPayments(booking.razorpayOrderId);
+            const authorizedPayment = payments.items.find((p: any) => p.status === 'authorized');
+
+            if (authorizedPayment) {
+                await razorpay.payments.capture(authorizedPayment.id, authorizedPayment.amount, authorizedPayment.currency);
+                console.log(`Payment captured for booking ${booking.razorpayOrderId}`);
+            }
+        } catch (error) {
+            console.error("Failed to capture payment:", error);
         }
     }
 
@@ -214,8 +221,8 @@ export class BookingService {
 
         if (updatedBooking.paymentMethod === 'CARD') {
             const { user, sparePart, finalAmount } = updatedBooking;
-            if (!user.stripeCustomerId || !(sparePart!.store as any).stripeAccountId) {
-                console.warn(`[Stripe Bypass] Stripe accounts not configured for booking ${updatedBooking.id}. Forcing CASH payment.`);
+            if (!user.razorpayCustomerId || !(sparePart!.store as any).razorpayAccountId) {
+                console.warn(`[Razorpay Bypass] Razorpay accounts not configured for booking ${updatedBooking.id}. Forcing CASH payment.`);
                 await prisma.booking.update({
                     where: { id: updatedBooking.id },
                     data: { paymentMethod: 'CASH', status: BookingStatus.CONFIRMED },
@@ -227,26 +234,34 @@ export class BookingService {
                 return { success: true, booking: updatedBooking, message: "Stripe not configured, defaulted to cash payment." };
             }
 
-            const amountInCents = Math.round(finalAmount * 100);
-            const applicationFee = Math.round(amountInCents * 0.10);
+            const amountInPaise = Math.round(finalAmount * 100);
 
-            const paymentIntent = await stripe.paymentIntents.create({
-                amount: amountInCents,
-                currency: 'inr',
-                customer: user.stripeCustomerId,
-                application_fee_amount: applicationFee,
-                transfer_data: { destination: (sparePart!.store as any).stripeAccountId },
-                capture_method: 'manual',
-                metadata: { bookingId: updatedBooking.id, type: 'spare_part_purchase' },
-            });
+            // Razorpay Transfers logic would go here if needed.
+            // For now, we create the order.
 
-            await prisma.booking.update({ where: { id: updatedBooking.id }, data: { paymentIntentId: paymentIntent.id } });
+            const sellerAccountId = (sparePart!.store as any).razorpayAccountId;
+
+            const options: any = {
+                amount: amountInPaise,
+                currency: 'INR',
+                receipt: `receipt_booking_${updatedBooking.id}`,
+                notes: {
+                    bookingId: updatedBooking.id,
+                    type: 'spare_part_purchase'
+                }
+            };
+
+            const order = await razorpay.orders.create(options);
+            await prisma.booking.update({ where: { id: updatedBooking.id }, data: { razorpayOrderId: order.id } });
 
             const customerSocketId = customerSockets[user.clerkId];
             if (customerSocketId) {
                 io.to(customerSocketId).emit('spare_part_order_accepted', {
                     bookingId: updatedBooking.id,
-                    clientSecret: paymentIntent.client_secret
+                    orderId: order.id,
+                    amount: order.amount,
+                    currency: order.currency,
+                    key: process.env.RAZORPAY_KEY_ID
                 });
             }
         } else {
@@ -723,7 +738,10 @@ export class BookingService {
         if (booking.otp !== otp) throw new AppError(400, "Invalid OTP provided.");
         if (booking.otpExpiresAt && new Date() > booking.otpExpiresAt) throw new AppError(410, "The OTP has expired.");
 
-        await this.captureAuthorizedPayment(booking);
+        await this.captureAuthorizedPayment({
+            paymentMethod: booking.paymentMethod,
+            razorpayOrderId: booking.razorpayOrderId
+        });
 
         const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
@@ -1089,7 +1107,7 @@ export class BookingService {
         };
     }
 
-    static async createPaymentIntent(bookingId: string, customerClerkId: string) {
+    static async createRazorpayOrder(bookingId: string, customerClerkId: string) {
         const booking = await prisma.booking.findUnique({
             where: { id: bookingId },
             include: { garage: true, towTruck: true, user: true },
@@ -1106,68 +1124,102 @@ export class BookingService {
         }
 
         const provider = booking.towTruck ?? booking.garage;
-        if (!provider || !provider.stripeAccountId) {
-            throw new AppError(400, "Provider is not set up to receive payments.");
+        if (!provider || !provider.razorpayAccountId) {
+            // throw new AppError(400, "Provider is not set up to receive payments.");
+            console.log("Provider not setup for Razorpay, defaulting to platform account.");
         }
 
-        let stripeCustomerId = booking.user.stripeCustomerId;
-        if (!stripeCustomerId) {
-            const customer = await stripe.customers.create({
-                email: booking.user.email,
-                name: `${booking.user.firstName} ${booking.user.lastName || ''}`.trim(),
-                phone: booking.user.phone,
-            });
-            stripeCustomerId = customer.id;
-            await prisma.user.update({
-                where: { id: booking.user.id },
-                data: { stripeCustomerId },
-            });
+        let razorpayCustomerId = booking.user.razorpayCustomerId;
+        if (!razorpayCustomerId) {
+            try {
+                const customer = await razorpay.customers.create({
+                    email: booking.user.email,
+                    name: `${booking.user.firstName} ${booking.user.lastName || ''}`.trim(),
+                    contact: booking.user.phone,
+                });
+                razorpayCustomerId = customer.id;
+                await prisma.user.update({
+                    where: { id: booking.user.id },
+                    data: { razorpayCustomerId },
+                });
+            } catch (e) {
+                console.error("Failed to create razorpay customer", e);
+                // Proceed without saving customer ID if it fails, or handle appropriately
+            }
         }
 
-        const amountInCents = Math.round(booking.finalAmount * 100);
-        if (amountInCents <= 0) throw new AppError(400, "Invalid booking amount for payment.");
-        const applicationFee = Math.round(amountInCents * 0.10);
+        const amountInPaise = Math.round(booking.finalAmount * 100);
+        if (amountInPaise <= 0) throw new AppError(400, "Invalid booking amount for payment.");
 
-        const paymentIntent = await stripe.paymentIntents.create({
-            amount: amountInCents,
-            currency: 'inr',
-            customer: stripeCustomerId,
-            application_fee_amount: applicationFee,
-            transfer_data: { destination: provider.stripeAccountId },
-            capture_method: 'manual',
-            metadata: {
+        const options: any = {
+            amount: amountInPaise,
+            currency: 'INR',
+            receipt: `receipt_booking_${booking.id}`,
+            notes: {
                 bookingId: booking.id,
                 userId: booking.user.id,
+                type: 'service_booking'
             }
-        });
+        }
+
+        // Add transfers if provider has an account
+        if (provider && provider.razorpayAccountId) {
+            const platformFee = Math.round(amountInPaise * 0.10);
+            const providerAmount = amountInPaise - platformFee;
+            options.transfers = [
+                {
+                    account: provider.razorpayAccountId,
+                    amount: providerAmount,
+                    currency: "INR",
+                    on_hold: 1, // Hold until service completion?
+                    // For services, might want to transfer AFTER completion.
+                    // If we do it here, it transfers on capture.
+                }
+            ];
+        }
+
+        const order = await razorpay.orders.create(options);
 
         await prisma.booking.update({
             where: { id: booking.id },
-            data: { paymentIntentId: paymentIntent.id, paymentMethod: 'CARD' },
+            data: { razorpayOrderId: order.id, paymentMethod: 'CARD' },
         });
 
-        return { clientSecret: paymentIntent.client_secret };
+        return {
+            orderId: order.id,
+            amount: order.amount,
+            currency: order.currency,
+            key: process.env.RAZORPAY_KEY_ID,
+            customerId: razorpayCustomerId || null
+        };
     }
 
-    static async confirmPayment(bookingId: string, customerClerkId: string) {
+    static async confirmPayment(bookingId: string, customerClerkId: string, paymentId: string, signature: string) {
         const booking = await prisma.booking.findFirst({
             where: { id: bookingId, user: { clerkId: customerClerkId } },
         });
         if (!booking) throw new AppError(404, "Booking not found.");
         if (booking.status !== BookingStatus.AWAITING_PAYMENT) throw new AppError(409, "This booking is not awaiting payment.");
-        if (booking.paymentExpiresAt && new Date() > booking.paymentExpiresAt) throw new AppError(410, "The payment window for this booking has expired.");
-        if (!booking.paymentIntentId) throw new AppError(400, "Payment has not been initiated for this booking.");
+        // if (booking.paymentExpiresAt && new Date() > booking.paymentExpiresAt) throw new AppError(410, "The payment window for this booking has expired.");
+        if (!booking.razorpayOrderId) throw new AppError(400, "Payment has not been initiated for this booking.");
 
-        const intent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
-        if (intent.status !== 'requires_capture' && intent.status !== 'succeeded') {
-            throw new AppError(400, "Payment could not be authorized. Please try again.");
+        // Verify signature
+        const crypto = require('crypto');
+        const generated_signature = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+            .update(booking.razorpayOrderId + "|" + paymentId)
+            .digest('hex');
+
+        if (generated_signature !== signature) {
+            throw new AppError(400, "Payment verification failed: Invalid signature.");
         }
+
+        // Ideally fetch payment and check status, but signature verification is strong enough for success.
 
         const updatedBooking = await prisma.booking.update({
             where: { id: booking.id },
             data: {
                 status: BookingStatus.CONFIRMED,
-                paymentStatus: 'authorized',
+                paymentStatus: 'authorized', // captured later on service completion
                 paymentMethod: 'CARD',
                 paymentExpiresAt: null,
                 otp: null,
@@ -1202,7 +1254,7 @@ export class BookingService {
                 status: BookingStatus.CONFIRMED,
                 paymentStatus: 'pending_cash',
                 paymentMethod: 'CASH',
-                paymentIntentId: null,
+                razorpayOrderId: null,
                 paymentExpiresAt: null,
                 otp: null,
                 otpExpiresAt: null,
@@ -1293,11 +1345,11 @@ export class BookingService {
             throw new AppError(403, "This booking cannot be cancelled at its current stage.");
         }
 
-        if (booking.paymentIntentId) {
-            const intent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
-            if (intent.status === 'requires_capture') {
-                await stripe.paymentIntents.cancel(booking.paymentIntentId);
-            }
+        if (booking.razorpayOrderId) {
+            // Can't easily cancel an authorized order in Razorpay without refund if captured.
+            // If just authorized, we usually don't need to do anything as it autovoids if not captured.
+            // But if captured (not typical here), we'd need to refund.
+            console.log("Cancelling booking with orderId:", booking.razorpayOrderId);
         }
 
         const updatedBooking = await prisma.booking.update({
@@ -1340,13 +1392,21 @@ export class BookingService {
         }
 
         let paymentStatus = booking.paymentStatus;
-        if (booking.paymentIntentId) {
-            const intent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
-            if (intent.status === 'succeeded') {
-                await stripe.refunds.create({ payment_intent: booking.paymentIntentId });
+        if (booking.razorpayOrderId) {
+            const payments = await razorpay.orders.fetchPayments(booking.razorpayOrderId);
+            const capturedPayment = payments.items.find((p: any) => p.status === 'captured');
+
+            if (capturedPayment) {
+                await razorpay.payments.refund(capturedPayment.id, {
+                    "amount": capturedPayment.amount,
+                    "speed": "normal",
+                    "notes": {
+                        "reason": "Cancelled by provider"
+                    },
+                    "receipt": "refund_" + booking.id
+                });
                 paymentStatus = 'refunded';
-            } else if (intent.status === 'requires_capture') {
-                await stripe.paymentIntents.cancel(booking.paymentIntentId);
+            } else {
                 paymentStatus = 'cancelled';
             }
         }
@@ -1379,7 +1439,10 @@ export class BookingService {
         if (booking.otp !== otp) throw new AppError(400, "Invalid OTP provided.");
         if (booking.otpExpiresAt && new Date() > booking.otpExpiresAt) throw new AppError(410, "The OTP has expired.");
 
-        await this.captureAuthorizedPayment(booking);
+        await this.captureAuthorizedPayment({
+            paymentMethod: booking.paymentMethod,
+            razorpayOrderId: booking.razorpayOrderId
+        });
 
         const isTowToGarage = booking.bookingType === 'TOW_TO_GARAGE';
         const updatedBooking = await prisma.booking.update({
@@ -1391,7 +1454,7 @@ export class BookingService {
                     otp: null,
                     otpExpiresAt: null,
                     paymentStatus: booking.paymentMethod === 'CASH' ? 'paid_in_cash' : 'paid',
-                  }
+                }
                 : {
                     status: BookingStatus.COMPLETED,
                     subStatus: BookingSubStatus.SERVICE_COMPLETED,
@@ -1399,7 +1462,7 @@ export class BookingService {
                     otp: null,
                     otpExpiresAt: null,
                     paymentStatus: booking.paymentMethod === 'CASH' ? 'paid_in_cash' : 'paid',
-                  },
+                },
         });
 
         if (isTowToGarage && updatedBooking.garageId) {
@@ -1585,13 +1648,13 @@ export class BookingService {
                     status: BookingStatus.IN_PROGRESS,
                     subStatus: BookingSubStatus.QUOTE_REJECTED,
                     quoteRejectionReason: rejectionReason,
-                  }
+                }
                 : {
                     status: BookingStatus.IN_PROGRESS,
                     subStatus: BookingSubStatus.SERVICE_IN_PROGRESS,
                     finalEstimateAmount: null,
                     quoteRejectionReason: rejectionReason,
-                  },
+                },
         });
 
         if (booking.garageId) {

@@ -1,7 +1,30 @@
+import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { Tabs } from "expo-router";
 import React from 'react';
 import { View } from "react-native";
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+
+// Helper to determine tab bar visibility
+const getTabBarVisibility = (route: any) => {
+  const routeName = getFocusedRouteNameFromRoute(route) ?? '';
+
+  // Routes where the tab bar should be hidden
+  const hiddenRoutes = [
+    'vehicle-page',
+    'add-vehicle', // In case it's a direct route
+    'add-business',
+    'businesssetup', // In case it's a direct route
+    '[id]', // Conversation details
+    'conversation' // In case it's used as the route name for the stack
+  ];
+
+  if (hiddenRoutes.includes(routeName) ||
+    (route.name === 'conversation' && routeName === '[id]')) {
+    return 'none';
+  }
+
+  return 'flex';
+};
 
 // Custom Dynamic Tab Bar Icon Component
 const DynamicTabIcon = ({
@@ -55,7 +78,7 @@ export default function TabLayout() {
           height: 60,
           position: 'absolute',
           bottom: 30,
-          marginHorizontal: 30,
+          marginHorizontal: 20,
           borderRadius: 50,
           paddingBottom: 0,
           paddingTop: 0,
@@ -78,21 +101,77 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ focused }) => (
-            <DynamicTabIcon iconName="cog-outline" focused={focused} />
-          ),
+        options={({ route }) => {
+          const routeName = getFocusedRouteNameFromRoute(route);
+          // Hide tab bar for specific nested routes in Settings stack
+          const shouldHide = ['vehicle-page', 'add-business', 'businesssetup'].some(
+            r => routeName === r || routeName?.startsWith(r)
+          );
+          return {
+            title: "Settings",
+            tabBarIcon: ({ focused }) => (
+              <DynamicTabIcon iconName="cog-outline" focused={focused} />
+            ),
+            tabBarStyle: {
+              ...(shouldHide ? { display: 'none' } : {
+                backgroundColor: '#005C70',
+                borderTopWidth: 0,
+                elevation: 0,
+                height: 60,
+                position: 'absolute',
+                bottom: 30,
+                marginHorizontal: 30,
+                borderRadius: 50,
+                paddingBottom: 0,
+                paddingTop: 0,
+                paddingHorizontal: 2,
+                shadowColor: '#000',
+                shadowOffset: {
+                  width: 0,
+                  height: 4,
+                },
+                shadowOpacity: 0.3,
+                shadowRadius: 4,
+              }),
+            }
+          };
         }}
       />
 
       <Tabs.Screen
         name="conversation"
-        options={{
-          title: "Conversation",
-          tabBarIcon: ({ focused }) => (
-            <DynamicTabIcon iconName="email-outline" focused={focused} />
-          ),
+        options={({ route }) => {
+          const routeName = getFocusedRouteNameFromRoute(route);
+          // Hide tab bar for specific nested routes in Conversation stack
+          const shouldHide = routeName === '[id]';
+          return {
+            title: "Conversation",
+            tabBarIcon: ({ focused }) => (
+              <DynamicTabIcon iconName="email-outline" focused={focused} />
+            ),
+            tabBarStyle: {
+              ...(shouldHide ? { display: 'none' } : {
+                backgroundColor: '#005C70',
+                borderTopWidth: 0,
+                elevation: 0,
+                height: 60,
+                position: 'absolute',
+                bottom: 30,
+                marginHorizontal: 30,
+                borderRadius: 50,
+                paddingBottom: 0,
+                paddingTop: 0,
+                paddingHorizontal: 2,
+                shadowColor: '#000',
+                shadowOffset: {
+                  width: 0,
+                  height: 4,
+                },
+                shadowOpacity: 0.3,
+                shadowRadius: 4,
+              }),
+            }
+          };
         }}
         listeners={({ navigation }) => ({
           tabPress: (e) => {

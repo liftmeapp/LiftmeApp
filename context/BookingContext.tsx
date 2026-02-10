@@ -1,6 +1,5 @@
 // context/BookingContext.tsx
 import { useAuth, useUser } from '@clerk/clerk-expo';
-import { useConfirmPayment } from '@stripe/stripe-react-native';
 import { useRouter } from 'expo-router';
 import React, {
   createContext,
@@ -11,6 +10,8 @@ import React, {
   useState,
 } from 'react';
 import { Alert } from 'react-native';
+// Razorpay import removed - using hook
+import { usePayment } from '@/hooks/usePayment';
 import { io } from 'socket.io-client';
 
 // --- Enums and Interfaces ---
@@ -76,7 +77,7 @@ export interface BookingContextType extends BookingState {
   startBooking: (payload: BookingPayload) => Promise<void>;
   cancelBooking: () => Promise<void>;
   resetBookingFlow: () => void;
-  confirmPayment: (options: { paymentMethodId: string }) => Promise<void>;
+  confirmPayment: () => Promise<void>;
   confirmCashBooking: () => Promise<void>;
   // Potentially setters for stages if needed by components
   setStage: (stage: BookingStage) => void;
@@ -103,7 +104,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
   const router = useRouter();
   const { getToken, userId } = useAuth();
   const { user } = useUser();
-  const { confirmPayment: confirmStripePayment } = useConfirmPayment();
+  const { initiateRazorpay } = usePayment();
 
   const [currentStage, setCurrentStage] = useState<BookingStage>(
     BookingStage.IDLE
@@ -667,67 +668,79 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({
     [currentBookingId, getToken, resetBookingFlow, router]
   );
 
-  const confirmPayment = useCallback(async ({ paymentMethodId }: { paymentMethodId: string }) => {
-    if (!currentBookingId || !selectedProvider) {
-      Alert.alert('Error', 'No active booking or provider to confirm payment.');
+  const confirmPayment = useCallback(async () => {
+    if (!currentBookingId) {
+      Alert.alert('Error', 'No active booking to confirm payment.');
       return;
     }
     setIsConfirmingPayment(true);
 
     try {
-      // 1. Create Payment Intent on the server
+      // 1. Create Razorpay Order
       const token = await getToken();
-      const intentResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/create-payment-intent`, {
+      const orderResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/create-razorpay-order`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      const { clientSecret, error: intentError } = await readJsonResponse(intentResponse);
+      const orderData = await readJsonResponse(orderResponse);
 
-      if (intentError || !clientSecret) {
-        throw new Error(intentError || 'Failed to create payment intent.');
+      if (!orderResponse.ok) {
+        throw new Error(orderData.error || 'Failed to create razorpay order.');
       }
 
-      // 2. Confirm the payment on the client
-      const { paymentIntent, error: paymentError } = await confirmStripePayment(clientSecret, {
-        paymentMethodType: 'Card',
-        paymentMethodData: {
-          paymentMethodId: paymentMethodId,
+      const options = {
+        description: 'Payment for Booking',
+        image: 'https://your-logo-url.com/logo.png', // Replace with valid URL
+        currency: orderData.currency,
+        key: orderData.key,
+        amount: orderData.amount,
+        name: 'Afthu Lift Me',
+        order_id: orderData.orderId,
+        prefill: {
+          email: user?.emailAddresses[0]?.emailAddress,
+          contact: user?.phoneNumbers[0]?.phoneNumber,
+          name: user?.fullName || ''
         },
+        theme: { color: '#53a20e' }
+      };
+
+      // 2. Open Razorpay Checkout
+      const data = await RazorpayCheckout.open(options);
+
+      // 3. Confirm Payment on Backend
+      const confirmResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/confirm-payment`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          paymentId: data.razorpay_payment_id,
+          signature: data.razorpay_signature
+        })
       });
 
-      if (paymentError) {
-        throw new Error(paymentError.message);
+      const confirmData = await readJsonResponse(confirmResponse);
+      if (!confirmResponse.ok) {
+        throw new Error(confirmData.error || 'Failed to confirm booking after payment.');
       }
 
-      // 3. If payment is successful, confirm on the backend
-      if (paymentIntent && (paymentIntent.status === 'Succeeded' || paymentIntent.status === 'RequiresCapture')) {
-        const confirmResponse = await fetch(`${API_BASE_URL}/api/bookings/${currentBookingId}/confirm-payment`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        const confirmData = await readJsonResponse(confirmResponse);
-        if (!confirmResponse.ok) {
-          throw new Error(confirmData.error || 'Failed to confirm booking after payment.');
-        }
-
+      if (confirmData.success) {
         // Update UI to CONFIRMED stage
-        setSelectedProvider(prev => {
-          if (!prev) return null; // Handle the case where prev is null
-          return {
-            ...prev,
-            otp: confirmData.booking.otp
-          };
-        }); setCurrentStage(BookingStage.CONFIRMED);
-      } else {
-        throw new Error('Payment was not successful.');
+        // We rely on socket updates or manual state setting
+        setCurrentStage(BookingStage.CONFIRMED);
       }
 
     } catch (error: any) {
-      Alert.alert('Payment Failed', error.message);
+      if (error.code === 'PAYMENT_CANCELLED') {
+        console.log("User cancelled payment");
+      } else {
+        Alert.alert('Payment Failed', error.description || error.message);
+      }
     } finally {
       setIsConfirmingPayment(false);
     }
-  }, [currentBookingId, selectedProvider, getToken, confirmStripePayment]);
+  }, [currentBookingId, user, getToken]);
 
   const confirmCashBooking = useCallback(async () => {
     if (!currentBookingId || !selectedProvider) {

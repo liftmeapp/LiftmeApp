@@ -15,7 +15,7 @@ bookingsRouter.get('/bookings/:id/status', BookingsController.fetchBookingStatus
 bookingsRouter.post('/bookings/request-service', BookingsController.requestService);
 bookingsRouter.post('/bookings/request-towing', BookingsController.requestTowing);
 bookingsRouter.post('/bookings/request-tow-to-garage', BookingsController.requestTowToGarage);
-bookingsRouter.post('/bookings/:bookingId/create-payment-intent', BookingsController.createPaymentIntent);
+bookingsRouter.post('/bookings/:bookingId/create-razorpay-order', BookingsController.createRazorpayOrder);
 bookingsRouter.post('/bookings/:bookingId/confirm-payment', BookingsController.confirmPayment);
 bookingsRouter.post('/bookings/:bookingId/confirm-cash', BookingsController.confirmCash);
 bookingsRouter.post('/bookings/:bookingId/cancel-by-user', BookingsController.cancelByUser);

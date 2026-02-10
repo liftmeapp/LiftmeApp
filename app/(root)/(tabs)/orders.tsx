@@ -1,11 +1,13 @@
 import EmptyState from '@/components/EmptyState';
 import RotatingLoader from '@/components/RotatingLoader';
-import { useAuth } from '@clerk/clerk-expo';
+import { usePayment } from '@/hooks/usePayment';
+import { useAuth, useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
-import { Alert, FlatList, LayoutAnimation, Linking, Platform, RefreshControl, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, LayoutAnimation, Linking, Platform, RefreshControl, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import io from 'socket.io-client';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -38,7 +40,11 @@ const OrderCard = ({
     // Derived Data
     const serviceName = booking.service?.name || "Service Booking";
     const providerName = booking.garage?.name || booking.towTruck?.name || "Searching Provider...";
-    const canCancel = booking.status !== 'COMPLETED' && booking.status !== 'CANCELLED';
+    const canCancel = booking.status !== 'COMPLETED'
+        && booking.status !== 'CANCELLED'
+        && booking.status !== 'AWAITING_PAYMENT'
+        && booking.subStatus !== 'SERVICE_IN_PROGRESS'
+        && booking.subStatus !== 'AWAITING_FINAL_APPROVAL';
     const otp = booking.otp || "WAITING"; // Placeholder if waiting
     const travelEta = booking.providerEta || 10; // Mock default
     const serviceEta = travelEta + 30; // Mock logic
@@ -47,6 +53,9 @@ const OrderCard = ({
     const isAwaitingInitialQuoteApproval = booking.subStatus === 'AWAITING_QUOTE_APPROVAL';
     const isAwaitingFinalQuoteApproval = booking.subStatus === 'AWAITING_FINAL_APPROVAL';
     const showQuoteDecision = booking.bookingType === 'TOW_TO_GARAGE' && (isAwaitingInitialQuoteApproval || isAwaitingFinalQuoteApproval);
+
+    // Payment Hook
+    const { initiateRazorpay, isProcessing } = usePayment();
 
     return (
         <View style={styles.card}>
@@ -113,6 +122,27 @@ const OrderCard = ({
 
             {/* Action Buttons Row */}
             <View style={styles.actionRow}>
+                {booking.status === 'AWAITING_PAYMENT' && (
+                    <TouchableOpacity
+                        style={[styles.actionButton, styles.payButton]}
+                        onPress={() => {
+                            if (isProcessing) return;
+                            initiateRazorpay(booking.id, () => {
+                                // Payment success handling
+                                console.log("Payment Successful for booking:", booking.id);
+                            });
+                        }}
+                        disabled={isProcessing}
+                    >
+                        {isProcessing ? <ActivityIndicator color="#fff" size="small" /> : (
+                            <>
+                                <Ionicons name="card" size={18} color="#fff" style={{ marginRight: 5 }} />
+                                <Text style={styles.actionButtonText}>Pay Now</Text>
+                            </>
+                        )}
+                    </TouchableOpacity>
+                )}
+
                 <TouchableOpacity style={[styles.actionButton, styles.callButton]} onPress={onCall}>
                     <Ionicons name="call" size={18} color="#fff" style={{ marginRight: 5 }} />
                     <Text style={styles.actionButtonText}>Call Provider</Text>
@@ -136,6 +166,7 @@ const OrderCard = ({
 
 export default function OrdersScreen() {
     const { getToken } = useAuth();
+    const { user } = useUser();
     const router = useRouter();
     const insets = useSafeAreaInsets();
 
@@ -173,12 +204,63 @@ export default function OrdersScreen() {
         }
     }, []); // Keep dependencies empty to prevent effect loops. getToken is stable enough.
 
+    const fetchActiveBookingsRef = useRef(fetchActiveBookings);
+    useEffect(() => {
+        fetchActiveBookingsRef.current = fetchActiveBookings;
+    }, [fetchActiveBookings]);
+
     // Initial Fetch on Focus
     useFocusEffect(
         useCallback(() => {
             fetchActiveBookings();
         }, []) // Empty dependency array ensures this only runs on focus
     );
+
+    useEffect(() => {
+        if (!user?.id) return;
+
+        const socket = io(API_BASE_URL!, {
+            reconnection: true,
+            transports: ['websocket'],
+        });
+
+        socket.on('connect', () => {
+            socket.emit('register_customer', user.id);
+        });
+
+        const refreshOnEvent = () => {
+            fetchActiveBookingsRef.current(true);
+        };
+
+        socket.on('booking_otp_generated', refreshOnEvent);
+        socket.on('booking_status_updated', refreshOnEvent);
+        socket.on('booking_accepted', refreshOnEvent);
+        socket.on('service_completed', refreshOnEvent);
+        socket.on('booking_expired', refreshOnEvent);
+        socket.on('garage_quote_submitted', refreshOnEvent);
+        socket.on('garage_final_quote_submitted', refreshOnEvent);
+        socket.on('booking_cancelled_by_provider', refreshOnEvent);
+
+        return () => {
+            socket.off('booking_otp_generated', refreshOnEvent);
+            socket.off('booking_status_updated', refreshOnEvent);
+            socket.off('booking_accepted', refreshOnEvent);
+            socket.off('service_completed', refreshOnEvent);
+            socket.off('booking_expired', refreshOnEvent);
+            socket.off('garage_quote_submitted', refreshOnEvent);
+            socket.off('garage_final_quote_submitted', refreshOnEvent);
+            socket.off('booking_cancelled_by_provider', refreshOnEvent);
+            socket.disconnect();
+        };
+    }, [user?.id]);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            fetchActiveBookingsRef.current(true);
+        }, 8000);
+
+        return () => clearInterval(interval);
+    }, []);
 
     // Manual Refresh Handler
     const onRefresh = () => {
@@ -330,14 +412,14 @@ const styles = StyleSheet.create({
         marginRight: 15,
     },
     headerTitle: {
-        fontSize: 34,
+        fontSize: 28,
         color: '#005C70',
         fontWeight: '800',
         letterSpacing: -0.5,
     },
     listContent: {
-        paddingHorizontal: 20,
-        paddingBottom: 20,
+        paddingHorizontal: 16,
+        paddingBottom: 28,
     },
     emptyContainer: {
         alignItems: 'center',
@@ -369,6 +451,8 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
         color: '#005C70',
+        flex: 1,
+        marginRight: 10,
     },
     statusPill: {
         backgroundColor: '#005C70',
@@ -404,6 +488,8 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: 'bold',
         color: '#333',
+        flex: 1,
+        minWidth: 0,
     },
     timingContainer: {
         marginBottom: 20,
@@ -475,6 +561,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         gap: 8,
         marginTop: 4,
+        flexWrap: 'wrap',
     },
     quoteActionButton: {
         flex: 1,
@@ -495,7 +582,8 @@ const styles = StyleSheet.create({
     },
     actionRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
+        justifyContent: 'flex-start',
+        flexWrap: 'wrap',
         gap: 10,
     },
     actionButton: {
@@ -505,7 +593,9 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         paddingHorizontal: 10,
         borderRadius: 12,
-        flex: 1,
+        flexGrow: 1,
+        flexBasis: '48%',
+        minWidth: 120,
     },
     callButton: {
         backgroundColor: '#74B768', // Green
@@ -520,5 +610,10 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 12,
         fontWeight: 'bold',
+    },
+    payButton: {
+        backgroundColor: '#005C70',
+        flexBasis: '100%',
+        minWidth: 180,
     },
 });
